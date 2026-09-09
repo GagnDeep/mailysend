@@ -1,0 +1,136 @@
+/**
+ * The navigation graph, in one place.
+ *
+ * The desktop menus and the mobile drawer render the same links, and the
+ * artboards' two copies had already drifted (the footer's COMPARE column was
+ * missing `vs Amazon SES` even though `/compare#ses` exists). One source makes
+ * that drift impossible.
+ */
+
+export interface NavLink {
+  label: string
+  href: string
+  /** The second line in the dropdown item. */
+  description?: string
+}
+
+export interface NavGroup {
+  label: string
+  /** Paths that light the group's active dot. */
+  matches: string[]
+  items: NavLink[]
+}
+
+export const PRODUCT_GROUP: NavGroup = {
+  label: 'Product',
+  matches: ['/dashboard-tour', '/analytics', '/use-cases', '/stack'],
+  items: [
+    {
+      label: 'Product tour',
+      href: '/dashboard-tour',
+      description: 'The dashboard, click by click',
+    },
+    {
+      label: 'Analytics',
+      href: '/analytics',
+      description: 'Deliverability you can actually read',
+    },
+    {
+      label: 'Use cases',
+      href: '/use-cases',
+      description: 'OTPs, receipts, digests, broadcasts',
+    },
+    {
+      label: 'Stack & cost',
+      href: '/stack',
+      description: 'Every Cloudflare line item, in dollars',
+    },
+  ],
+}
+
+export const MORE_GROUP: NavGroup = {
+  label: 'More',
+  matches: ['/compare', '/resources'],
+  items: [
+    {
+      label: 'Compare & migrate',
+      href: '/compare',
+      description: 'Resend, SES, SendGrid, Postmark',
+    },
+    {
+      label: 'Resources',
+      href: '/resources',
+      description: 'Changelog, glossary, security, status',
+    },
+    {
+      label: 'Self-host (MIT)',
+      href: '/resources#selfhost',
+      description: 'Deploy into your own account',
+    },
+  ],
+}
+
+export const FLAT_LINKS: NavLink[] = [
+  { label: 'Docs', href: '/docs' },
+  { label: 'Cost', href: '/pricing' },
+]
+
+export interface FooterColumn {
+  title: string
+  links: NavLink[]
+}
+
+export const FOOTER_COLUMNS: FooterColumn[] = [
+  {
+    title: 'PRODUCT',
+    links: [
+      { label: 'Overview', href: '/' },
+      { label: 'Product tour', href: '/dashboard-tour' },
+      { label: 'Use cases', href: '/use-cases' },
+      { label: 'Analytics', href: '/analytics' },
+      { label: 'Stack & cost', href: '/stack' },
+      { label: 'What it costs', href: '/pricing' },
+      { label: 'Status', href: '/resources#status' },
+    ],
+  },
+  {
+    title: 'DEVELOPERS',
+    links: [
+      { label: 'Documentation', href: '/docs' },
+      { label: 'Quickstart', href: '/docs#quickstart' },
+      { label: 'API reference', href: '/docs#api' },
+      { label: 'SDKs & CLI', href: '/docs#sdks' },
+      { label: 'Webhooks', href: '/docs#webhooks' },
+      { label: 'SES & Resend providers', href: '/docs#providers' },
+      { label: 'Self-host (MIT)', href: '/resources#selfhost' },
+    ],
+  },
+  {
+    title: 'COMPARE',
+    links: [
+      { label: 'vs Resend', href: '/compare#resend' },
+      // The artboard omitted this one although the anchor has always existed.
+      { label: 'vs Amazon SES', href: '/compare#ses' },
+      { label: 'vs SendGrid', href: '/compare#sendgrid' },
+      { label: 'vs Postmark', href: '/compare#postmark' },
+      { label: 'vs Mailgun', href: '/compare#mailgun' },
+      { label: 'Migration guide', href: '/compare#migrate' },
+    ],
+  },
+  {
+    title: 'RESOURCES',
+    links: [
+      { label: 'Deliverability glossary', href: '/resources#glossary' },
+      { label: 'Changelog', href: '/resources#changelog' },
+      { label: 'Engineering blog', href: '/resources#blog' },
+      { label: 'Security & compliance', href: '/resources#security' },
+      { label: 'Sitemap', href: '/resources#sitemap' },
+    ],
+  },
+]
+
+export const LEGAL_LINKS: NavLink[] = [
+  { label: 'Terms', href: '/legal/terms' },
+  { label: 'Privacy', href: '/legal/privacy' },
+  { label: 'DPA', href: '/legal/dpa' },
+]

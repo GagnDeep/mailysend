@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "cli"
+  - "sdks/*"
+  - "examples/*"
+
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - "esbuild"
+  - "sharp"
+  - "workerd"

@@ -1,0 +1,616 @@
+import {
+  ApiKey,
+  Audience,
+  Automation,
+  Broadcast,
+  Contact,
+  CreatedApiKey,
+  Domain,
+  Email,
+  ErrorBody,
+  InboundMessage,
+  InboundThread,
+  listResponse,
+  PlacementFigure,
+  Segment,
+  Suppression,
+  Template,
+  Webhook,
+} from '@mailysend/contracts'
+import { z } from 'zod'
+
+/**
+ * The dashboard's only door to `/v1`.
+ *
+ * Every response is parsed with the same Zod schema the API validates against,
+ * so a field the server renames becomes a loud runtime failure in one place
+ * instead of `undefined` rendered as "NaN%" on four screens. Hand-written
+ * response interfaces are what makes that class of drift invisible, so there
+ * are none here.
+ */
+
+// ---------------------------------------------------------------------------
+// Environment & workspace
+// ---------------------------------------------------------------------------
+
+/**
+ * `ms_live_` and `ms_test_` are two different key prefixes over two different
+ * datasets, so the dashboard is always looking at exactly one of them. The
+ * header travels with every request rather than being a path segment: a bookmarked
+ * URL that silently means "live" for one reader and "test" for another is worse
+ * than one that reads the switch.
+ */
+export type Environment = 'live' | 'test'
+
+export interface RequestScope {
+  environment: Environment
+  workspaceId?: string
+}
+
+const ENV_HEADER = 'ms-environment'
+const WORKSPACE_HEADER = 'ms-workspace'
+
+/**
+ * Relative on the client. On the server there is no origin to be relative to,
+ * so the dashboard's queries are client-only and this value is a fallback the
+ * dev server happens to satisfy rather than a supported deployment knob.
+ */
+const baseUrl = (): string => {
+  if (typeof window !== 'undefined') return ''
+  return (globalThis as { MS_PUBLIC_URL?: string }).MS_PUBLIC_URL ?? 'http://localhost:8917'
+}
+
+export class ApiClientError extends Error {
+  readonly status: number
+  readonly body: ErrorBody | null
+
+  constructor(status: number, body: ErrorBody | null, fallback: string) {
+    super(body?.message ?? fallback)
+    this.name = 'ApiClientError'
+    this.status = status
+    this.body = body
+  }
+
+  /** The stable machine code, when the server sent one. Never the HTTP status. */
+  get code(): string | undefined {
+    return this.body?.code
+  }
+
+  get docUrl(): string | undefined {
+    return this.body?.doc_url
+  }
+
+  /** The single offending field, for attaching an error to one input. */
+  get param(): string | undefined {
+    return this.body?.param
+  }
+}
+
+interface RequestInitEx extends Omit<RequestInit, 'body'> {
+  body?: unknown
+  query?: Record<string, unknown>
+  scope?: RequestScope
+}
+
+const buildQuery = (query: RequestInitEx['query']): string => {
+  if (!query) return ''
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue
+    params.set(key, Array.isArray(value) ? value.join(',') : String(value))
+  }
+  const serialized = params.toString()
+  return serialized ? `?${serialized}` : ''
+}
+
+export async function request<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init: RequestInitEx = {},
+): Promise<T> {
+  const { body, query, scope, headers, ...rest } = init
+  const response = await fetch(`${baseUrl()}/v1${path}${buildQuery(query)}`, {
+    ...rest,
+    credentials: 'include',
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(scope ? { [ENV_HEADER]: scope.environment } : {}),
+      ...(scope?.workspaceId ? { [WORKSPACE_HEADER]: scope.workspaceId } : {}),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+
+  if (!response.ok) {
+    const parsed = ErrorBody.safeParse(await response.json().catch(() => null))
+    throw new ApiClientError(
+      response.status,
+      parsed.success ? parsed.data : null,
+      `${response.status} ${response.statusText}`,
+    )
+  }
+
+  if (response.status === 204) return schema.parse(undefined)
+  return schema.parse(await response.json())
+}
+
+// ---------------------------------------------------------------------------
+// Shared shapes
+// ---------------------------------------------------------------------------
+
+export type ListParams = {
+  limit?: number
+  after?: string
+  before?: string
+}
+
+export type List<T> = { object: 'list'; data: T[]; has_more: boolean; next_cursor?: string | null }
+
+const deleted = z.object({ object: z.string(), id: z.string(), deleted: z.literal(true) })
+
+export type EmailRecord = z.infer<typeof Email>
+export type DomainRecord = z.infer<typeof Domain>
+export type ApiKeyRecord = z.infer<typeof ApiKey>
+export type CreatedApiKeyRecord = z.infer<typeof CreatedApiKey>
+export type AudienceRecord = z.infer<typeof Audience>
+export type ContactRecord = z.infer<typeof Contact>
+export type SegmentRecord = z.infer<typeof Segment>
+export type TemplateRecord = z.infer<typeof Template>
+export type BroadcastRecord = z.infer<typeof Broadcast>
+export type AutomationRecord = z.infer<typeof Automation>
+export type WebhookRecord = z.infer<typeof Webhook>
+export type SuppressionRecord = z.infer<typeof Suppression>
+export type InboundThreadRecord = z.infer<typeof InboundThread>
+export type InboundMessageRecord = z.infer<typeof InboundMessage>
+export type PlacementFigureRecord = z.infer<typeof PlacementFigure>
+
+// ---------------------------------------------------------------------------
+// Event timeline, SMTP conversation and webhook attempts
+// ---------------------------------------------------------------------------
+
+/**
+ * The log drawer's payload. `/v1/emails/:id` returns the message; this endpoint
+ * returns everything that happened to it, which is a different read pattern
+ * (Analytics Engine + R2) and therefore a different call.
+ */
+export const EmailTimelineEvent = z.object({
+  event_id: z.string(),
+  type: z.string(),
+  occurred_at: z.string(),
+  recipient: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  smtp_code: z.string().nullable().optional(),
+  smtp_response: z.string().nullable().optional(),
+  diagnostic: z.string().nullable().optional(),
+  bounce_class: z.string().nullable().optional(),
+  audience_class: z.string().nullable().optional(),
+  link_url: z.string().nullable().optional(),
+  geo_country: z.string().nullable().optional(),
+  user_agent: z.string().nullable().optional(),
+})
+export type EmailTimelineEventRecord = z.infer<typeof EmailTimelineEvent>
+
+export const WebhookAttempt = z.object({
+  id: z.string(),
+  webhook_id: z.string(),
+  event: z.string(),
+  url: z.string(),
+  status_code: z.number().int().nullable(),
+  duration_ms: z.number().int().nullable(),
+  attempt: z.number().int(),
+  succeeded: z.boolean(),
+  error: z.string().nullable().optional(),
+  request_body: z.string().nullable().optional(),
+  response_body: z.string().nullable().optional(),
+  created_at: z.string(),
+})
+export type WebhookAttemptRecord = z.infer<typeof WebhookAttempt>
+
+export const EmailDetail = z.object({
+  email: Email,
+  events: z.array(EmailTimelineEvent),
+  /** The verbatim MIME the provider was handed. Kept in R2, never regenerated. */
+  raw: z.string().nullable().optional(),
+  smtp_conversation: z
+    .array(z.object({ direction: z.enum(['out', 'in']), line: z.string() }))
+    .optional(),
+  webhook_attempts: z.array(WebhookAttempt).optional(),
+})
+export type EmailDetailRecord = z.infer<typeof EmailDetail>
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+export const TimeseriesPoint = z.object({
+  bucket: z.string(),
+  sent: z.number(),
+  delivered: z.number(),
+  bounced: z.number(),
+  complained: z.number(),
+  opened: z.number(),
+  clicked: z.number(),
+})
+export type TimeseriesPointRecord = z.infer<typeof TimeseriesPoint>
+
+export const Breakdown = z.object({
+  key: z.string(),
+  sent: z.number(),
+  delivered: z.number(),
+  bounced: z.number(),
+  opened: z.number(),
+  clicked: z.number(),
+})
+export type BreakdownRecord = z.infer<typeof Breakdown>
+
+export const EngagementSplit = z.object({
+  audience_class: z.string(),
+  opens: z.number(),
+  clicks: z.number(),
+})
+export type EngagementSplitRecord = z.infer<typeof EngagementSplit>
+
+export const AnalyticsOverview = z.object({
+  timeseries: z.array(TimeseriesPoint),
+  by_domain: z.array(Breakdown),
+  by_tag: z.array(Breakdown),
+  engagement: z.array(EngagementSplit),
+  placement: z.array(PlacementFigure),
+  totals: z.object({
+    sent: z.number(),
+    delivered: z.number(),
+    bounced: z.number(),
+    complained: z.number(),
+    opened: z.number(),
+    clicked: z.number(),
+    unsubscribed: z.number(),
+    /** Opens and recipients with MPP removed from *both* sides of the ratio. */
+    human_opens: z.number(),
+    human_delivered: z.number(),
+  }),
+})
+export type AnalyticsOverviewRecord = z.infer<typeof AnalyticsOverview>
+
+export type AnalyticsParams = {
+  from?: string
+  to?: string
+  granularity?: 'hour' | 'day' | 'week' | 'month'
+  domain_id?: string
+  tag?: string
+  provider?: string
+  audience_class?: 'human' | 'all' | 'bot' | 'mpp' | 'scanner' | 'proxy_prefetch'
+}
+
+// ---------------------------------------------------------------------------
+// Workspace, team & settings
+// ---------------------------------------------------------------------------
+
+export const ROLES = ['owner', 'developer', 'marketer', 'read_only'] as const
+export const Role = z.enum(ROLES)
+export type RoleName = z.infer<typeof Role>
+
+export const Member = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string().nullable(),
+  role: Role,
+  created_at: z.string(),
+  last_seen_at: z.string().nullable().optional(),
+})
+export type MemberRecord = z.infer<typeof Member>
+
+export const Invite = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: Role,
+  created_at: z.string(),
+  expires_at: z.string(),
+})
+export type InviteRecord = z.infer<typeof Invite>
+
+export const Workspace = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  created_at: z.string(),
+  role: Role.optional(),
+})
+export type WorkspaceRecord = z.infer<typeof Workspace>
+
+export const CurrentUser = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string().nullable(),
+  avatar_url: z.string().nullable().optional(),
+  workspaces: z.array(Workspace),
+})
+export type CurrentUserRecord = z.infer<typeof CurrentUser>
+
+export const WorkspaceSettings = z.object({
+  name: z.string(),
+  default_from: z.string().nullable(),
+  default_reply_to: z.string().nullable(),
+  open_tracking: z.boolean(),
+  click_tracking: z.boolean(),
+  provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp']),
+  failover_provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp']).nullable(),
+  /** Days. R2 is the store, so this is money as much as it is policy. */
+  log_retention_days: z.number().int(),
+  raw_message_retention_days: z.number().int(),
+  suppression_sync: z.boolean(),
+})
+export type WorkspaceSettingsRecord = z.infer<typeof WorkspaceSettings>
+
+// ---------------------------------------------------------------------------
+// Seed-list placement testing
+// ---------------------------------------------------------------------------
+
+export const SeedTest = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(['queued', 'sending', 'collecting', 'complete', 'failed']),
+  created_at: z.string(),
+  seed_count: z.number().int(),
+  received_count: z.number().int(),
+  results: z.array(PlacementFigure).optional(),
+})
+export type SeedTestRecord = z.infer<typeof SeedTest>
+
+// ---------------------------------------------------------------------------
+// Preference centre
+// ---------------------------------------------------------------------------
+
+export const PreferenceTopic = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  default_opted_in: z.boolean(),
+  subscriber_count: z.number().int().optional(),
+})
+export type PreferenceTopicRecord = z.infer<typeof PreferenceTopic>
+
+export const PreferenceCentre = z.object({
+  headline: z.string(),
+  body: z.string(),
+  /** The one link that must always exist, whatever the topics do. */
+  show_unsubscribe_all: z.boolean(),
+  topics: z.array(PreferenceTopic),
+})
+export type PreferenceCentreRecord = z.infer<typeof PreferenceCentre>
+
+// ---------------------------------------------------------------------------
+// CSV import
+// ---------------------------------------------------------------------------
+
+export const ImportRowError = z.object({
+  row: z.number().int(),
+  email: z.string().nullable(),
+  code: z.string(),
+  message: z.string(),
+})
+export type ImportRowErrorRecord = z.infer<typeof ImportRowError>
+
+export const ImportResult = z.object({
+  id: z.string(),
+  status: z.enum(['validating', 'importing', 'complete', 'failed']),
+  total_rows: z.number().int(),
+  imported: z.number().int(),
+  skipped: z.number().int(),
+  failed: z.number().int(),
+  errors: z.array(ImportRowError),
+})
+export type ImportResultRecord = z.infer<typeof ImportResult>
+
+// ---------------------------------------------------------------------------
+// Segment preview
+// ---------------------------------------------------------------------------
+
+export const SegmentPreview = z.object({
+  valid: z.boolean(),
+  /** `describe()` output — the expression as a sentence, from the parser. */
+  describe: z.string().nullable(),
+  error: z.string().nullable(),
+  match_count: z.number().int().nullable(),
+  sample: z.array(Contact),
+})
+export type SegmentPreviewRecord = z.infer<typeof SegmentPreview>
+
+// ---------------------------------------------------------------------------
+// Template versions
+// ---------------------------------------------------------------------------
+
+export const TemplateVersion = z.object({
+  version: z.number().int(),
+  created_at: z.string(),
+  author: z.string().nullable(),
+  subject: z.string().nullable(),
+  html: z.string().nullable(),
+  text: z.string().nullable(),
+  note: z.string().nullable().optional(),
+})
+export type TemplateVersionRecord = z.infer<typeof TemplateVersion>
+
+// ---------------------------------------------------------------------------
+// The client
+// ---------------------------------------------------------------------------
+
+const list = <T>(item: z.ZodType<T>) => listResponse(item) as unknown as z.ZodType<List<T>>
+
+/**
+ * Bound to one environment and workspace. Screens never pass the scope around;
+ * they take a client from `useApi()`, which already carries the switch's value.
+ */
+export const createApiClient = (scope: RequestScope) => {
+  const call = <T>(path: string, schema: z.ZodType<T>, init: RequestInitEx = {}) =>
+    request(path, schema, { ...init, scope })
+
+  const get = <T>(path: string, schema: z.ZodType<T>, query?: RequestInitEx['query']) =>
+    call(path, schema, { method: 'GET', query })
+
+  const post = <T>(path: string, schema: z.ZodType<T>, body?: unknown) =>
+    call(path, schema, { method: 'POST', body })
+
+  const patch = <T>(path: string, schema: z.ZodType<T>, body?: unknown) =>
+    call(path, schema, { method: 'PATCH', body })
+
+  const del = <T>(path: string, schema: z.ZodType<T>) => call(path, schema, { method: 'DELETE' })
+
+  return {
+    scope,
+
+    // --- session -----------------------------------------------------------
+    me: () => get('/me', CurrentUser),
+
+    // --- emails & logs -----------------------------------------------------
+    listEmails: (params: ListParams & Record<string, unknown> = {}) =>
+      get('/emails', list(Email), params),
+    getEmail: (id: string) => get(`/emails/${id}`, Email),
+    getEmailDetail: (id: string) => get(`/emails/${id}/detail`, EmailDetail),
+    cancelEmail: (id: string) => post(`/emails/${id}/cancel`, Email),
+    rescheduleEmail: (id: string, scheduledAt: string) =>
+      patch(`/emails/${id}`, Email, { scheduled_at: scheduledAt }),
+    listLogs: (params: Record<string, unknown> = {}) => get('/logs', list(Email), params),
+
+    // --- domains -----------------------------------------------------------
+    listDomains: (params: ListParams = {}) => get('/domains', list(Domain), params),
+    getDomain: (id: string) => get(`/domains/${id}`, Domain),
+    createDomain: (body: { name: string; region?: string; custom_return_path?: string }) =>
+      post('/domains', Domain, body),
+    verifyDomain: (id: string) => post(`/domains/${id}/verify`, Domain),
+    updateDomain: (id: string, body: Record<string, unknown>) =>
+      patch(`/domains/${id}`, Domain, body),
+    deleteDomain: (id: string) => del(`/domains/${id}`, deleted),
+
+    // --- api keys ----------------------------------------------------------
+    listApiKeys: (params: ListParams = {}) => get('/api-keys', list(ApiKey), params),
+    createApiKey: (body: Record<string, unknown>) => post('/api-keys', CreatedApiKey, body),
+    deleteApiKey: (id: string) => del(`/api-keys/${id}`, deleted),
+
+    // --- audiences & contacts ---------------------------------------------
+    listAudiences: (params: ListParams = {}) => get('/audiences', list(Audience), params),
+    getAudience: (id: string) => get(`/audiences/${id}`, Audience),
+    createAudience: (body: { name: string }) => post('/audiences', Audience, body),
+    deleteAudience: (id: string) => del(`/audiences/${id}`, deleted),
+
+    listContacts: (audienceId: string, params: ListParams & Record<string, unknown> = {}) =>
+      get(`/audiences/${audienceId}/contacts`, list(Contact), params),
+    getContact: (audienceId: string, id: string) =>
+      get(`/audiences/${audienceId}/contacts/${id}`, Contact),
+    createContact: (audienceId: string, body: Record<string, unknown>) =>
+      post(`/audiences/${audienceId}/contacts`, Contact, body),
+    updateContact: (audienceId: string, id: string, body: Record<string, unknown>) =>
+      patch(`/audiences/${audienceId}/contacts/${id}`, Contact, body),
+    deleteContact: (audienceId: string, id: string) =>
+      del(`/audiences/${audienceId}/contacts/${id}`, deleted),
+    importContacts: (audienceId: string, body: { csv: string; mapping: Record<string, string> }) =>
+      post(`/audiences/${audienceId}/import`, ImportResult, body),
+
+    // --- segments ----------------------------------------------------------
+    listSegments: (params: ListParams = {}) => get('/segments', list(Segment), params),
+    getSegment: (id: string) => get(`/segments/${id}`, Segment),
+    createSegment: (body: Record<string, unknown>) => post('/segments', Segment, body),
+    updateSegment: (id: string, body: Record<string, unknown>) =>
+      patch(`/segments/${id}`, Segment, body),
+    deleteSegment: (id: string) => del(`/segments/${id}`, deleted),
+    previewSegment: (body: { audience_id: string; expression: string }) =>
+      post('/segments/preview', SegmentPreview, body),
+
+    // --- templates ---------------------------------------------------------
+    listTemplates: (params: ListParams = {}) => get('/templates', list(Template), params),
+    getTemplate: (id: string) => get(`/templates/${id}`, Template),
+    createTemplate: (body: Record<string, unknown>) => post('/templates', Template, body),
+    updateTemplate: (id: string, body: Record<string, unknown>) =>
+      patch(`/templates/${id}`, Template, body),
+    deleteTemplate: (id: string) => del(`/templates/${id}`, deleted),
+    listTemplateVersions: (id: string) => get(`/templates/${id}/versions`, list(TemplateVersion)),
+    getTemplateVersion: (id: string, version: number) =>
+      get(`/templates/${id}/versions/${version}`, TemplateVersion),
+    rollbackTemplate: (id: string, version: number) =>
+      post(`/templates/${id}/versions/${version}/rollback`, Template),
+
+    // --- broadcasts --------------------------------------------------------
+    listBroadcasts: (params: ListParams = {}) => get('/broadcasts', list(Broadcast), params),
+    getBroadcast: (id: string) => get(`/broadcasts/${id}`, Broadcast),
+    createBroadcast: (body: Record<string, unknown>) => post('/broadcasts', Broadcast, body),
+    updateBroadcast: (id: string, body: Record<string, unknown>) =>
+      patch(`/broadcasts/${id}`, Broadcast, body),
+    sendBroadcast: (id: string, body: { scheduled_at?: string } = {}) =>
+      post(`/broadcasts/${id}/send`, Broadcast, body),
+    pauseBroadcast: (id: string) => post(`/broadcasts/${id}/pause`, Broadcast),
+    resumeBroadcast: (id: string) => post(`/broadcasts/${id}/resume`, Broadcast),
+    cancelBroadcast: (id: string) => post(`/broadcasts/${id}/cancel`, Broadcast),
+    deleteBroadcast: (id: string) => del(`/broadcasts/${id}`, deleted),
+
+    // --- automations -------------------------------------------------------
+    listAutomations: (params: ListParams = {}) => get('/automations', list(Automation), params),
+    getAutomation: (id: string) => get(`/automations/${id}`, Automation),
+    createAutomation: (body: Record<string, unknown>) => post('/automations', Automation, body),
+    updateAutomation: (id: string, body: Record<string, unknown>) =>
+      patch(`/automations/${id}`, Automation, body),
+    deleteAutomation: (id: string) => del(`/automations/${id}`, deleted),
+
+    // --- webhooks ----------------------------------------------------------
+    listWebhooks: (params: ListParams = {}) => get('/webhooks', list(Webhook), params),
+    getWebhook: (id: string) => get(`/webhooks/${id}`, Webhook),
+    createWebhook: (body: Record<string, unknown>) => post('/webhooks', Webhook, body),
+    updateWebhook: (id: string, body: Record<string, unknown>) =>
+      patch(`/webhooks/${id}`, Webhook, body),
+    deleteWebhook: (id: string) => del(`/webhooks/${id}`, deleted),
+    listWebhookAttempts: (id: string, params: ListParams = {}) =>
+      get(`/webhooks/${id}/attempts`, list(WebhookAttempt), params),
+    replayWebhookAttempt: (id: string, attemptId: string) =>
+      post(`/webhooks/${id}/attempts/${attemptId}/replay`, WebhookAttempt),
+
+    // --- suppressions ------------------------------------------------------
+    listSuppressions: (params: ListParams & Record<string, unknown> = {}) =>
+      get('/suppressions', list(Suppression), params),
+    createSuppression: (body: Record<string, unknown>) => post('/suppressions', Suppression, body),
+    deleteSuppression: (email: string) =>
+      del(`/suppressions/${encodeURIComponent(email)}`, deleted),
+
+    // --- inbound -----------------------------------------------------------
+    listThreads: (params: ListParams & Record<string, unknown> = {}) =>
+      get('/inbound/threads', list(InboundThread), params),
+    getThread: (id: string) => get(`/inbound/threads/${id}`, InboundThread),
+    listThreadMessages: (id: string) =>
+      get(`/inbound/threads/${id}/messages`, list(InboundMessage)),
+    replyToThread: (id: string, body: { text: string; html?: string }) =>
+      post(`/inbound/threads/${id}/reply`, InboundMessage, body),
+    markThreadRead: (id: string, unread: boolean) =>
+      patch(`/inbound/threads/${id}`, InboundThread, { unread }),
+
+    // --- analytics ---------------------------------------------------------
+    analytics: (params: AnalyticsParams = {}) =>
+      get('/analytics/overview', AnalyticsOverview, params),
+    placement: (params: AnalyticsParams = {}) =>
+      get('/analytics/placement', list(PlacementFigure), params),
+
+    // --- seed tests --------------------------------------------------------
+    listSeedTests: (params: ListParams = {}) =>
+      get('/analytics/placement-tests', list(SeedTest), params),
+    getSeedTest: (id: string) => get(`/analytics/placement-tests/${id}`, SeedTest),
+    createSeedTest: (body: Record<string, unknown>) =>
+      post('/analytics/placement-tests', SeedTest, body),
+
+    // --- settings, team, preference centre ---------------------------------
+    getSettings: () => get('/workspace/settings', WorkspaceSettings),
+    updateSettings: (body: Record<string, unknown>) =>
+      patch('/workspace/settings', WorkspaceSettings, body),
+    deleteWorkspace: (id: string) => del(`/workspace/${id}`, deleted),
+
+    listMembers: () => get('/workspace/members', list(Member)),
+    updateMemberRole: (id: string, role: RoleName) =>
+      patch(`/workspace/members/${id}`, Member, { role }),
+    removeMember: (id: string) => del(`/workspace/members/${id}`, deleted),
+    listInvites: () => get('/workspace/invites', list(Invite)),
+    createInvite: (body: { email: string; role: RoleName }) =>
+      post('/workspace/invites', Invite, body),
+    revokeInvite: (id: string) => del(`/workspace/invites/${id}`, deleted),
+
+    getPreferenceCentre: () => get('/preference-centre', PreferenceCentre),
+    updatePreferenceCentre: (body: Record<string, unknown>) =>
+      patch('/preference-centre', PreferenceCentre, body),
+  }
+}
+
+export type ApiClient = ReturnType<typeof createApiClient>

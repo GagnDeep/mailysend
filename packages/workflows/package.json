@@ -1,0 +1,20 @@
+{
+  "name": "@mailysend/workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "echo 'workflows: source-only'",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mailysend/contracts": "workspace:*",
+    "@mailysend/core": "workspace:*",
+    "@mailysend/platform": "workspace:*",
+    "@mailysend/segments": "workspace:*",
+    "zod": "^4.5.4"
+  }
+}

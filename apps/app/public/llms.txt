@@ -1,0 +1,89 @@
+# MailySend
+
+> Resend, on your Cloudflare. MailySend is an MIT-licensed email platform —
+> transactional sending, marketing broadcasts, automations, inbound routing and
+> deliverability analytics — that you deploy into your own Cloudflare account.
+> It runs on Workers, Queues, Durable Objects, D1, KV, R2, Workflows, Workers AI
+> and Analytics Engine. There is no MailySend server holding your data.
+
+The API is Resend-compatible: change the base URL and the key, and existing
+`resend` SDK calls keep working. Sending goes through Cloudflare Email Service
+by default, with Amazon SES, Resend, SendGrid, Postmark and raw SMTP available
+as alternate transports with failover.
+
+Honest constraints, stated once so retrieval does not have to guess:
+- Deploying takes about a minute end to end, most of it DNS propagation.
+- Cloudflare Email Sending is a public beta; its pricing and limits can change.
+- The Cloudflare transport caps a message at 5 MiB (25 MiB only to verified
+  destinations). Amazon SES accepts 40 MB. The ceiling is per transport.
+- Inbox-placement figures are never derived from delivery events. An SMTP 250
+  means accepted, not inboxed. Placement comes from seed sends and provider
+  postmaster feeds (Google Postmaster Tools, Microsoft SNDS); anything else is
+  a labelled model, shown as an estimate.
+- The SMTP relay is an OCI container image you run yourself. Workers has no
+  inbound TCP listener, so `smtp.yourdomain.com:587` cannot run on Workers.
+- Resend is a capable marketing product and ships automations, segments,
+  topics, templates and contact properties. The difference is ownership, not a
+  feature gap: MailySend runs in your account, under your licence.
+
+## Docs
+
+- [Docs index](https://mailysend.com/docs): the full API and platform reference.
+- [Quickstart](https://mailysend.com/docs#quickstart): deploy, verify a domain, send.
+- [Domains & DNS](https://mailysend.com/docs#domains): SPF, DKIM and DMARC records.
+- [Authentication](https://mailysend.com/docs#auth): API keys and scopes.
+- [Emails API](https://mailysend.com/docs#api): send, retrieve, cancel, batch.
+- [Batch & scheduling](https://mailysend.com/docs#batch): bulk sends and `scheduled_at`.
+- [Attachments](https://mailysend.com/docs#attachments): per-transport size ceilings.
+- [Idempotency & tags](https://mailysend.com/docs#idempotency): safe retries, filterable tags.
+- [Templates](https://mailysend.com/docs#templates): JSX and handlebars templates.
+- [Audiences & contacts](https://mailysend.com/docs#audiences): lists, properties, consent.
+- [Broadcasts](https://mailysend.com/docs#broadcasts): one-off campaigns.
+- [Automations](https://mailysend.com/docs#automations): branching workflows on Cloudflare Workflows.
+- [Inbound email](https://mailysend.com/docs#inbound): Email Routing, parsing, threading.
+- [Webhooks](https://mailysend.com/docs#webhooks): signed delivery events.
+- [Suppressions](https://mailysend.com/docs#suppressions): bounces, complaints, unsubscribes.
+- [Analytics API](https://mailysend.com/docs#analytics): query your own Analytics Engine data.
+- [Providers](https://mailysend.com/docs#providers): multi-transport config and failover.
+- [SMTP relay](https://mailysend.com/docs#smtp): the self-run container, and its alternative.
+- [SDKs & CLI](https://mailysend.com/docs#sdks): node, python, go, php, ruby, rust and more.
+- [MCP & agents](https://mailysend.com/docs#mcp): agent mailboxes with confirmation.
+- [Errors & rate limits](https://mailysend.com/docs#errors): status codes and backoff.
+
+## Product
+
+- [Home](https://mailysend.com/): what it is, the four-step deploy, the stack.
+- [Deliverability analytics](https://mailysend.com/analytics): placement, DMARC, bounce reasons.
+- [DMARC reports](https://mailysend.com/analytics#dmarc): parsed aggregate reports.
+- [Product tour](https://mailysend.com/dashboard-tour): the dashboard, screen by screen.
+- [Use cases](https://mailysend.com/use-cases): OTP, receipts, newsletters, agents, inbound.
+- [Stack & cost](https://mailysend.com/stack): every Cloudflare line item in dollars.
+- [Cost calculator](https://mailysend.com/stack#calculator): cost by monthly volume.
+- [Worked examples](https://mailysend.com/stack#examples): bills at 10k, 100k and 1M per month.
+- [Pricing](https://mailysend.com/pricing): the software is free; you pay Cloudflare.
+- [What's included](https://mailysend.com/pricing#included): there is no upgrade tier.
+
+## Comparisons
+
+- [Compare & migrate](https://mailysend.com/compare): the matrix, including where we lose.
+- [vs Resend](https://mailysend.com/compare#resend)
+- [vs Amazon SES](https://mailysend.com/compare#ses)
+- [vs SendGrid](https://mailysend.com/compare#sendgrid)
+- [vs Postmark](https://mailysend.com/compare#postmark)
+- [vs Mailgun](https://mailysend.com/compare#mailgun)
+- [Migration guide](https://mailysend.com/compare#migrate): change one line.
+
+## Resources
+
+- [Resources](https://mailysend.com/resources): guides, engineering notes, community.
+- [Self-host guide](https://mailysend.com/resources#selfhost): run it end to end yourself.
+- [Status](https://mailysend.com/resources#status)
+
+## Optional
+
+- [Sign in](https://mailysend.com/sign-in)
+- [Sign up](https://mailysend.com/sign-up)
+- [Privacy](https://mailysend.com/legal/privacy)
+- [Terms](https://mailysend.com/legal/terms)
+- [DPA](https://mailysend.com/legal/dpa)
+- [Full text of the site](https://mailysend.com/llms-full.txt)

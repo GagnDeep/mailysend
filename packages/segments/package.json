@@ -1,0 +1,16 @@
+{
+  "name": "@mailysend/segments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "echo 'segments: source-only'",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mailysend/platform": "workspace:*"
+  }
+}

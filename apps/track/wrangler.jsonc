@@ -1,0 +1,15 @@
+{
+  // The tracking Worker. No D1 binding, on purpose: the token is
+  // self-validating, so this stays a tiny bundle with an invisible cold start
+  // on the path of every image load in every message ever sent.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "mailysend-track",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true, "head_sampling_rate": 0.01 },
+  "vars": { "MS_PUBLIC_URL": "https://mailysend.example.com" },
+  "kv_namespaces": [{ "binding": "CACHE", "id": "PLACEHOLDER" }],
+  "queues": {
+    "producers": [{ "binding": "EVENTS_QUEUE", "queue": "ms-events-norm" }]
+  }
+}

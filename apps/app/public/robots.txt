@@ -1,0 +1,25 @@
+# MailySend — https://mailysend.com
+# The docs are the product's front door, so every public document is open to
+# well-behaved crawlers. The dashboard is on this same origin under /app, and
+# it is per-user: nothing there is a document, and every one of its URLs
+# redirects to sign-in for a crawler anyway.
+
+User-agent: *
+Allow: /
+# Also absent from sitemap.xml, for the same reason.
+Disallow: /app
+Disallow: /v1/
+Disallow: /mcp
+
+# Search-result and preview URLs are the same documents under a query string;
+# indexing them splits the signal for the page they duplicate.
+Disallow: /*?q=
+Disallow: /_serverFn/
+Disallow: /_build/
+
+Sitemap: https://mailysend.com/sitemap.xml
+
+# Retrieval-augmented clients: the two files below are the site in plain text.
+# llms.txt is the map; llms-full.txt is the whole thing.
+# https://mailysend.com/llms.txt
+# https://mailysend.com/llms-full.txt

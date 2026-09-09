@@ -1,0 +1,33 @@
+{
+  "name": "@mailysend/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "The MailySend command line: deploy, tail, send, push templates, migrate off Resend.",
+  "bin": {
+    "mailysend": "./dist/mailysend.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=esm --platform=node --target=node20 --banner:js='#!/usr/bin/env node' --outfile=dist/mailysend.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@babel/parser": "^8.0.4",
+    "@babel/types": "^8.0.4",
+    "@mailysend/contracts": "workspace:*",
+    "@mailysend/core": "workspace:*",
+    "@mailysend/templates": "workspace:*",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "esbuild": "^0.28.2"
+  }
+}

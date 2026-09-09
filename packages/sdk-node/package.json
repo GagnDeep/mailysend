@@ -1,0 +1,57 @@
+{
+  "name": "mailysend",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "The official MailySend SDK. Resend-compatible, dependency-free, runs anywhere fetch does.",
+  "homepage": "https://mailysend.com/docs/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GagnDeep/mailysend.git",
+    "directory": "packages/sdk-node"
+  },
+  "keywords": [
+    "email",
+    "mailysend",
+    "resend",
+    "transactional",
+    "smtp",
+    "cloudflare-workers"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./compat": "./src/compat.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./compat": {
+        "types": "./dist/compat.d.ts",
+        "default": "./dist/compat.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm run build:js && pnpm run build:types",
+    "build:js": "esbuild src/index.ts src/compat.ts --bundle --format=esm --platform=neutral --target=es2022 --outdir=dist",
+    "build:types": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@mailysend/contracts": "workspace:*",
+    "esbuild": "^0.28.2",
+    "zod": "^4.5.4"
+  }
+}

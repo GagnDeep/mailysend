@@ -1,0 +1,16 @@
+/**
+ * The app's only stylesheet.
+ *
+ * `theme.css` already pulls in Tailwind and declares the `@theme` block, the
+ * `ms-*` utilities and the keyframes, so this file exists purely to put the
+ * self-hosted faces in front of it — the fonts have to be declared before the
+ * first paint that uses them, and Tailwind's own layer ordering must not get
+ * between the two.
+ */
+@import '@mailysend/design-tokens/fonts.css';
+@import '@mailysend/design-tokens/theme.css';
+
+/* Tailwind v4 scans source files it can see from the stylesheet. The UI package
+   is a workspace dependency compiled from source, so its class names are only
+   discovered if it is named explicitly. */
+@source '../../../packages/ui/src';

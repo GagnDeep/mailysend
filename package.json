@@ -1,0 +1,38 @@
+{
+  "name": "mailysend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Resend-compatible email platform that runs entirely on Cloudflare Workers.",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' build && pnpm --filter './apps/**' build",
+    "build:node": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:node",
+    "build:cf": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:cf",
+    "start": "pnpm --filter @mailysend/app start",
+    "fonts": "tsx scripts/fetch-fonts.ts",
+    "dev": "pnpm --filter @mailysend/app dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "db:generate": "pnpm --filter @mailysend/db generate",
+    "provision": "tsx scripts/provision.ts",
+    "deploy": "pnpm build && pnpm --filter @mailysend/app deploy && pnpm --filter @mailysend/track deploy"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.0",
+    "@cloudflare/vitest-pool-workers": "^0.10.9",
+    "@cloudflare/workers-types": "^5.20260908.1",
+    "@types/node": "^26.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.130.0"
+  }
+}

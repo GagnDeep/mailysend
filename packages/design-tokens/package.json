@@ -1,0 +1,15 @@
+{
+  "name": "@mailysend/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme.css": "./src/theme.css",
+    "./fonts.css": "./src/fonts.css"
+  },
+  "scripts": {
+    "build": "echo 'design-tokens: source-only'",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

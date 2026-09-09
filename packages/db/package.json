@@ -1,0 +1,22 @@
+{
+  "name": "@mailysend/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "build": "echo 'db: source-only'",
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "drizzle-kit generate && tsx scripts/embed.ts"
+  },
+  "dependencies": {
+    "@mailysend/platform": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
+  }
+}

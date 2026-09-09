@@ -1,0 +1,26 @@
+{
+  "name": "@mailysend/templates",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "echo 'templates: source-only'",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mailysend/contracts": "workspace:*",
+    "handlebars": "^4.7.9",
+    "zod": "^4.5.4"
+  },
+  "peerDependencies": {
+    "mjml": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "mjml": {
+      "optional": true
+    }
+  }
+}
