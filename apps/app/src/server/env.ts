@@ -11,6 +11,7 @@ import type { Analytics, Blob, Kv, Queue, Sql } from '@mailysend/platform'
 export interface Env {
   // --- configuration ------------------------------------------------------
   /** `single` for a self-hosted deployment, `saas` for the hosted product. */
+  /** Defaulted to `single` by `configure()`; absent until then. */
   MS_MODE: 'single' | 'saas'
   MS_PUBLIC_URL: string
   MS_TRACKING_URL?: string

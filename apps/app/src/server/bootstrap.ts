@@ -201,14 +201,20 @@ export async function configure(env: Env, request?: Request): Promise<Env> {
 
   if (!publicUrl) publicUrl = origin || 'http://localhost:8917'
 
+  // Defaulted here rather than pinned in `wrangler.jsonc`, because a var in that
+  // file overwrites the value the operator typed into the deploy form on every
+  // subsequent build — the form stores its answers as secrets, and vars win.
+  const mode = env.MS_MODE ?? 'single'
+
   try {
     env.MS_SECRET = secret
     env.MS_PUBLIC_URL = publicUrl
+    env.MS_MODE = mode
     return env
   } catch {
     // A frozen env is not something any runtime does today, but a copy is a
     // correct answer and a thrown TypeError is not.
-    return { ...env, MS_SECRET: secret, MS_PUBLIC_URL: publicUrl }
+    return { ...env, MS_SECRET: secret, MS_PUBLIC_URL: publicUrl, MS_MODE: mode }
   }
 }
 

@@ -57,21 +57,31 @@ Analytics Engine datasets and the `send_email` binding.
 
 Most of them are created for you. D1, KV, R2 and the Durable Objects are
 provisioned by the Deploy to Cloudflare flow (or by `wrangler deploy`) straight
-from that file. **Queues and the Analytics Engine datasets are not** — an account
-API cannot be driven from a deploy — so a Worker deployed without them starts
-normally and then fails on its first send with a binding error. One idempotent
-command creates them, before or after the first deploy:
+from that file. **Queues are not** — and `wrangler deploy` refuses to deploy a
+Worker that binds a queue which does not exist, so on a clean account the first
+deploy used to fail with `Queue "ms-events-cf" does not exist`.
+
+`build:cf` therefore ends by running `scripts/ensure-queues.mjs`, which creates
+every queue the config names — producers, consumers and the shared dead-letter
+queue — before wrangler validates them. It is idempotent, and it only runs
+inside Workers Builds (`WORKERS_CI=1`) or when you set `MS_ENSURE_QUEUES=1`, so
+building locally never creates resources in your account as a side effect.
+
+If your build token lacks `Queues:Edit` the script says so and names the
+queues, and one idempotent command from your own machine fixes it for good:
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
 npx mailysend provision
 ```
 
-The token needs `Queues:Edit` and `Account Analytics:Read` for that command
-alone, plus `Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit` and
-`Workers R2:Edit` if you deploy with the same token instead of using the button.
-`.github/workflows/deploy.yml` runs provision and deploy in that order on
-`workflow_dispatch` if you would rather it happened in CI.
+Analytics Engine datasets need no provisioning: they are created on first write.
+
+That token needs `Queues:Edit`, plus `Workers Scripts:Edit`, `D1:Edit`,
+`Workers KV:Edit` and `Workers R2:Edit` if you deploy with the same token
+instead of using the button. `.github/workflows/deploy.yml` runs provision and
+deploy in that order on `workflow_dispatch` if you would rather it happened in
+CI.
 
 ## Workers Builds
 

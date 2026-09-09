@@ -24,15 +24,20 @@
     "run_worker_first": ["/v1/*", "/o/*", "/c/*", "/u/*", "/mcp/*"]
   },
 
-  // No MS_PUBLIC_URL here on purpose. A placeholder would *pin* the instance to
-  // that hostname — every tracking pixel, unsubscribe link and canonical tag
-  // minted against a domain nobody owns. Unset, the app learns its own origin
-  // from the first non-local request and stores it; set it only to override.
-  "vars": {
-    "MS_MODE": "single",
-    "MS_DEFAULT_PROVIDER": "cloudflare",
-    "EVENT_DETAIL": "on"
-  },
+  // Deliberately empty.
+  //
+  // No MS_PUBLIC_URL, because a placeholder would *pin* the instance to that
+  // hostname — every tracking pixel, unsubscribe link and canonical tag minted
+  // against a domain nobody owns. Unset, the app learns its own origin from the
+  // first non-local request and stores it; set it only to override.
+  //
+  // And no MS_MODE / MS_DEFAULT_PROVIDER / EVENT_DETAIL either, even though
+  // they are the three fields the Deploy to Cloudflare form asks about. The
+  // form stores its answers as secrets, a var of the same name overwrites a
+  // secret on every deploy, and so listing them here would silently revert the
+  // operator's answers on their next build. All three default in code:
+  // `single`, `cloudflare`, and detail on.
+  "vars": {},
 
   "d1_databases": [
     {

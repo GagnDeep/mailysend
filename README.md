@@ -223,19 +223,26 @@ it is answering, and prints one bootstrap API key to the log. Set `MS_OWNER_EMAI
 want the dashboard sign-in link to go somewhere; everything else can wait until you are
 inside.
 
-**One thing the button cannot do — and we say so rather than let you find out.** Queues
-and the Analytics Engine datasets do not auto-provision, and a Worker without them starts
-fine and then fails on its first send. One idempotent command creates them:
+**Queues are the one resource the button does not create**, and `wrangler deploy` refuses
+to deploy a Worker that binds a queue which does not exist — on a clean account the first
+deploy used to die with `Queue "ms-events-cf" does not exist`. So the build creates them:
+`build:cf` ends by running `scripts/ensure-queues.mjs`, which is idempotent and only acts
+inside Workers Builds (`WORKERS_CI=1`) or when you set `MS_ENSURE_QUEUES=1`, so building
+locally never touches your account. Analytics Engine datasets need nothing — they are
+created on first write.
+
+If the build token lacks `Queues:Edit`, the script names the queues it could not create
+and one command from your own machine fixes it for good:
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-npx mailysend provision      # queues + analytics datasets
+npx mailysend provision
 ```
 
-The token needs `Queues:Edit` and `Account Analytics:Read` for that command, plus
-`Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit` and `Workers R2:Edit` if you also
-deploy with it rather than from the button. `.github/workflows/deploy.yml` runs the same
-two steps on `workflow_dispatch` if you would rather it happened in CI.
+That token needs `Queues:Edit`, plus `Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit`
+and `Workers R2:Edit` if you also deploy with it rather than from the button.
+`.github/workflows/deploy.yml` runs both steps on `workflow_dispatch` if you would rather
+it happened in CI.
 
 **The commands Cloudflare guesses now work.** They did not always: it proposes `pnpm deploy`,
 which never runs the script of that name because `deploy` is one of pnpm's own subcommands
