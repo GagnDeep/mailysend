@@ -271,6 +271,20 @@ export const AnalyticsOverview = z.object({
 })
 export type AnalyticsOverviewRecord = z.infer<typeof AnalyticsOverview>
 
+/**
+ * Placement is not a plain list: every response carries whether the figures
+ * were measured against seed mailboxes or estimated from delivery events, and
+ * the note that explains the difference. Dropping that envelope would be how an
+ * estimate ends up rendered as a measurement.
+ */
+export const PlacementReport = z.object({
+  figures: z.array(PlacementFigure),
+  has_seed_data: z.boolean(),
+  note: z.string().optional(),
+  seed_testing_available: z.boolean().optional(),
+})
+export type PlacementReportRecord = z.infer<typeof PlacementReport>
+
 export type AnalyticsParams = {
   from?: string
   to?: string
@@ -580,10 +594,14 @@ export const createApiClient = (scope: RequestScope) => {
       patch(`/inbound/threads/${id}`, InboundThread, { unread }),
 
     // --- analytics ---------------------------------------------------------
+    // `/dashboard`, not `/overview`: the screens need the series, the two
+    // breakdowns, engagement, placement and the totals for one range, and
+    // taking them from one response is what stops a chart and a total being
+    // computed over ranges that drifted apart between requests.
     analytics: (params: AnalyticsParams = {}) =>
-      get('/analytics/overview', AnalyticsOverview, params),
+      get('/analytics/dashboard', AnalyticsOverview, params),
     placement: (params: AnalyticsParams = {}) =>
-      get('/analytics/placement', list(PlacementFigure), params),
+      get('/analytics/placement', PlacementReport, params),
 
     // --- seed tests --------------------------------------------------------
     listSeedTests: (params: ListParams = {}) =>

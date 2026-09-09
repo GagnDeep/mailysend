@@ -1,0 +1,79 @@
+name: CI
+
+# Runs on every push and pull request, and needs no secrets — so a fork, a
+# clean clone, or the repo the Deploy button creates all go green without any
+# configuration. Deployment is a separate workflow precisely so that a missing
+# Cloudflare token can never make the build look broken.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v5
+        with:
+          # node:sqlite backs the Node target's database, so the CI runtime has
+          # to be the runtime the server actually runs.
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build (Cloudflare target)
+        run: pnpm --filter @mailysend/app build:cf
+
+      - name: Build (Node target)
+        run: pnpm --filter @mailysend/app build:node
+
+      - name: Boot the Node build and probe it
+        # A build that emits files is not the same as a build that serves them.
+        # This is the cheapest possible end-to-end check: start the real
+        # listener, ask for a prerendered page, the dashboard shell and the
+        # OpenAPI document, and fail if any of them is not a 200.
+        run: |
+          MS_SECRET=ci-secret-ci-secret-ci-secret-1234 \
+          MS_DATA_DIR="$RUNNER_TEMP/ms-data" \
+          PORT=8917 node apps/app/node-server.mjs > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS -o /dev/null http://127.0.0.1:8917/ && break
+            sleep 1
+          done
+          set -e
+          for path in / /docs /pricing /app /sitemap.xml /llms.txt /v1/openapi.json; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8917$path")
+            echo "$code $path"
+            [ "$code" = "200" ] || exit 1
+          done
+
+          # The screens parse every response with a Zod schema; this replays
+          # each of those calls against the running server, so a renamed field
+          # fails the build instead of rendering an error card in production.
+          KEY=$(grep -ao 'ms_live_[A-Za-z0-9_-]*' "$RUNNER_TEMP/server.log" | head -1)
+          BASE=http://127.0.0.1:8917 KEY="$KEY" pnpm exec tsx scripts/contract-check.mts
+
+          kill %1

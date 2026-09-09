@@ -159,7 +159,7 @@ function Analytics() {
     ]),
   )
 
-  const placementFigures = placement.data?.data ?? overview.data?.placement
+  const placementFigures = placement.data?.figures ?? overview.data?.placement
   const placementFailed = placement.error && !overview.data?.placement
 
   return (

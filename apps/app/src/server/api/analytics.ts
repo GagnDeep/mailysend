@@ -155,6 +155,151 @@ analytics.get('/overview', async (c) => {
 const privacyAdjustedOpenRate = (delivered: number, opened: number, mppOpened: number): number =>
   rate(Math.max(opened - mppOpened, 0), Math.max(delivered - mppOpened, 0))
 
+/**
+ * `GET /v1/analytics/dashboard`.
+ *
+ * The Overview and Analytics screens draw six things from one range: a series,
+ * two breakdowns, an engagement split, placement, and the totals band. Asking
+ * for them separately means six round trips that can disagree with each other
+ * — a chart drawn from one range and a total from another is a support ticket
+ * nobody can reproduce. This endpoint answers all six from one parsed range.
+ *
+ * It is deliberately shaped for the dashboard rather than for the public API:
+ * the per-resource endpoints above stay as they are documented, and this one is
+ * free to change with the screens that consume it.
+ */
+analytics.get('/dashboard', async (c) => {
+  const ctx = c.get('ctx')
+  const q = new URL(c.req.url).searchParams
+  const range = parseRange(q)
+  const filter = scope(q)
+  const granularity = (q.get('granularity') ?? 'day') as 'hour' | 'day' | 'week' | 'month'
+  const tag = q.get('tag')
+
+  const daily = await ctx.sql
+    .prepare(
+      `SELECT day, ${DAILY_SUMS} FROM rollups_daily
+        WHERE workspace_id = ? AND day >= ? AND day <= ?${filter.clause}
+        GROUP BY day ORDER BY day ASC LIMIT 1000`,
+    )
+    .bind(ctx.workspace.id, range.fromDay, range.toDay, ...filter.args)
+    .all<DailyRow>()
+
+  const buckets =
+    granularity === 'day' || granularity === 'hour'
+      ? daily.results
+      : rollUp(daily.results, granularity)
+
+  const byDomain = await ctx.sql
+    .prepare(
+      `SELECT r.domain_id, d.name AS domain, ${DAILY_SUMS}
+         FROM rollups_daily r
+         LEFT JOIN domains d ON d.id = r.domain_id AND d.workspace_id = r.workspace_id
+        WHERE r.workspace_id = ? AND r.day >= ? AND r.day <= ?
+        GROUP BY r.domain_id ORDER BY SUM(r.sent) DESC LIMIT 20`,
+    )
+    .bind(ctx.workspace.id, range.fromDay, range.toDay)
+    .all<DailyRow & { domain: string | null }>()
+
+  const byTag = await ctx.sql
+    .prepare(
+      `SELECT t.name, t.value,
+              COUNT(*) AS sent,
+              SUM(CASE WHEN m.delivered_at IS NOT NULL THEN 1 ELSE 0 END) AS delivered,
+              SUM(CASE WHEN m.status = 'bounced' THEN 1 ELSE 0 END) AS bounced,
+              SUM(CASE WHEN m.open_count > 0 THEN 1 ELSE 0 END) AS opened,
+              SUM(CASE WHEN m.click_count > 0 THEN 1 ELSE 0 END) AS clicked
+         FROM message_tags t
+         JOIN messages m ON m.id = t.message_id AND m.workspace_id = t.workspace_id
+        WHERE t.workspace_id = ? AND m.id >= ? AND m.id <= ? AND m.environment = ?
+          ${tag ? 'AND t.name = ?' : ''}
+        GROUP BY t.name, t.value
+        ORDER BY sent DESC LIMIT 20`,
+    )
+    .bind(
+      ctx.workspace.id,
+      idLowerBound('email', range.from),
+      idUpperBound('email', range.to),
+      ctx.actor.environment,
+      ...(tag ? [tag] : []),
+    )
+    .all<{
+      name: string
+      value: string
+      sent: number
+      delivered: number
+      bounced: number
+      opened: number
+      clicked: number
+    }>()
+
+  const sum = (field: (typeof SUMMABLE)[number]): number =>
+    daily.results.reduce((total, row) => total + num(row[field]), 0)
+
+  const delivered = sum('delivered')
+  const opened = sum('opened')
+  const mppOpened = sum('mpp_opened')
+  const botOpened = sum('bot_opened')
+  const clicked = sum('clicked')
+  const humanOpens = Math.max(opened - mppOpened - botOpened, 0)
+
+  return json({
+    object: 'analytics_dashboard',
+    from: range.fromDay,
+    to: range.toDay,
+    granularity,
+    timeseries: buckets.map((row) => ({
+      bucket: row.day,
+      sent: num(row.sent),
+      delivered: num(row.delivered),
+      bounced: num(row.bounced),
+      complained: num(row.complained),
+      opened: num(row.opened),
+      clicked: num(row.clicked),
+    })),
+    by_domain: byDomain.results.map((row) => ({
+      // The receiving domain is the label a person reads; the id is only useful
+      // to a filter, and an unattributed rollup still has to appear somewhere.
+      key: row.domain ?? row.domain_id ?? 'unattributed',
+      sent: num(row.sent),
+      delivered: num(row.delivered),
+      bounced: num(row.bounced),
+      opened: num(row.opened),
+      clicked: num(row.clicked),
+    })),
+    by_tag: byTag.results.map((row) => ({
+      key: row.value ? `${row.name}:${row.value}` : row.name,
+      sent: num(row.sent),
+      delivered: num(row.delivered),
+      bounced: num(row.bounced),
+      opened: num(row.opened),
+      clicked: num(row.clicked),
+    })),
+    // Three classes, always present, so a chart never redraws with a different
+    // number of series as data arrives.
+    engagement: [
+      { audience_class: 'human', opens: humanOpens, clicks: clicked },
+      { audience_class: 'mpp', opens: mppOpened, clicks: 0 },
+      { audience_class: 'bot', opens: botOpened, clicks: 0 },
+    ],
+    placement: await placementFigures(ctx, range, q.get('domain_id')),
+    totals: {
+      sent: sum('sent'),
+      delivered,
+      bounced: sum('bounced'),
+      complained: sum('complained'),
+      opened,
+      clicked,
+      unsubscribed: sum('unsubscribed'),
+      // Both sides of the privacy-adjusted ratio, so the screen does the
+      // division rather than inventing its own population.
+      human_opens: Math.max(opened - mppOpened, 0),
+      human_delivered: Math.max(delivered - mppOpened, 0),
+    },
+    source: 'rollups_daily',
+  })
+})
+
 analytics.get('/timeseries', async (c) => {
   const ctx = c.get('ctx')
   const q = new URL(c.req.url).searchParams
@@ -521,12 +666,17 @@ const providerOf = (recipient: string): string => {
  * confident 96.1% assembled from acceptances, is the single most dishonest
  * thing a deliverability product can do.
  */
-analytics.get('/placement', async (c) => {
-  const ctx = c.get('ctx')
-  const q = new URL(c.req.url).searchParams
-  const range = parseRange(q)
-  const domainId = q.get('domain_id')
+/**
+ * Seed results if any exist in the range, estimates otherwise — the one
+ * resolution order, shared by `/placement` and the dashboard payload, so the
+ * two screens can never disagree about which number is measured.
+ */
+async function placementFigures(ctx: Ctx, range: Range, domainId: string | null) {
+  const seeded = await seedResults(ctx, range, domainId)
+  return seeded.length > 0 ? seeded : await estimatePlacement(ctx, range, domainId)
+}
 
+async function seedResults(ctx: Ctx, range: Range, domainId: string | null) {
   const seeded = await ctx.sql
     .prepare(
       `SELECT recipient_provider, inbox_percent, spam_percent, missing_percent, source,
@@ -543,13 +693,23 @@ analytics.get('/placement', async (c) => {
       ...(domainId ? [domainId] : []),
     )
     .all<PlacementRow>()
+  return seeded.results.map(toFigure)
+}
 
-  if (seeded.results.length > 0) {
+analytics.get('/placement', async (c) => {
+  const ctx = c.get('ctx')
+  const q = new URL(c.req.url).searchParams
+  const range = parseRange(q)
+  const domainId = q.get('domain_id')
+
+  const seeded = await seedResults(ctx, range, domainId)
+
+  if (seeded.length > 0) {
     return json({
       object: 'placement_report',
       from: range.fromDay,
       to: range.toDay,
-      figures: seeded.results.map(toFigure),
+      figures: seeded,
       has_seed_data: true,
       note: 'Measured against seed mailboxes. Seed panels are a sample of real inboxes, not the whole audience.',
     })

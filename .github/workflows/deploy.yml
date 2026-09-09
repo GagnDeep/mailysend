@@ -4,10 +4,14 @@ name: Deploy
 # creates the repo and the bindings it can; this workflow creates the ones it
 # cannot (queues, datasets) and only then deploys — so the first deploy produces
 # a working system rather than a Worker that fails on its first send.
+# Manual by default. A repo created by the Deploy button has the Cloudflare
+# secrets; a fork or a clone does not, and a workflow that fails on every push
+# for a missing token teaches people to ignore the red X. `deploy-on-push`
+# turns the automatic path on once the secrets are actually set.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  push:
+    branches: [deploy-on-push]
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -20,6 +24,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+
+      - name: Require Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Set the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets, then run this workflow again."
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v4
         with:
@@ -56,4 +70,7 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: pnpm exec wrangler deploy --config apps/app/wrangler.jsonc
+        # The Cloudflare Vite plugin writes the deployable config next to the
+        # build output, with the asset directory already resolved. Deploying
+        # from `apps/app/wrangler.jsonc` would upload the source entry instead.
+        run: pnpm exec wrangler deploy --config apps/app/.output-cf/server/wrangler.json
