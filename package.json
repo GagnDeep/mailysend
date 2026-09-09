@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm run build:cf",
     "build:node": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:node",
-    "build:cf": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:cf",
+    "build:cf": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:cf && node scripts/emit-root-wrangler.mjs",
     "start": "pnpm --filter @mailysend/app start",
     "fonts": "tsx scripts/fetch-fonts.ts",
     "dev": "pnpm --filter @mailysend/app dev",

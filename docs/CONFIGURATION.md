@@ -76,25 +76,45 @@ alone, plus `Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit` and
 ## Workers Builds
 
 Cloudflare infers the build and deploy commands from the repository, and its
-inference is wrong here in one specific way: it proposes `pnpm deploy`, and
-`deploy` is one of pnpm's own subcommands, so the built-in wins and the script
-of that name never runs. It fails with
-`ERR_PNPM_INVALID_DEPLOY_TARGET: This command requires one parameter`. No script
-in this repository is called `deploy` any more, precisely so that nothing can
-land on that trap again.
+inference used to be wrong here in two ways. Both are now fixed in the repo, so
+**the inferred commands work and there is nothing to change in the dashboard.**
+What follows is why, because the failures are silent-looking and worth
+recognising.
 
-Under **Workers → your Worker → Settings → Builds**:
+It proposes `pnpm deploy`, and `deploy` is one of pnpm's own subcommands, so
+the built-in wins and the script of that name never runs — it fails with
+`ERR_PNPM_INVALID_DEPLOY_TARGET: This command requires one parameter`. No
+script in this repository is called `deploy` any more, precisely so that
+nothing can land on that trap again.
+
+It then proposes a bare `npx wrangler deploy`, run from the repository root. In
+a pnpm workspace with no config at the root, wrangler cannot tell which package
+is the Worker and stops before doing anything:
+
+```
+✘ [ERROR] The Cloudflare application detection logic has been run in the root
+of a workspace instead of targeting a specific project.
+```
+
+So `build:cf` ends by writing a root `wrangler.json` (`scripts/emit-root-wrangler.mjs`)
+— a copy of the config Vite generates next to the bundle, with its two path
+fields rewritten to be root-relative. Bindings still have exactly one source of
+truth: the root file is regenerated from the generated one on every build, is
+build output, and is gitignored.
+
+If you would rather be explicit, under **Workers → your Worker → Settings → Builds**:
 
 | | |
 |---|---|
 | Build command | `pnpm run build:cf` |
 | Deploy command | `npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json` |
 
-Two details are load-bearing. `build:cf` rather than `build:node`: the Node
-target emits `.output/server/server.js`, a socket server that is not a Worker.
-And `-c` pointing into `.output-cf/server/`: Vite generates the wrangler config
-it deploys from, next to the bundle. `apps/app/wrangler.jsonc` is the *input* to
-that generation — deploying it directly points `main` at TypeScript source.
+Two details there are load-bearing. `build:cf` rather than `build:node`: the
+Node target emits `.output/server/server.js`, a socket server that is not a
+Worker. And `-c` pointing into `.output-cf/server/`: Vite generates the wrangler
+config it deploys from, next to the bundle. `apps/app/wrangler.jsonc` is the
+*input* to that generation — deploying it directly points `main` at TypeScript
+source.
 
 The root `build` script is an alias for `build:cf`, so the build command works
 whether Cloudflare guesses `pnpm build` or you set it explicitly.
