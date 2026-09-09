@@ -139,10 +139,22 @@ export class MemoryApprovals implements ConfirmationApprovals {
 
 export class MemoryConsumedTokens implements ConsumedTokens {
   #spent = new Map<string, number>()
+  #now: () => number
+
+  /**
+   * Takes the same clock the gate mints with. Sweeping on `Date.now()` while
+   * expiries are stamped from an injected clock silently drops entries the
+   * moment the two disagree — and a dropped entry is a token that can be
+   * replayed, so the single-use guarantee would evaporate rather than fail
+   * loudly.
+   */
+  constructor(options: { now?: () => number } = {}) {
+    this.#now = options.now ?? Date.now
+  }
 
   async consume(token: string, expiresAt: number): Promise<boolean> {
     // Expired entries are dropped opportunistically; nothing here needs a timer.
-    const now = Date.now()
+    const now = this.#now()
     for (const [key, at] of this.#spent) if (at < now) this.#spent.delete(key)
     if (this.#spent.has(token)) return false
     this.#spent.set(token, expiresAt)
@@ -179,9 +191,9 @@ export class ConfirmationGate {
   }) {
     this.#secret = options.secret
     this.#approvals = options.approvals ?? new MemoryApprovals()
-    this.#consumed = options.consumed ?? new MemoryConsumedTokens()
     this.#ttlMs = (options.ttlSeconds ?? DEFAULT_CONFIRMATION_TTL_SECONDS) * 1000
     this.#now = options.now ?? Date.now
+    this.#consumed = options.consumed ?? new MemoryConsumedTokens({ now: this.#now })
   }
 
   get approvals(): ConfirmationApprovals {

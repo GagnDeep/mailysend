@@ -10,7 +10,7 @@
     "build:cf": "MS_TARGET=cloudflare vite build && tsx ../../scripts/llms-full.ts .output-cf/client",
     "start": "node node-server.mjs",
     "preview": "pnpm run build:cf && wrangler dev -c .output-cf/server/wrangler.json",
-    "deploy": "pnpm run build:cf && wrangler deploy -c .output-cf/server/wrangler.json",
+    "deploy:cf": "pnpm run build:cf && wrangler deploy -c .output-cf/server/wrangler.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "wrangler types"
   },

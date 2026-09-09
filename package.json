@@ -10,7 +10,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/**' build && pnpm --filter './apps/**' build",
+    "build": "pnpm run build:cf",
     "build:node": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:node",
     "build:cf": "pnpm -r --filter './packages/**' build && pnpm --filter @mailysend/app build:cf",
     "start": "pnpm --filter @mailysend/app start",
@@ -23,7 +23,7 @@
     "format": "biome format --write .",
     "db:generate": "pnpm --filter @mailysend/db generate",
     "provision": "tsx scripts/provision.ts",
-    "deploy": "pnpm build && pnpm --filter @mailysend/app deploy && pnpm --filter @mailysend/track deploy"
+    "deploy:cf": "pnpm --filter @mailysend/app run deploy:cf && pnpm --filter @mailysend/track run deploy:cf"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",

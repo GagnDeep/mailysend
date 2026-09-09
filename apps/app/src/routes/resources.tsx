@@ -435,9 +435,9 @@ function ResourcesPage() {
             <DeployTerminal verbose />
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
               Or clone the repo and run{' '}
-              <code className="font-mono text-[13px] text-ink">pnpm deploy</code> with your own
-              wrangler config — it builds both Workers and hands the upload to wrangler. Reviewable,
-              scriptable, CI-friendly. Budget {DEPLOY_DURATION_LONG}.
+              <code className="font-mono text-[13px] text-ink">pnpm run deploy:cf</code> with your
+              own wrangler config — it builds both Workers and hands the upload to wrangler.
+              Reviewable, scriptable, CI-friendly. Budget {DEPLOY_DURATION_LONG}.
             </p>
           </Card>
         </div>

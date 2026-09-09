@@ -1,6 +1,6 @@
 import { hmacHex } from '@mailysend/core'
 import { describe, expect, it } from 'vitest'
-import { ConfirmationGate, canonicalize } from '../src/confirmation.ts'
+import { ConfirmationGate, canonicalize, MemoryConsumedTokens } from '../src/confirmation.ts'
 import { harness, ids, SEND_ARGS } from './harness.ts'
 
 const approve = async (h: Awaited<ReturnType<typeof harness>>, token: string) =>
@@ -259,5 +259,23 @@ describe('the digest', () => {
     const a = await hmacHex('server-side-secret-never-shared', 'payload')
     const b = await hmacHex('a-secret-the-agent-picked', 'payload')
     expect(a).not.toBe(b)
+  })
+})
+
+describe('the spent-token store', () => {
+  it('sweeps on the clock it was given, not on wall time', async () => {
+    // The gate's clock is often *not* Date.now(): tests freeze it, and a Worker
+    // may replay a queue message minted earlier. Sweeping on wall time drops
+    // the entry the moment the two disagree, which turns a spent token back
+    // into a spendable one.
+    const clock = { value: Date.parse('2000-01-01T00:00:00.000Z') }
+    const spent = new MemoryConsumedTokens({ now: () => clock.value })
+    const exp = clock.value + 600_000
+
+    expect(await spent.consume('tok', exp)).toBe(true)
+    expect(await spent.consume('tok', exp)).toBe(false)
+
+    clock.value = exp + 1
+    expect(await spent.consume('tok', exp)).toBe(true)
   })
 })

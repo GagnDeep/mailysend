@@ -237,6 +237,19 @@ The token needs `Queues:Edit` and `Account Analytics:Read` for that command, plu
 deploy with it rather than from the button. `.github/workflows/deploy.yml` runs the same
 two steps on `workflow_dispatch` if you would rather it happened in CI.
 
+**Check the two commands in Workers Builds.** Cloudflare guesses them from the repo, and
+its guess for the deploy step is `pnpm deploy` — which never runs the script of that name,
+because `deploy` is one of pnpm's own subcommands and the built-in always wins. Under
+**Workers → your Worker → Settings → Builds**, they should read:
+
+| | |
+|---|---|
+| Build command | `pnpm run build:cf` |
+| Deploy command | `npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json` |
+
+The `-c` matters: the Worker is built by Vite, and the wrangler config it deploys from is
+the one Vite generates next to the bundle, not the `apps/app/wrangler.jsonc` you edit.
+
 ### Path 2 — a Node server (no Cloudflare account)
 
 `node:sqlite` backs the database, the filesystem backs blobs, and in-process actors back

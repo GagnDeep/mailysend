@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy:cf": "wrangler deploy",
     "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

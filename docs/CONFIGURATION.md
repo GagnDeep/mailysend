@@ -73,6 +73,32 @@ alone, plus `Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit` and
 `.github/workflows/deploy.yml` runs provision and deploy in that order on
 `workflow_dispatch` if you would rather it happened in CI.
 
+## Workers Builds
+
+Cloudflare infers the build and deploy commands from the repository, and its
+inference is wrong here in one specific way: it proposes `pnpm deploy`, and
+`deploy` is one of pnpm's own subcommands, so the built-in wins and the script
+of that name never runs. It fails with
+`ERR_PNPM_INVALID_DEPLOY_TARGET: This command requires one parameter`. No script
+in this repository is called `deploy` any more, precisely so that nothing can
+land on that trap again.
+
+Under **Workers → your Worker → Settings → Builds**:
+
+| | |
+|---|---|
+| Build command | `pnpm run build:cf` |
+| Deploy command | `npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json` |
+
+Two details are load-bearing. `build:cf` rather than `build:node`: the Node
+target emits `.output/server/server.js`, a socket server that is not a Worker.
+And `-c` pointing into `.output-cf/server/`: Vite generates the wrangler config
+it deploys from, next to the bundle. `apps/app/wrangler.jsonc` is the *input* to
+that generation — deploying it directly points `main` at TypeScript source.
+
+The root `build` script is an alias for `build:cf`, so the build command works
+whether Cloudflare guesses `pnpm build` or you set it explicitly.
+
 `MS_PUBLIC_URL` is deliberately **not** set in `wrangler.jsonc`. A placeholder
 there would pin the instance to a hostname nobody owns — every tracking pixel,
 unsubscribe link and canonical tag minted against it — so the value is learned
