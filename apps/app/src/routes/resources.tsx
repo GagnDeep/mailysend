@@ -403,7 +403,13 @@ function ResourcesPage() {
           lede="The deploy flow provisions every binding MailySend needs, sets your secrets, writes the DNS records if your domain is on Cloudflare, and puts the dashboard behind Cloudflare Access. Nothing is sent to us — there is no us in the path."
         />
 
-        <div className="mt-10 grid gap-5 lg:grid-cols-2">
+        {/*
+          `grid-cols-1` rather than the implicit single column: an implicit
+          track is sized to its items’ min-content, and the terminal in the
+          second card is wider than a phone, so the row grew past the viewport
+          instead of the terminal scrolling inside its own box.
+        */}
+        <div className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card className="flex flex-col gap-4 p-6">
             <Eyebrow>FROM THE BROWSER</Eyebrow>
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
@@ -474,7 +480,7 @@ function ResourcesPage() {
           {CHANGELOG.map((entry) => (
             <li
               key={entry.version}
-              className="grid gap-x-8 gap-y-2 rounded-tile border border-line bg-card p-5 md:grid-cols-[minmax(0,300px)_1fr]"
+              className="grid grid-cols-1 gap-x-8 gap-y-2 rounded-tile border border-line bg-card p-5 md:grid-cols-[minmax(0,300px)_1fr]"
             >
               <div>
                 <div className="ms-num font-mono text-[12px] text-muted-2">
@@ -508,7 +514,7 @@ function ResourcesPage() {
 
       <Section id="blog" className="scroll-mt-24 py-16 sm:py-20">
         <h2 className="ms-display-2 m-0">Engineering notes</h2>
-        <div className="mt-8 grid gap-5 md:grid-cols-3">
+        <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-3">
           {NOTES.map((note) => (
             <article key={note.title} className="rounded-tile border border-line bg-card p-6">
               <Eyebrow>{note.section}</Eyebrow>

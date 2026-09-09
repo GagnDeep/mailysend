@@ -132,7 +132,7 @@ function DashboardTourPage() {
                   />
                 ))}
               </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <Card className="p-4">
                   <TileTitle>Top template</TileTitle>
                   <p className="mt-1.5 text-[13.5px] text-muted">
@@ -194,7 +194,7 @@ function DashboardTourPage() {
             </TabsContent>
 
             <TabsContent value="broadcasts" className="p-[clamp(18px,3vw,28px)]">
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <Card className="p-5">
                   <div className="flex items-center justify-between gap-3">
                     <b className="text-[15.5px]">September changelog</b>
@@ -281,7 +281,7 @@ AND country IN ('DE','FR')`}
             </TabsContent>
 
             <TabsContent value="inbox" className="p-[clamp(18px,3vw,28px)]">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,280px)_1fr]">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,280px)_1fr]">
                 <Card className="p-4">
                   <div className="font-mono text-[12.5px] text-muted">support@acme.dev</div>
                   <ul className="mt-3 flex list-none flex-col gap-1 p-0">
@@ -341,7 +341,7 @@ AND country IN ('DE','FR')`}
             </TabsContent>
 
             <TabsContent value="domains" className="p-[clamp(18px,3vw,28px)]">
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <Card className="p-5">
                   <div className="flex items-center justify-between gap-3">
                     <b className="text-[15.5px]">acme.dev</b>
@@ -398,7 +398,7 @@ AND country IN ('DE','FR')`}
       </Section>
 
       <Section id="principles" innerClassName="pb-[clamp(56px,7vw,88px)]">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="p-5">
             <Eyebrow wide>THE RULE WE DESIGN TO</Eyebrow>
             <div className="mt-2 text-[15px] font-semibold -tracking-[0.01em]">

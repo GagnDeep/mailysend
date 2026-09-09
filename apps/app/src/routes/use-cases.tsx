@@ -233,7 +233,7 @@ function UseCasesPage() {
           title="Product notifications & digests"
           lede="Mentions, comments, alerts, weekly summaries. The volume that makes per-email pricing hurt, and the category where bundling saves both money and inboxes."
         />
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
+        <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="p-5">
             <div className={CARD_TITLE}>Digest windows in a Durable Object</div>
             <p className={CARD_BODY}>
@@ -328,7 +328,7 @@ function UseCasesPage() {
           title="Support inbox & reply-by-email"
           lede="Receiving is free on Cloudflare Email Routing, so “email us back” stops being a feature request. Threads, attachments and search live in a Durable Object per mailbox."
         />
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
+        <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="p-5">
             <div className={CARD_TITLE}>Sub-addressing</div>
             <p className={CARD_BODY}>

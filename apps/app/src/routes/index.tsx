@@ -464,7 +464,14 @@ function HomePage() {
   return (
     <PageShell>
       <Section innerClassName="flex flex-col items-center gap-12 pt-[84px] pb-11 text-center">
-        <div className="flex min-w-0 max-w-[920px] flex-col items-center">
+        {/*
+          `w-full` is load-bearing, not decoration: as a flex item under
+          `items-center` the column is sized to its content, so on a phone the
+          hero grew past the viewport and the display type was clipped on both
+          sides. Filling the track and capping at 920px keeps the desktop
+          measure and lets the mobile one shrink.
+        */}
+        <div className="flex w-full min-w-0 max-w-[920px] flex-col items-center">
           <Pill className="px-3.5 py-[7px] text-[11.5px] tracking-[0.08em]">
             <StatusDot tone="accent" size={6} pulse />
             OPEN SOURCE · MIT · CLOUDFLARE WORKERS

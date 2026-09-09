@@ -467,7 +467,7 @@ function DocsPage() {
               webhook names here are the ones you know. Everything is MIT licensed, so you can read
               the source, fork it, or deploy the platform into your own Cloudflare account.
             </Lede>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 ['BASE URL', 'api.mailysend.com/v1'],
                 ['AUTH', 'Bearer ms_live_…'],
