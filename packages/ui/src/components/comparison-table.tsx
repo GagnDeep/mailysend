@@ -86,7 +86,7 @@ export const ComparisonTable = ({
   columns,
   rows,
   minWidth = 860,
-  labelColumn = 'minmax(170px, 1.5fr)',
+  labelColumn,
   className,
   caption,
 }: ComparisonTableProps) => (
@@ -102,7 +102,11 @@ export const ComparisonTable = ({
       className="grid text-[14px]"
       style={{
         minWidth,
-        gridTemplateColumns: `${labelColumn} repeat(${columns.length}, minmax(104px, 1fr))`,
+        // An empty string is not the same as omitted, and a default parameter
+        // does not catch it: passing `labelColumn=""` dropped the whole label
+        // track, shifting every cell one column left so each row was labelled
+        // with its neighbour's value.
+        gridTemplateColumns: `${labelColumn || 'minmax(170px, 1.5fr)'} repeat(${columns.length}, minmax(104px, 1fr))`,
       }}
     >
       <div role="row" className="contents">

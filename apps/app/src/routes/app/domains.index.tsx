@@ -64,8 +64,13 @@ const AuthMark = ({ label, state }: { label: string; state: boolean | undefined 
   )
 }
 
+/**
+ * Three states, not two. Null and undefined both mean nobody has read DNS for
+ * this domain yet, which must not render as a tick — a domain that has never
+ * been checked would otherwise claim a DMARC policy it may not have.
+ */
 const dmarcState = (domain: DomainRecord): boolean | undefined => {
-  if (domain.dmarc_policy === undefined) return undefined
+  if (domain.dmarc_policy === undefined || domain.dmarc_policy === null) return undefined
   return domain.dmarc_policy !== 'missing'
 }
 

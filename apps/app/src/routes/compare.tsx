@@ -221,7 +221,7 @@ function ComparePage() {
         <ComparisonTable
           columns={COLUMNS}
           rows={ROWS}
-          labelColumn=""
+          labelColumn="minmax(190px, 1.6fr)"
           minWidth={860}
           caption="MailySend compared with Resend, Amazon SES, SendGrid and Postmark. Prices are list prices for 100,000 emails per month as of September 2026."
         />
