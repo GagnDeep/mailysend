@@ -26,12 +26,16 @@ export async function migrate(
   sql: Sql,
   migrations: Migration[] = MIGRATIONS,
 ): Promise<MigrateResult> {
-  await sql.exec(
-    `CREATE TABLE IF NOT EXISTS _migrations (
-       name TEXT PRIMARY KEY,
-       applied_at TEXT NOT NULL
-     )`,
-  )
+  // `prepare().run()`, not `exec()`, and on one line. D1's `exec` splits its
+  // input on newlines and demands a complete statement per line, so the pretty
+  // multi-line form here failed with `incomplete input` against D1 while
+  // working perfectly against node:sqlite — the bootstrap migration ran on
+  // Node and threw on every single Cloudflare request.
+  await sql
+    .prepare(
+      'CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)',
+    )
+    .run()
 
   const { results } = await sql.prepare('SELECT name FROM _migrations').all<{ name: string }>()
   const done = new Set(results.map((r) => r.name))

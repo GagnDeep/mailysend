@@ -481,7 +481,7 @@ deployment send on its very first request.
 pnpm install
 pnpm dev            # vite dev on :8917
 pnpm typecheck
-pnpm test           # 762 tests
+pnpm test           # 764 tests
 pnpm lint
 pnpm --filter @mailysend/app preview   # wrangler dev, on Miniflare
 ```

@@ -105,7 +105,12 @@ export default defineConfig({
         // nineteen per-user dashboard screens into both the static output and
         // sitemap.xml. They must not be cached and must not be indexed.
         autoStaticPathsDiscovery: false,
-        failOnError: false,
+        // A prerender that throws must break the build. With this false, a
+        // server error on every route produced "Prerendered 0 pages", a zero
+        // exit, and a deploy whose marketing site had no static HTML at all —
+        // the entire SEO argument, gone silently. It stayed hidden until the
+        // Cloudflare build failed two steps later for a different reason.
+        failOnError: true,
         concurrency: 4,
       },
       pages: PRERENDER_ROUTES.map((path) => ({
