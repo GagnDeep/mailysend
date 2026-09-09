@@ -39,21 +39,27 @@
   // `single`, `cloudflare`, and detail on.
   "vars": {},
 
+  // No `database_id` and no KV `id` anywhere below, deliberately. A generated
+  // id cannot be committed, and a literal placeholder is worse than nothing:
+  // wrangler validates bindings before it uploads, so `"id": "PLACEHOLDER"`
+  // failed the deploy outright with `KV namespace 'PLACEHOLDER' is not valid`.
+  // Omitted, the resource is created — by `scripts/ensure-resources.mjs` during
+  // the build, which then writes the real ids into the config wrangler
+  // deploys, and by wrangler's own provisioning if that could not run.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mailysend",
-      "database_id": "PLACEHOLDER",
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
 
   "kv_namespaces": [
-    { "binding": "CACHE", "id": "PLACEHOLDER" },
+    { "binding": "CACHE" },
     // Separate from CACHE deliberately: suppressions are permanent and
     // authoritative-for-reads, and must never share an eviction story with a
     // 300-second API-key cache.
-    { "binding": "SUPPRESSIONS", "id": "PLACEHOLDER" }
+    { "binding": "SUPPRESSIONS" }
   ],
 
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "mailysend" }],

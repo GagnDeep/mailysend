@@ -37,6 +37,11 @@ const fromRoot = (p) => relative(root, resolve(serverDir, p)).split('\\').join('
 
 config.main = fromRoot(config.main)
 if (config.assets?.directory) config.assets.directory = fromRoot(config.assets.directory)
+// Only read by `wrangler d1 migrations`, never by deploy — but a path that
+// resolves to nothing from here would be a trap for whoever runs that next.
+for (const database of config.d1_databases ?? []) {
+  if (database.migrations_dir) database.migrations_dir = fromRoot(database.migrations_dir)
+}
 
 const out = join(root, 'wrangler.json')
 mkdirSync(dirname(out), { recursive: true })

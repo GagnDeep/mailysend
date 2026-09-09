@@ -212,8 +212,9 @@ in the product ends in "contact support".
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/GagnDeep/mailysend)
 
-The button forks the repo, creates the D1 database, the KV namespaces and the R2 bucket
-from `apps/app/wrangler.jsonc`, then builds and deploys.
+The button forks the repo, connects it to Workers Builds, then builds and deploys. The
+build creates the account resources the Worker binds — see below; the button itself
+provisions less than its documentation implies.
 
 **Nothing on the deploy form is required.** Every variable it offers is optional and
 already filled in, because there is nothing you need to know before the first boot: on
@@ -223,16 +224,18 @@ it is answering, and prints one bootstrap API key to the log. Set `MS_OWNER_EMAI
 want the dashboard sign-in link to go somewhere; everything else can wait until you are
 inside.
 
-**Queues are the one resource the button does not create**, and `wrangler deploy` refuses
-to deploy a Worker that binds a queue which does not exist — on a clean account the first
-deploy used to die with `Queue "ms-events-cf" does not exist`. So the build creates them:
-`build:cf` ends by running `scripts/ensure-queues.mjs`, which is idempotent and only acts
-inside Workers Builds (`WORKERS_CI=1`) or when you set `MS_ENSURE_QUEUES=1`, so building
-locally never touches your account. Analytics Engine datasets need nothing — they are
-created on first write.
+**The build creates what the button does not.** `wrangler deploy` validates every binding
+before it uploads, so a missing queue or namespace is a failed deploy rather than a
+degraded Worker — a clean account used to fail one resource at a time. `build:cf` therefore
+ends by running `scripts/ensure-resources.mjs`, which creates the twelve queues, the R2
+bucket, the D1 database and the two KV namespaces, then writes the generated D1 and KV ids
+into the config wrangler deploys. It matches by name and creates only what is missing, so
+every build after the first is a no-op — which matters, because re-creating `SUPPRESSIONS`
+rather than reusing it would silently empty it. It acts only inside Workers Builds
+(`WORKERS_CI=1`) or under `MS_ENSURE_RESOURCES=1`, so building locally never touches your
+account. Analytics Engine datasets need nothing; they are created on first write.
 
-If the build token lacks `Queues:Edit`, the script names the queues it could not create
-and one command from your own machine fixes it for good:
+To do it yourself instead, from your own machine:
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...

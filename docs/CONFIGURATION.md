@@ -55,27 +55,39 @@ On Cloudflare these come from `apps/app/wrangler.jsonc`: `DB` (D1), `CACHE` and
 `SUPPRESSIONS` (KV), `BUCKET` (R2), ten queues, ten Durable Object classes, two
 Analytics Engine datasets and the `send_email` binding.
 
-Most of them are created for you. D1, KV, R2 and the Durable Objects are
-provisioned by the Deploy to Cloudflare flow (or by `wrangler deploy`) straight
-from that file. **Queues are not** — and `wrangler deploy` refuses to deploy a
-Worker that binds a queue which does not exist, so on a clean account the first
-deploy used to fail with `Queue "ms-events-cf" does not exist`.
+None of them exist on a fresh account, and `wrangler deploy` validates every
+binding *before* it uploads — so a missing resource is not a degraded Worker,
+it is a failed deploy, one resource at a time: `Queue "ms-events-cf" does not
+exist`, then `KV namespace 'PLACEHOLDER' is not valid`.
 
-`build:cf` therefore ends by running `scripts/ensure-queues.mjs`, which creates
-every queue the config names — producers, consumers and the shared dead-letter
-queue — before wrangler validates them. It is idempotent, and it only runs
-inside Workers Builds (`WORKERS_CI=1`) or when you set `MS_ENSURE_QUEUES=1`, so
-building locally never creates resources in your account as a side effect.
+So `build:cf` ends by running `scripts/ensure-resources.mjs`, which creates the
+twelve queues, the R2 bucket, the D1 database and the two KV namespaces, and
+then writes the D1 and KV ids — which are generated and so cannot be committed —
+into the config wrangler deploys. Everything is matched by name and created
+only when missing, so every build after the first is a no-op. That property is
+load-bearing: re-creating `SUPPRESSIONS` instead of reusing it would silently
+empty the one list that must never be lost.
 
-If your build token lacks `Queues:Edit` the script says so and names the
-queues, and one idempotent command from your own machine fixes it for good:
+It runs only inside Workers Builds (`WORKERS_CI=1`) or when you set
+`MS_ENSURE_RESOURCES=1`, so building locally never creates resources in your
+account as a side effect. If the build token cannot create something the script
+does not fail the build; it leaves the id out, which is exactly the shape
+wrangler's own automatic provisioning expects, and the deploy gets a second
+chance to create it.
+
+This is also why no `database_id` or KV `id` appears in `wrangler.jsonc`. A
+generated id cannot be committed, and a literal placeholder is worse than
+omitting one — it passes JSON validation and fails the deploy.
+
+Analytics Engine datasets need no provisioning: they are created on first write.
+
+If you would rather do it yourself, one idempotent command covers the same
+ground:
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
 npx mailysend provision
 ```
-
-Analytics Engine datasets need no provisioning: they are created on first write.
 
 That token needs `Queues:Edit`, plus `Workers Scripts:Edit`, `D1:Edit`,
 `Workers KV:Edit` and `Workers R2:Edit` if you deploy with the same token

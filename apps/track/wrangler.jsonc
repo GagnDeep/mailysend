@@ -12,7 +12,10 @@
   // preference routes are forwarded to. This Worker is optional — the app
   // serves /o, /c and /u itself unless you split them out.
   "vars": { "MS_PUBLIC_URL": "https://mailysend.example.com" },
-  "kv_namespaces": [{ "binding": "CACHE", "id": "PLACEHOLDER" }],
+  // No id: a literal placeholder fails wrangler's binding validation before
+  // the upload. Omitted, wrangler provisions the namespace on first deploy.
+  // Point it at the app's own CACHE namespace if you want shared token state.
+  "kv_namespaces": [{ "binding": "CACHE" }],
   "queues": {
     "producers": [{ "binding": "EVENTS_QUEUE", "queue": "ms-events-norm" }]
   }
