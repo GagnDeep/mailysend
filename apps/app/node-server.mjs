@@ -143,9 +143,18 @@ const server = createServer(async (req, res) => {
     // Behind nginx or Cloudflare the origin is not what the socket says it is.
     // Every absolute URL the app mints — tracking pixels, unsubscribe links,
     // canonical tags — is built from this, so getting it wrong is not cosmetic.
-    const proto = req.headers['x-forwarded-proto'] ?? 'http'
-    const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? `${HOST}:${PORT}`
-    const origin = `${String(proto).split(',')[0]}://${String(host).split(',')[0]}`
+    // An empty header counts as absent: a proxy that sets the name but not the
+    // value would otherwise produce the origin `://host`, and every absolute
+    // URL built from it would be broken in a way that only shows up in mail.
+    const first = (value, fallback) => {
+      const head = String(value ?? '')
+        .split(',')[0]
+        .trim()
+      return head || fallback
+    }
+    const proto = first(req.headers['x-forwarded-proto'], 'http')
+    const host = first(req.headers['x-forwarded-host'], first(req.headers.host, `${HOST}:${PORT}`))
+    const origin = `${proto}://${host}`
 
     const pathname = new URL(req.url ?? '/', origin).pathname
     if (req.method === 'GET' || req.method === 'HEAD') {
