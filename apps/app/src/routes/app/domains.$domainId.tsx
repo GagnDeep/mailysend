@@ -234,18 +234,18 @@ function DomainDetail() {
           />
           <AuthRow
             name="DMARC"
+            // Null and undefined both mean "nobody has looked yet", which is a
+            // different answer from `missing` — read, and not there.
             state={{
               label: domain.dmarc_policy ?? 'not checked',
-              body:
-                domain.dmarc_policy === undefined
-                  ? 'No check has run yet. Verify the DNS records to read the published policy.'
-                  : (DMARC_SENTENCE[domain.dmarc_policy] ?? 'Policy published.'),
-              tone:
-                domain.dmarc_policy === undefined
-                  ? 'quiet'
-                  : domain.dmarc_policy === 'missing'
-                    ? 'warn'
-                    : 'positive',
+              body: domain.dmarc_policy
+                ? (DMARC_SENTENCE[domain.dmarc_policy] ?? 'Policy published.')
+                : 'No check has run yet. Verify the DNS records to read the published policy.',
+              tone: !domain.dmarc_policy
+                ? 'quiet'
+                : domain.dmarc_policy === 'missing'
+                  ? 'warn'
+                  : 'positive',
             }}
           />
         </div>

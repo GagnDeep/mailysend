@@ -54,7 +54,12 @@ export const Domain = z.object({
   /** Whether outgoing mail is signed and aligned. Drives the deliverability banner. */
   dkim_ready: z.boolean().optional(),
   spf_ready: z.boolean().optional(),
-  dmarc_policy: z.enum(['none', 'quarantine', 'reject', 'missing']).optional(),
+  /**
+   * Null until DMARC has been read for this domain — which is a different
+   * statement from `missing`, the answer that a record was looked for and was
+   * not there.
+   */
+  dmarc_policy: z.enum(['none', 'quarantine', 'reject', 'missing']).nullable().optional(),
   /** Learned by SendingDomainDO from provider rejections; null before the first send. */
   daily_quota: z.number().int().nullable().optional(),
   open_tracking: z.boolean().default(true),
@@ -265,8 +270,15 @@ export const Broadcast = z.object({
   throttle_per_minute: z.number().int().min(1).nullable().optional(),
   variants: z.array(BroadcastVariant).optional(),
   /** Fraction held back from the A/B test until a winner is chosen. */
-  holdout_percent: z.number().int().min(0).max(90).optional(),
-  winner_metric: z.enum(['opens', 'clicks']).optional(),
+  holdout_percent: z.number().int().min(0).max(90).nullable().optional(),
+  /** Null on a broadcast with no A/B test, which is most of them. */
+  winner_metric: z.enum(['opens', 'clicks']).nullable().optional(),
+  /** The variant key that won, once the winner alarm has run. */
+  winner_variant: z.string().nullable().optional(),
+  /** True when the test ran and the difference did not reach significance. */
+  ab_inconclusive: z.boolean().optional(),
+  /** Known once the recipient set has been counted, not before. */
+  total_recipients: z.number().int().nullable().optional(),
   stats: z
     .object({
       total: z.number().int(),

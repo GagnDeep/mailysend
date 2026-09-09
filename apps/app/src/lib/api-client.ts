@@ -433,13 +433,22 @@ export type SegmentPreviewRecord = z.infer<typeof SegmentPreview>
 // Template versions
 // ---------------------------------------------------------------------------
 
+/**
+ * The list endpoint returns metadata; only the single-version endpoint carries
+ * the bodies, because a version list of a template with a 200 KB body would
+ * otherwise be a megabyte of HTML nobody asked for. The body fields are
+ * therefore optional here, not missing from one of the two shapes.
+ */
 export const TemplateVersion = z.object({
   version: z.number().int(),
   created_at: z.string(),
-  author: z.string().nullable(),
+  template_id: z.string().optional(),
   subject: z.string().nullable(),
-  html: z.string().nullable(),
-  text: z.string().nullable(),
+  variables: z.array(z.string()).optional(),
+  published: z.boolean().optional(),
+  created_by: z.string().nullable().optional(),
+  html: z.string().nullable().optional(),
+  text: z.string().nullable().optional(),
   note: z.string().nullable().optional(),
 })
 export type TemplateVersionRecord = z.infer<typeof TemplateVersion>

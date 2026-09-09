@@ -253,7 +253,9 @@ export const TemplateVersions = ({ templateId, currentVersion }: TemplateVersion
     {
       id: 'author',
       header: 'Author',
-      cell: (row) => <span className="text-[13px] text-muted">{row.author ?? 'unattributed'}</span>,
+      cell: (row) => (
+        <span className="text-[13px] text-muted">{row.created_by ?? 'unattributed'}</span>
+      ),
     },
     {
       id: 'note',

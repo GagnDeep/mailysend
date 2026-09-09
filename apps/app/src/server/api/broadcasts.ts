@@ -77,19 +77,12 @@ broadcasts.post('/', async (c) => {
 
   await storeBodies(ctx, id, body, variants)
 
+  // Read back rather than echo the request: the row is the only place that
+  // knows what the defaults resolved to, and the dashboard parses this response
+  // with the same schema it parses the list with. A hand-assembled subset here
+  // is a parse failure there.
   return json(
-    {
-      object: 'broadcast',
-      id,
-      name: body.name ?? null,
-      audience_id: body.audience_id,
-      segment_id: body.segment_id ?? null,
-      from: body.from,
-      subject: body.subject,
-      status: 'draft',
-      variants: variants ?? undefined,
-      created_at: now,
-    },
+    { ...toBroadcast(await loadBroadcast(ctx, id)), variants: variants ?? undefined },
     201,
   )
 })
@@ -251,13 +244,7 @@ broadcasts.post('/:id/send', async (c) => {
       )
       .bind(scheduled.at.toISOString(), range.total, now, row.id, ctx.workspace.id)
       .run()
-    return json({
-      object: 'broadcast',
-      id: row.id,
-      status: 'scheduled',
-      scheduled_at: scheduled.at.toISOString(),
-      total_recipients: range.total,
-    })
+    return json(toBroadcast(await loadBroadcast(ctx, row.id)))
   }
 
   await ctx.sql
@@ -278,7 +265,7 @@ broadcasts.post('/:id/send', async (c) => {
   })
   await ctx.cache.delete(kvKey.broadcastFlag(ctx.workspace.id, row.id))
 
-  return json({ object: 'broadcast', id: row.id, status: 'sending', total_recipients: range.total })
+  return json(toBroadcast(await loadBroadcast(ctx, row.id)))
 })
 
 broadcasts.post('/:id/pause', async (c) => flip(c.get('ctx'), c.req.param('id'), 'pause'))
@@ -486,7 +473,7 @@ async function flip(
     .bind(status, new Date().toISOString(), row.id, ctx.workspace.id)
     .run()
 
-  return json({ object: 'broadcast', id: row.id, status })
+  return json(toBroadcast(await loadBroadcast(ctx, row.id)))
 }
 
 async function requireAudience(ctx: Ctx, audienceId: string, segmentId?: string): Promise<void> {

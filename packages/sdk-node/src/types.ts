@@ -227,7 +227,8 @@ export interface Domain {
   records?: DnsRecord[]
   dkim_ready?: boolean
   spf_ready?: boolean
-  dmarc_policy?: 'none' | 'quarantine' | 'reject' | 'missing'
+  /** Null until DMARC has been read; `missing` means it was read and absent. */
+  dmarc_policy?: 'none' | 'quarantine' | 'reject' | 'missing' | null
   /** Learned from provider rejections; null before the first send. */
   daily_quota?: number | null
   open_tracking: boolean
@@ -511,8 +512,15 @@ export interface Broadcast {
   throttle_per_minute?: number | null
   variants?: BroadcastVariant[]
   /** Fraction held back from the A/B test until a winner is chosen. */
-  holdout_percent?: number
-  winner_metric?: 'opens' | 'clicks'
+  holdout_percent?: number | null
+  /** Null on a broadcast with no A/B test, which is most of them. */
+  winner_metric?: 'opens' | 'clicks' | null
+  /** The variant key that won, once the winner alarm has run. */
+  winner_variant?: string | null
+  /** True when the test ran and the difference did not reach significance. */
+  ab_inconclusive?: boolean
+  /** Known once the recipient set has been counted, not before. */
+  total_recipients?: number | null
   stats?: BroadcastStats
 }
 
