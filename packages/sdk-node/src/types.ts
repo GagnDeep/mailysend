@@ -168,7 +168,8 @@ export interface Email {
   text?: string | null
   scheduled_at?: string | null
   tags?: Tag[]
-  provider?: string
+  /** Null until a transport is chosen; the id is minted before that happens. */
+  provider?: string | null
   provider_message_id?: string | null
   opens?: number
   clicks?: number

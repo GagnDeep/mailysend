@@ -15,21 +15,30 @@ export const DEPLOY_DURATION_LONG =
 export const DEPLOY_RANGE = '~40–90s'
 
 /**
- * `do` is ASCII. The artboard smuggled a Cyrillic o (U+043E) into this exact
- * word in both the Home and Resources terminals, which silently breaks
- * copy-paste of the command the block is advertising.
+ * These are the commands as they actually exist.
+ *
+ * The artboard advertised `mailysend deploy --domain acme.dev` writing DNS and
+ * creating an Access policy in one step. There is no `--domain` flag, `deploy`
+ * is wrangler wearing our name, and the DNS records are shown for you to add in
+ * the domain screen rather than written on your behalf. A terminal block is a
+ * command someone will paste, so it says what the command does.
+ *
+ * `do` is ASCII, too: the artboard smuggled a Cyrillic o (U+043E) into this
+ * exact word in both the Home and Resources terminals, which silently breaks
+ * copy-paste of the very command the block is advertising.
  */
 export const DEPLOY_LINES: TerminalLine[] = [
-  { kind: 'command', text: 'npx mailysend deploy --domain acme.dev' },
-  { kind: 'success', text: `✓ queues · do · d1 · r2 · dns   ready in ${DEPLOY_RANGE}` },
+  { kind: 'command', text: 'npx mailysend provision && npx mailysend deploy' },
+  { kind: 'success', text: `✓ queues · do · d1 · kv · r2   ready in ${DEPLOY_RANGE}` },
 ]
 
 export const DEPLOY_LINES_VERBOSE: TerminalLine[] = [
-  { kind: 'command', text: 'npx mailysend deploy --domain acme.dev' },
-  { kind: 'success', text: '  ✓ workers · queues · do · d1 · kv · r2' },
-  { kind: 'success', text: '  ✓ dns spf/dkim/dmarc written' },
-  { kind: 'success', text: '  ✓ access policy created' },
-  { kind: 'success', text: `  ready  https://mail.acme.dev  ${DEPLOY_RANGE}` },
+  { kind: 'command', text: 'npx mailysend provision' },
+  { kind: 'success', text: '  ✓ queues · analytics datasets' },
+  { kind: 'command', text: 'npx mailysend deploy' },
+  { kind: 'success', text: '  ✓ workers · do · d1 · kv · r2' },
+  { kind: 'success', text: '  ✓ schema migrated on first request' },
+  { kind: 'success', text: `  ready  https://mailysend.<you>.workers.dev  ${DEPLOY_RANGE}` },
 ]
 
 export const DeployTerminal = ({

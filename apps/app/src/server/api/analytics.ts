@@ -60,7 +60,10 @@ interface Range {
 /** Defaults to the last 30 days, which is what the dashboard opens on. */
 function parseRange(q: URLSearchParams): Range {
   const to = q.get('to') ? new Date(q.get('to')!) : new Date()
-  const from = q.get('from') ? new Date(q.get('from')!) : new Date(to.getTime() - 29 * 86_400_000)
+  // An hourly series over the 30-day default would be 720 buckets nobody can
+  // read; asking for hours means asking about today.
+  const span = q.get('granularity') === 'hour' ? 86_400_000 : 29 * 86_400_000
+  const from = q.get('from') ? new Date(q.get('from')!) : new Date(to.getTime() - span)
   if (Number.isNaN(from.getTime())) throw apiError('validation_error', { param: 'from' })
   if (Number.isNaN(to.getTime())) throw apiError('validation_error', { param: 'to' })
   if (from > to)
@@ -185,10 +188,38 @@ analytics.get('/dashboard', async (c) => {
     .bind(ctx.workspace.id, range.fromDay, range.toDay, ...filter.args)
     .all<DailyRow>()
 
+  /**
+   * `granularity=hour` used to return daily buckets under an hourly label,
+   * because both fell through to the same branch. The Overview's chart is
+   * captioned "sent per hour", so it was drawing a month of days and calling
+   * them hours. Hourly rows live in their own table and are read from it.
+   */
   const buckets =
-    granularity === 'day' || granularity === 'hour'
-      ? daily.results
-      : rollUp(daily.results, granularity)
+    granularity === 'hour'
+      ? (
+          await ctx.sql
+            .prepare(
+              `SELECT hour AS day,
+                      SUM(sent) AS sent, SUM(delivered) AS delivered, SUM(bounced) AS bounced,
+                      SUM(complained) AS complained, SUM(opened) AS opened,
+                      SUM(clicked) AS clicked
+                 FROM rollups_hourly
+                WHERE workspace_id = ? AND hour >= ? AND hour <= ?${
+                  q.get('domain_id') ? ' AND domain_id = ?' : ''
+                }
+                GROUP BY hour ORDER BY hour ASC LIMIT 720`,
+            )
+            .bind(
+              ctx.workspace.id,
+              hourKey(range.from),
+              hourKey(range.to),
+              ...(q.get('domain_id') ? [q.get('domain_id')] : []),
+            )
+            .all<DailyRow>()
+        ).results
+      : granularity === 'day'
+        ? daily.results
+        : rollUp(daily.results, granularity)
 
   const byDomain = await ctx.sql
     .prepare(

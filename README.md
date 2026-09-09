@@ -17,7 +17,6 @@ Also runs on a plain Node server with no Cloudflare account at all.
 [Honest comparisons](https://mailysend.com/compare) &nbsp;·&nbsp;
 [Cost](https://mailysend.com/pricing)
 
-[![CI](https://github.com/GagnDeep/mailysend/actions/workflows/ci.yml/badge.svg)](https://github.com/GagnDeep/mailysend/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E8500F.svg)](LICENSE)
 [![Runs on Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-F38020.svg)](https://workers.cloudflare.com/)
 [![Also runs on Node 24](https://img.shields.io/badge/also%20runs%20on-Node%2024-3C873A.svg)](https://nodejs.org/)
@@ -48,65 +47,6 @@ The `resend` npm package honours `RESEND_BASE_URL`, so that really is the whole 
 no code changes, no rewrite, no lock-in either direction. There is also a first-party
 `mailysend` SDK, and `mailysend/compat` exports a `Resend` class with the same method names
 if you would rather be explicit.
-
----
-
-## See it running
-
-Everything below is the live deployment at **[mailysend.com](https://mailysend.com)** —
-one Node process behind nginx, or one Worker, from this exact repository.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**The dashboard, on real data**
-
-Sent, delivered, bounced, complained and the queue depth — with the counts of record
-coming from SQL rollups, never from a sampled analytics store.
-
-<img src=".github/media/dashboard-overview.png" alt="MailySend dashboard overview">
-
-</td>
-<td width="50%" valign="top">
-
-**Domain setup that finishes**
-
-Every DNS record for the active transport, copy-buttoned, with SPF/DKIM/DMARC state,
-the learned daily ceiling and the deliverability posture on one page.
-
-<img src=".github/media/domain-detail.png" alt="Domain detail with DNS records and deliverability">
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-**Audiences and live segments**
-
-Contacts, custom properties, CSV import, and segments written in a real query DSL that
-compiles to parameterised SQL.
-
-<img src=".github/media/contacts.png" alt="Contacts and audiences">
-
-</td>
-<td width="50%" valign="top">
-
-**⌘K to anywhere**
-
-Jump to any message, domain, template or doc page. `G L` for logs, `G B` for broadcasts.
-No screen in the product ends in "contact support".
-
-<img src=".github/media/command-palette.png" alt="Command palette">
-
-</td>
-</tr>
-</table>
-
-<div align="center">
-<img src=".github/media/compare.png" alt="Honest comparisons — including where we lose" width="820">
-<br><em>The comparison page ships the rows where we lose, too. <a href="https://mailysend.com/compare">See it live →</a></em>
-</div>
 
 ---
 
@@ -173,27 +113,129 @@ volume, so the estimate is answerable to a number.
 
 ---
 
+## See it running
+
+Everything below is the live deployment at **[mailysend.com](https://mailysend.com)** — one Node
+process behind nginx, or one Worker, from this exact repository. Real traffic, not empty states.
+
+**The overview, on a month of sending**
+
+Sent, delivered, bounced, complained and the hourly curve — with the counts of record coming from
+SQL rollups, never from a sampled analytics store.
+
+<img src=".github/media/dashboard-overview.png" alt="MailySend dashboard overview showing 1,839 sent, 99.3% delivered and an hourly send curve">
+
+**Analytics that names its own denominators**
+
+A 30-day series, delivery grouped by receiving domain and by the tags you set at send time, opens
+and clicks split by who actually generated them, and inbox placement per provider with the source
+of every figure attached.
+
+<img src=".github/media/analytics.png" alt="Analytics page: totals, a 30-day timeseries, breakdowns by domain and tag">
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Every message, and what happened to it**
+
+The full log with filters that live in the URL, and a drawer per message: state timeline, the SMTP
+conversation, every webhook attempt and its response, and the raw MIME.
+
+<img src=".github/media/logs.png" alt="Message log with delivered, bounced, queued and sending rows">
+
+</td>
+<td width="50%" valign="top">
+
+**One message, all the way down**
+
+<img src=".github/media/log-detail.png" alt="Log drawer showing the state timeline, SMTP transcript and webhook attempts">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Domain setup that finishes**
+
+Every DNS record for the active transport, copy-buttoned, with SPF/DKIM/DMARC state and the
+deliverability posture on one page.
+
+<img src=".github/media/domain-detail.png" alt="Domain detail with DNS records and deliverability">
+
+</td>
+<td width="50%" valign="top">
+
+**Broadcasts with a real denominator**
+
+Progress from the coordinator's own counters, and every engagement rate stated over the
+denominator it was actually computed from.
+
+<img src=".github/media/broadcast.png" alt="Broadcast detail with progress and engagement rates">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Audiences and live segments**
+
+Contacts, custom properties, CSV import, and segments written in a real query DSL that compiles to
+parameterised SQL.
+
+<img src=".github/media/contacts.png" alt="Contacts and audiences">
+
+</td>
+<td width="50%" valign="top">
+
+**⌘K to anywhere**
+
+Jump to any message, domain, template or doc page. `G L` for logs, `G B` for broadcasts. No screen
+in the product ends in "contact support".
+
+<img src=".github/media/command-palette.png" alt="Command palette searching messages by subject">
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+<img src=".github/media/compare.png" alt="Honest comparisons — including where we lose" width="820">
+<br><em>The comparison page ships the rows where we lose, too. <a href="https://mailysend.com/compare">See it live →</a></em>
+</div>
+
+---
+
 ## Get running
 
 ### Path 1 — Cloudflare Workers (one click)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/GagnDeep/mailysend)
 
-The button forks the repo, creates the KV namespaces, the D1 database and the R2 bucket,
-and wires up the GitHub Action.
+The button forks the repo, creates the D1 database, the KV namespaces and the R2 bucket
+from `apps/app/wrangler.jsonc`, then builds and deploys.
 
-**The button alone is not sufficient — and we tell you that instead of letting you find
-out.** Queues, Analytics Engine datasets and the Email Service sending domain do not
-auto-provision, so `.github/workflows/deploy.yml` runs `scripts/provision.ts` before
-`wrangler deploy`. The real path is:
+**Nothing on the deploy form is required.** Every variable it offers is optional and
+already filled in, because there is nothing you need to know before the first boot: on
+its first request the instance applies its own migrations, creates the workspace,
+generates and stores a 32-byte signing secret, learns its own public URL from the request
+it is answering, and prints one bootstrap API key to the log. Set `MS_OWNER_EMAIL` if you
+want the dashboard sign-in link to go somewhere; everything else can wait until you are
+inside.
 
+**One thing the button cannot do — and we say so rather than let you find out.** Queues
+and the Analytics Engine datasets do not auto-provision, and a Worker without them starts
+fine and then fails on its first send. One idempotent command creates them:
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
+npx mailysend provision      # queues + analytics datasets
 ```
-button → repo → CI → provision → migrate → deploy
-```
 
-Two repository secrets are needed: `CLOUDFLARE_ACCOUNT_ID`, and a `CLOUDFLARE_API_TOKEN`
-with `Workers Scripts:Edit`, `Queues:Edit`, `D1:Edit`, `Workers KV:Edit`, `Workers R2:Edit`,
-`Account Analytics:Read` and `Email Sending:Edit`.
+The token needs `Queues:Edit` and `Account Analytics:Read` for that command, plus
+`Workers Scripts:Edit`, `D1:Edit`, `Workers KV:Edit` and `Workers R2:Edit` if you also
+deploy with it rather than from the button. `.github/workflows/deploy.yml` runs the same
+two steps on `workflow_dispatch` if you would rather it happened in CI.
 
 ### Path 2 — a Node server (no Cloudflare account)
 
@@ -203,13 +245,18 @@ the Durable Objects. Same code, different driver.
 ```bash
 pnpm install
 pnpm build:node
-MS_SECRET=$(openssl rand -hex 32) \
-MS_OWNER_EMAIL=you@your-domain.com \
 PORT=8917 node apps/app/node-server.mjs
 ```
 
-First boot creates the workspace and prints one API key. It is printed exactly once,
-because only its SHA-256 hash is ever stored.
+That is the whole command — there is no required environment variable on this path
+either. First boot migrates the database, creates the workspace, generates and stores the
+signing secret, and prints one API key. The key is printed exactly once, because only its
+SHA-256 hash is ever stored.
+
+Set `MS_OWNER_EMAIL=you@your-domain.com` to name the dashboard owner, and `MS_SECRET` to
+a 32-byte hex string if you would rather keep the signing key out of the database and be
+able to rotate it. Both are optional. The full list is in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 <details>
 <summary><b>Production: PM2 + nginx</b> (this is how the live demo runs)</summary>
@@ -404,10 +451,14 @@ hour that just expired.
 
 ## Configuration
 
+**Nothing here is required.** The table is what you may want to override, not a checklist
+to work through before the first boot — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+for the long form.
+
 | Variable | Default | What it does |
 |---|---|---|
-| `MS_SECRET` | — | **Required.** Signs tracking, unsubscribe and reply tokens |
-| `MS_PUBLIC_URL` | — | Base URL for every link the app mints |
+| `MS_SECRET` | generated on first boot, stored in `settings` | Signs tracking, unsubscribe and reply tokens. Set it to keep the key out of the database and to be able to rotate it; must be ≥32 characters |
+| `MS_PUBLIC_URL` | learned from the first non-local request | Base URL for every link the app mints. Set it to pin the value, e.g. behind a proxy that rewrites the Host |
 | `MS_TRACKING_URL` | `MS_PUBLIC_URL` | Separate tracking domain, if you have one |
 | `MS_MODE` | `single` | `single` (self-hosted) or `saas` |
 | `MS_DATA_KEY` | `MS_SECRET` | Encrypts stored provider credentials |
@@ -430,7 +481,7 @@ deployment send on its very first request.
 pnpm install
 pnpm dev            # vite dev on :8917
 pnpm typecheck
-pnpm test           # 752 tests
+pnpm test           # 762 tests
 pnpm lint
 pnpm --filter @mailysend/app preview   # wrangler dev, on Miniflare
 ```
@@ -439,10 +490,16 @@ The dev cache (`.vite-dev`) and the build outputs (`.output` for Node, `.output-
 Cloudflare) are separate directories, so a running dev server and a production build never
 contend for the same files.
 
-CI runs lint, typecheck, the test suite and **both** builds, then boots the Node server and
-runs `scripts/contract-check.mts` — which seeds a row of every kind and reads all 22
-dashboard endpoints back through the dashboard's own Zod schemas. Schema drift fails the
-build instead of becoming an error card in production.
+The check that matters most is `scripts/contract-check.mts`. It boots the server, seeds a
+row of every kind, then reads all 23 dashboard endpoints back **through the dashboard's own
+Zod schemas** — so schema drift surfaces as a failed check rather than as an error card in
+production. Its first version passed while the domains screen was broken, because there was
+no domain to disagree about; seeding first is the fix.
+
+```bash
+node apps/app/node-server.mjs &
+KEY=ms_live_... pnpm exec tsx scripts/contract-check.mts
+```
 
 ---
 

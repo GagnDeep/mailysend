@@ -74,7 +74,7 @@ function Overview() {
       <PageHeader
         eyebrow="Overview"
         title="Everything that left the building"
-        description="Counters refresh every 30 seconds. Numbers are for this workspace and this environment only."
+        description="The last 24 hours, refreshed every 30 seconds. Numbers are for this workspace and this environment only — Analytics has the 30-day view."
         actions={
           <>
             <Button asChild variant="ghost" size="sm">

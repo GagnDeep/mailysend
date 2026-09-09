@@ -126,7 +126,10 @@ export const Email = z.object({
   scheduled_at: IsoDate.nullable().optional(),
   tags: z.array(Tag).optional(),
   // --- MailySend extensions ---
-  provider: z.string().optional(),
+  // Null until the send consumer picks a transport: the id is minted and the
+  // row is written before any provider is contacted, so a queued or scheduled
+  // message genuinely has no provider yet.
+  provider: z.string().nullable().optional(),
   provider_message_id: z.string().nullable().optional(),
   opens: z.number().int().optional(),
   clicks: z.number().int().optional(),

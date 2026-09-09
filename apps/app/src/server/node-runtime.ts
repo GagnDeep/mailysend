@@ -1,14 +1,5 @@
 import { join } from 'node:path'
-import {
-  ANALYTICS_DATASETS,
-  apiKeyPreview,
-  DEFAULT_WORKSPACE,
-  generateApiKey,
-  hashApiKey,
-  newId,
-  QUEUES,
-} from '@mailysend/core'
-import { migrate } from '@mailysend/db'
+import { ANALYTICS_DATASETS, QUEUES } from '@mailysend/core'
 import {
   AutomationCohortActor,
   AutomationRunActor,
@@ -22,6 +13,7 @@ import {
   WorkspaceHubActor,
 } from '@mailysend/durable'
 import { createNodePlatform } from '@mailysend/platform/node'
+import { configure } from './bootstrap.ts'
 import { consumeBroadcastPages } from './consumers/broadcast.ts'
 import { consumeEventQueue } from './consumers/events.ts'
 import { consumeInbound } from './consumers/inbound.ts'
@@ -73,9 +65,12 @@ for (const [kind, cls] of [
 
 const env: Env = {
   MS_MODE: (process.env.MS_MODE as 'single' | 'saas') ?? 'single',
-  MS_PUBLIC_URL: process.env.MS_PUBLIC_URL ?? `http://localhost:${PORT}`,
+  // Left empty rather than guessed when unset: `configure()` resolves it from
+  // the first request's own origin and stores it, which is right far more often
+  // than a hardcoded localhost would be behind a proxy or on workers.dev.
+  MS_PUBLIC_URL: process.env.MS_PUBLIC_URL ?? '',
   ...(process.env.MS_TRACKING_URL ? { MS_TRACKING_URL: process.env.MS_TRACKING_URL } : {}),
-  MS_SECRET: requireSecret(),
+  MS_SECRET: configuredSecret(),
   ...(process.env.MS_DATA_KEY ? { MS_DATA_KEY: process.env.MS_DATA_KEY } : {}),
   ...(process.env.MS_DEFAULT_PROVIDER
     ? { MS_DEFAULT_PROVIDER: process.env.MS_DEFAULT_PROVIDER as Env['MS_DEFAULT_PROVIDER'] }
@@ -142,23 +137,26 @@ const env: Env = {
 Object.assign(platform.env, env)
 
 /**
- * `MS_SECRET` signs tracking tokens, unsubscribe links and reply addresses. A
- * generated-per-boot default would invalidate every link in every message
- * already delivered the moment the process restarts, so refusing to start is
- * the correct behaviour — but only in production, where that consequence is real.
+ * `MS_SECRET` signs tracking tokens, unsubscribe links and reply addresses.
+ *
+ * This used to refuse to start without one, because a secret regenerated per
+ * boot invalidates every link in every message already delivered. That reason
+ * is gone: an unset secret is now generated once and *persisted* (see
+ * `bootstrap.ts`), so it survives restarts and redeploys. Setting it explicitly
+ * is still better — it keeps the signing key out of the database and lets you
+ * rotate it — but it is no longer the difference between a deployment that
+ * boots and one that does not.
+ *
+ * A secret that is set but too short is still refused: that is a mistake, not a
+ * choice, and silently accepting it would weaken every signature.
  */
-function requireSecret(): string {
+function configuredSecret(): string {
   const secret = process.env.MS_SECRET
-  if (secret && secret.length >= 32) return secret
-  if (process.env.NODE_ENV === 'production') {
-    console.error(
-      'MS_SECRET is required in production and must be at least 32 characters.\n' +
-        'Generate one with:  openssl rand -hex 32',
-    )
-    process.exit(1)
-  }
-  console.warn('[mailysend] MS_SECRET is unset — using a development default. Do not ship this.')
-  return 'development-only-secret-do-not-use-in-production'
+  if (!secret) return ''
+  if (secret.length >= 32) return secret
+  console.error('MS_SECRET is set but shorter than 32 characters. Generate one with:')
+  console.error('  openssl rand -hex 32')
+  process.exit(1)
 }
 
 /** Workers gives handlers an ExecutionContext; on Node the process outlives the request. */
@@ -209,8 +207,11 @@ let started: Promise<Env> | null = null
  */
 export function startNodeRuntime(): Promise<Env> {
   started ??= (async () => {
-    await migrate(platform.sql)
-    await ensureBootstrapWorkspace()
+    // Resolves — and persists — anything the operator did not set, then folds
+    // it back into the shared binding object so the queue consumers and cron,
+    // which never see a request, sign with the same secret the request path does.
+    await configure(env)
+    Object.assign(platform.env, env)
     platform.start()
 
     // Cron on Workers; timers here. Same functions, so a schedule change is one edit.
@@ -236,55 +237,3 @@ export function startNodeRuntime(): Promise<Env> {
 }
 
 export { env as nodeEnv, nodeCtx, platform }
-
-/**
- * First boot.
- *
- * A fresh install with an empty database and no way in is not a deployment, it
- * is a puzzle. So the first start creates the workspace and one live API key,
- * and prints the key exactly once — the only time it is ever printable, since
- * only its hash is stored.
- */
-async function ensureBootstrapWorkspace(): Promise<void> {
-  const existing = await platform.sql
-    .prepare('SELECT id FROM workspaces WHERE id = ?')
-    .bind(DEFAULT_WORKSPACE)
-    .first<{ id: string }>()
-  if (existing) return
-
-  const now = new Date().toISOString()
-  await platform.sql
-    .prepare('INSERT INTO workspaces (id, name, slug, plan, created_at) VALUES (?,?,?,?,?)')
-    .bind(DEFAULT_WORKSPACE, 'MailySend', 'default', 'self_hosted', now)
-    .run()
-
-  const token = generateApiKey('live')
-  await platform.sql
-    .prepare(
-      `INSERT INTO api_keys (id, workspace_id, name, token_hash, token_preview, environment, permission, created_at)
-       VALUES (?,?,?,?,?,'live','full_access',?)`,
-    )
-    .bind(
-      newId('apiKey'),
-      DEFAULT_WORKSPACE,
-      'Bootstrap key',
-      await hashApiKey(token),
-      apiKeyPreview(token),
-      now,
-    )
-    .run()
-
-  console.log('\n  MailySend is set up. Your first API key — this is the only time it is shown:\n')
-  console.log(`      ${token}\n`)
-  // The dashboard is a separate door from the API, and a fresh instance has no
-  // verified sending domain, so the sign-in code cannot be emailed yet. Say so
-  // here rather than letting the operator discover it at the sign-in form.
-  const owner = process.env.MS_OWNER_EMAIL
-  console.log(
-    owner
-      ? `  Sign in at /sign-in as ${owner}. Until a sending domain is verified,\n` +
-          '  your one-time code is printed here instead of emailed.\n'
-      : '  Set MS_OWNER_EMAIL to the address that should own this instance, then\n' +
-          '  sign in at /sign-in — the first code is printed here.\n',
-  )
-}

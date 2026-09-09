@@ -24,9 +24,12 @@
     "run_worker_first": ["/v1/*", "/o/*", "/c/*", "/u/*", "/mcp/*"]
   },
 
+  // No MS_PUBLIC_URL here on purpose. A placeholder would *pin* the instance to
+  // that hostname — every tracking pixel, unsubscribe link and canonical tag
+  // minted against a domain nobody owns. Unset, the app learns its own origin
+  // from the first non-local request and stores it; set it only to override.
   "vars": {
     "MS_MODE": "single",
-    "MS_PUBLIC_URL": "https://mailysend.example.com",
     "MS_DEFAULT_PROVIDER": "cloudflare",
     "EVENT_DETAIL": "on"
   },

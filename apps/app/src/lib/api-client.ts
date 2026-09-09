@@ -206,15 +206,116 @@ export const WebhookAttempt = z.object({
 })
 export type WebhookAttemptRecord = z.infer<typeof WebhookAttempt>
 
+/** One attempt at delivering one event to one endpoint. */
+export const WebhookDelivery = z.object({
+  id: z.string(),
+  endpoint_id: z.string(),
+  url: z.string().nullable().optional(),
+  event_id: z.string(),
+  event_type: z.string(),
+  attempt: z.number(),
+  status: z.string(),
+  response_status: z.number().nullable().optional(),
+  response_body: z.string().nullable().optional(),
+  duration_ms: z.number().nullable().optional(),
+  created_at: z.string(),
+})
+export type WebhookDeliveryRecord = z.infer<typeof WebhookDelivery>
+
+/**
+ * `GET /v1/logs/:id`.
+ *
+ * This mirrors the endpoint rather than a nicer shape, because the drawer used
+ * to parse `{ email, smtp_conversation, webhook_attempts }` — a payload the
+ * server has never sent. Mirroring is what makes the contract check able to
+ * catch the next drift; a translation layer would have hidden this one too.
+ */
+/**
+ * `GET /v1/logs` — the log list. It is not the same shape as `GET /v1/emails`:
+ * a log row is Resend-shaped only in spirit, carrying `status` rather than
+ * `last_event` and a per-row `object: 'log'`. Validating it against `Email`
+ * meant the contract check reported drift that was only ever in the check.
+ */
+export const LogEntry = z.object({
+  object: z.literal('log'),
+  id: z.string(),
+  from: z.string(),
+  to: z.array(z.string()),
+  subject: z.string(),
+  status: z.string(),
+  provider: z.string().nullable().optional(),
+  provider_message_id: z.string().nullable().optional(),
+  domain_id: z.string().nullable().optional(),
+  broadcast_id: z.string().nullable().optional(),
+  automation_id: z.string().nullable().optional(),
+  contact_id: z.string().nullable().optional(),
+  opens: z.number().nullable().optional(),
+  clicks: z.number().nullable().optional(),
+  bounce_class: z.string().nullable().optional(),
+  smtp_code: z.string().nullable().optional(),
+  smtp_response: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  size_bytes: z.number().nullable().optional(),
+  attempts: z.number().nullable().optional(),
+  scheduled_at: z.string().nullable().optional(),
+  sent_at: z.string().nullable().optional(),
+  delivered_at: z.string().nullable().optional(),
+  created_at: z.string(),
+})
+export type LogEntryRecord = z.infer<typeof LogEntry>
+
 export const EmailDetail = z.object({
-  email: Email,
-  events: z.array(EmailTimelineEvent),
+  object: z.literal('log'),
+  id: z.string(),
+  from: z.string(),
+  to: z.array(z.string()),
+  subject: z.string(),
+  status: z.string(),
+  provider: z.string().nullable().optional(),
+  provider_message_id: z.string().nullable().optional(),
+  domain_id: z.string().nullable().optional(),
+  broadcast_id: z.string().nullable().optional(),
+  opens: z.number().nullable().optional(),
+  clicks: z.number().nullable().optional(),
+  bounce_class: z.string().nullable().optional(),
+  smtp_code: z.string().nullable().optional(),
+  smtp_response: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  size_bytes: z.number().nullable().optional(),
+  attempts: z.number().nullable().optional(),
+  scheduled_at: z.string().nullable().optional(),
+  sent_at: z.string().nullable().optional(),
+  delivered_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  tags: z.array(z.object({ name: z.string(), value: z.string() })).default([]),
+  events: z.array(EmailTimelineEvent).default([]),
+  /** One entry per moment a receiver said something, newest last. */
+  smtp: z
+    .array(
+      z.object({
+        at: z.string().nullable().optional(),
+        code: z.string().nullable().optional(),
+        response: z.string().nullable().optional(),
+        source: z.string(),
+      }),
+    )
+    .default([]),
+  links: z
+    .array(
+      z.object({
+        id: z.string(),
+        url: z.string(),
+        click_count: z.number(),
+        unique_click_count: z.number(),
+      }),
+    )
+    .default([]),
+  webhook_deliveries: z.array(WebhookDelivery).default([]),
   /** The verbatim MIME the provider was handed. Kept in R2, never regenerated. */
-  raw: z.string().nullable().optional(),
-  smtp_conversation: z
-    .array(z.object({ direction: z.enum(['out', 'in']), line: z.string() }))
-    .optional(),
-  webhook_attempts: z.array(WebhookAttempt).optional(),
+  raw: z.unknown().nullable().optional(),
+  raw_key: z.string().optional(),
+  raw_available: z.boolean().optional(),
+  event_detail: z.boolean().optional(),
 })
 export type EmailDetailRecord = z.infer<typeof EmailDetail>
 
@@ -488,11 +589,14 @@ export const createApiClient = (scope: RequestScope) => {
     listEmails: (params: ListParams & Record<string, unknown> = {}) =>
       get('/emails', list(Email), params),
     getEmail: (id: string) => get(`/emails/${id}`, Email),
-    getEmailDetail: (id: string) => get(`/emails/${id}/detail`, EmailDetail),
+    // `/logs/:id`, not `/emails/:id/detail`: the drawer's payload is the log
+    // read — row, timeline, SMTP conversation, webhook attempts and the spooled
+    // envelope — and that endpoint has always lived under /logs.
+    getEmailDetail: (id: string) => get(`/logs/${id}`, EmailDetail),
     cancelEmail: (id: string) => post(`/emails/${id}/cancel`, Email),
     rescheduleEmail: (id: string, scheduledAt: string) =>
       patch(`/emails/${id}`, Email, { scheduled_at: scheduledAt }),
-    listLogs: (params: Record<string, unknown> = {}) => get('/logs', list(Email), params),
+    listLogs: (params: Record<string, unknown> = {}) => get('/logs', list(LogEntry), params),
 
     // --- domains -----------------------------------------------------------
     listDomains: (params: ListParams = {}) => get('/domains', list(Domain), params),

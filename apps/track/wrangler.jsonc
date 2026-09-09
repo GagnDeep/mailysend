@@ -7,6 +7,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true, "head_sampling_rate": 0.01 },
+  // Set this to your own deployment before deploying the tracking Worker: it is
+  // where an expired or unrecognised token redirects, and the origin the /u/*
+  // preference routes are forwarded to. This Worker is optional — the app
+  // serves /o, /c and /u itself unless you split them out.
   "vars": { "MS_PUBLIC_URL": "https://mailysend.example.com" },
   "kv_namespaces": [{ "binding": "CACHE", "id": "PLACEHOLDER" }],
   "queues": {

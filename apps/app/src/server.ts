@@ -1,5 +1,6 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
 import { api } from './server/api/index.ts'
+import { configure } from './server/bootstrap.ts'
 import { consumeBroadcastPages } from './server/consumers/broadcast.ts'
 import { consumeEventQueue } from './server/consumers/events.ts'
 import { consumeInbound } from './server/consumers/inbound.ts'
@@ -105,14 +106,20 @@ export default {
     maybeEnv?: Env,
     maybeCtx?: ExecutionContextLike,
   ): Promise<Response> {
-    const { env, ctx } = await resolve(maybeEnv, maybeCtx)
+    const resolved = await resolve(maybeEnv, maybeCtx)
+    // Migrations, the first workspace, and any value the deployment did not
+    // configure — resolved here so a one-click deploy with no variables set
+    // still answers its first request with a working instance.
+    const env = await configure(resolved.env, request)
+    const ctx = resolved.ctx
     // Request-scoped, not module-scoped: a module-level variable would leak one
     // request's workspace into another under concurrency, which on Workers is
     // the default rather than the exception.
     return runWithEnv(env, ctx, () => route(request, env, ctx))
   },
 
-  async queue(batch: QueueBatchLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
+  async queue(batch: QueueBatchLike, rawEnv: Env, ctx: ExecutionContextLike): Promise<void> {
+    const env = await configure(rawEnv)
     return runWithEnv(env, ctx, async () => {
       switch (batch.queue) {
         case 'ms-send':
@@ -137,11 +144,13 @@ export default {
   },
 
   /** Cloudflare's inbound mail handler. Deliberately does almost nothing. */
-  async email(message: EmailMessageLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
+  async email(message: EmailMessageLike, rawEnv: Env, ctx: ExecutionContextLike): Promise<void> {
+    const env = await configure(rawEnv)
     return runWithEnv(env, ctx, () => handleInboundEmail(message, env))
   },
 
-  async scheduled(event: { cron: string }, env: Env, ctx: ExecutionContextLike): Promise<void> {
+  async scheduled(event: { cron: string }, rawEnv: Env, ctx: ExecutionContextLike): Promise<void> {
+    const env = await configure(rawEnv)
     return runWithEnv(env, ctx, () => runCron(event.cron, env))
   },
 }

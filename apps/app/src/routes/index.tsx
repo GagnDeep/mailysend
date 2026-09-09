@@ -735,14 +735,15 @@ function HomePage() {
             <Eyebrow className="mb-3.5 tracking-[0.1em]">PATH A · ONE CLICK</Eyebrow>
             <h3 className="ms-display-3 m-0 mb-2.5 text-[25px]">Press the button</h3>
             <p className="m-0 mb-[18px] text-[15px] leading-[1.65] text-muted">
-              Deploy to Cloudflare provisions Queues, Durable Objects, D1, R2 and Workers AI in your
-              account, wires DNS, and hands you the dashboard on your own subdomain.
+              Deploy to Cloudflare creates D1, KV, R2 and the Durable Objects in your account and
+              hands you the dashboard on your own workers.dev subdomain. Queues and the analytics
+              datasets take one command afterwards.
             </p>
             <ul className="m-0 mb-[22px] flex list-none flex-col gap-2.5 p-0 text-[14.5px]">
               {[
                 `Ready in ${DEPLOY_DURATION} — most of it DNS propagation`,
-                'Nothing to configure by hand',
-                'Pick your own data region',
+                'No required variables — the form is already filled in',
+                'Migrates itself and prints your first API key on boot',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
                   <span aria-hidden="true" className="font-bold text-positive">
@@ -768,8 +769,8 @@ function HomePage() {
             </Eyebrow>
             <h3 className="ms-display-3 m-0 mb-2.5 text-[25px]">Or from your terminal</h3>
             <p className="m-0 mb-[18px] text-[15px] leading-[1.65] text-on-dark-3">
-              Clone the repo, run one command, and the CLI does the same provisioning with your own
-              wrangler config — reviewable, scriptable, CI-friendly.
+              Clone the repo and run the two commands below against your own wrangler config —
+              reviewable, scriptable, CI-friendly, and the same thing the button does.
             </p>
             <DeployTerminal className="mb-[18px] border border-dark-line" />
             <Button asChild variant="accent" size="lg" className="mt-auto">

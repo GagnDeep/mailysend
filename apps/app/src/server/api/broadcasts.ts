@@ -122,7 +122,7 @@ broadcasts.get('/:id', async (c) => {
 
   return json({
     ...toBroadcast(row),
-    stats: statsFor(counts, null),
+    stats: statsFor(counts, null, row.total_recipients ?? 0),
     ...(perVariant.length > 0
       ? { variants: perVariant, ab: decideWinner(perVariant, row.winner_metric ?? 'opens') }
       : {}),
@@ -309,7 +309,7 @@ broadcasts.get('/:id/status', async (c) => {
     // however long the provider takes, and a rate computed from it would blame
     // the coordinator for the provider's queue.
     per_minute: elapsed > 0 ? Math.round(((live.dispatched ?? 0) / elapsed) * 60) : 0,
-    stats: statsFor(counts, null),
+    stats: statsFor(counts, null, state?.totalRecipients ?? row.total_recipients ?? 0),
   })
 })
 
@@ -669,10 +669,21 @@ async function readCounters(ctx: Ctx, broadcastId: string): Promise<Record<strin
   return totals
 }
 
-const statsFor = (counts: Record<string, number>, variant: string | null) =>
-  Object.fromEntries(
+/**
+ * `total` is the size of the recipient set, which the counters never hold — it
+ * is counted once at preparation and stored on the row. Leaving it out made the
+ * response fail the contract, so the progress bar had no denominator at all.
+ */
+const statsFor = (
+  counts: Record<string, number>,
+  variant: string | null,
+  total = 0,
+): Record<(typeof METRICS)[number] | 'total', number> => ({
+  total,
+  ...(Object.fromEntries(
     METRICS.map((metric) => [metric, counts[counterKey(variant, metric)] ?? 0]),
-  ) as Record<(typeof METRICS)[number], number>
+  ) as Record<(typeof METRICS)[number], number>),
+})
 
 interface VariantRow {
   key: string

@@ -16,6 +16,7 @@ import {
   upgrade,
   upgradeFlags,
 } from './commands/ops.ts'
+import { provision, provisionFlags } from './commands/provision.ts'
 import { send, sendFlags } from './commands/send.ts'
 import { tail, tailFlags } from './commands/tail.ts'
 import { templatesFlags, templatesPush } from './commands/templates.ts'
@@ -39,6 +40,13 @@ interface Entry {
 }
 
 const ENTRIES: Entry[] = [
+  {
+    match: ['provision'],
+    summary: 'Create the queues and analytics datasets the Deploy button cannot',
+    usage: 'mailysend provision',
+    flags: provisionFlags,
+    run: provision,
+  },
   {
     match: ['deploy'],
     summary: 'Deploy the worker to Cloudflare',

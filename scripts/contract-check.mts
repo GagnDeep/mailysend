@@ -74,6 +74,16 @@ const buildChecks = (audienceId: string, domainId: string): [string, () => Promi
         .then((t) => (t.data[0] ? api.listTemplateVersions(t.data[0].id) : null)),
   ],
   ['emails', () => api.listEmails({ limit: 5 })],
+  // Best effort: an instance with no messages cannot exercise this, which is
+  // exactly how `/emails/:id/detail` stayed wrong — the drawer 404'd on every
+  // row while every list endpoint was green.
+  [
+    'log detail',
+    () =>
+      api
+        .listEmails({ limit: 1 })
+        .then((r) => (r.data[0] ? api.getEmailDetail(r.data[0].id) : null)),
+  ],
   ['logs', () => api.listLogs({ limit: 5 })],
   ['domains', () => api.listDomains({ limit: 5 })],
   ['api-keys', () => api.listApiKeys({ limit: 5 })],

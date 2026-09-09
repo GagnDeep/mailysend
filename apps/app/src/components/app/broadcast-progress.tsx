@@ -108,39 +108,48 @@ export const BroadcastProgress = ({ broadcast }: { broadcast: BroadcastRecord })
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!running || pause.isPending}
-              onClick={() => pause.mutate()}
-            >
-              <Pause aria-hidden="true" />
-              Pause
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!paused || resume.isPending}
-              onClick={() => resume.mutate()}
-            >
-              <Play aria-hidden="true" />
-              Resume
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!stoppable}
-              onClick={() => setConfirmCancel(true)}
-            >
-              <Ban aria-hidden="true" />
-              Cancel
-            </Button>
-          </div>
-          <p className="m-0 text-[12.5px] text-muted-2">
-            Pausing stops the coordinator minting new send tokens. Messages already handed to the
-            provider are out of reach either way.
-          </p>
+          {/*
+            A finished broadcast can be neither paused, resumed nor cancelled, so
+            the row was three permanently disabled buttons and a caveat about a
+            control that no longer applies. Both are hidden once it is terminal.
+          */}
+          {stoppable ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!running || pause.isPending}
+                onClick={() => pause.mutate()}
+              >
+                <Pause aria-hidden="true" />
+                Pause
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!paused || resume.isPending}
+                onClick={() => resume.mutate()}
+              >
+                <Play aria-hidden="true" />
+                Resume
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!stoppable}
+                onClick={() => setConfirmCancel(true)}
+              >
+                <Ban aria-hidden="true" />
+                Cancel
+              </Button>
+            </div>
+          ) : null}
+          {stoppable ? (
+            <p className="m-0 text-[12.5px] text-muted-2">
+              Pausing stops the coordinator minting new send tokens. Messages already handed to the
+              provider are out of reach either way.
+            </p>
+          ) : null}
         </div>
       </PageSection>
 

@@ -18,7 +18,7 @@ import {
   DeployTerminal,
 } from '~/components/marketing/deploy'
 import { PageShell, Section } from '~/components/marketing/page-shell'
-import { breadcrumbSchema, pageHead } from '~/seo'
+import { breadcrumbSchema, DEPLOY_URL, pageHead } from '~/seo'
 
 const ANCHORS = [
   { href: '#selfhost', label: 'Self-host guide' },
@@ -400,7 +400,7 @@ function ResourcesPage() {
             </>
           }
           align="start"
-          lede="The deploy flow provisions every binding MailySend needs, sets your secrets, writes the DNS records if your domain is on Cloudflare, and puts the dashboard behind Cloudflare Access. Nothing is sent to us — there is no us in the path."
+          lede="The button creates the D1 database, the KV namespaces and the R2 bucket, then builds and deploys. Queues and the analytics datasets are one command it cannot run for you, so we say so. Nothing needs configuring to boot: the instance migrates its own schema, generates its own signing secret and learns its own public URL on the first request. Nothing is sent to us — there is no us in the path."
         />
 
         {/*
@@ -413,14 +413,15 @@ function ResourcesPage() {
           <Card className="flex flex-col gap-4 p-6">
             <Eyebrow>FROM THE BROWSER</Eyebrow>
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
-              Press the button, pick your Cloudflare account, type the domain you want to send from.
-              The flow provisions Queues, Durable Objects, D1, KV, R2, Workflows and Workers AI,
-              then hands you the setup wizard.
+              Press the button and pick your Cloudflare account. Every variable on the form is
+              optional and already filled in, because there is nothing you have to know yet. D1, KV
+              and R2 are created for you; queues and the analytics datasets need one command
+              afterwards, and the app tells you when it needs it.
             </p>
             <Button asChild size="lg" className="mt-auto self-start">
-              {/* The wizard, not this page: `DeployButton` points back at
-                  `#selfhost`, which from inside `#selfhost` is a no-op. */}
-              <a href="/sign-up">
+              {/* Cloudflare's own flow, not our sign-up: this section *is* the
+                  self-host guide, so the button here has to be the button. */}
+              <a href={DEPLOY_URL} rel="noreferrer">
                 Deploy to Cloudflare
                 <MonoChip tone="accent" size="sm" className="tracking-[0.1em]">
                   1-CLICK
@@ -434,8 +435,9 @@ function ResourcesPage() {
             <DeployTerminal verbose />
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
               Or clone the repo and run{' '}
-              <code className="font-mono text-[13px] text-ink">npm run deploy</code> with your own
-              wrangler config. Reviewable, scriptable, CI-friendly. Budget {DEPLOY_DURATION_LONG}.
+              <code className="font-mono text-[13px] text-ink">pnpm deploy</code> with your own
+              wrangler config — it builds both Workers and hands the upload to wrangler. Reviewable,
+              scriptable, CI-friendly. Budget {DEPLOY_DURATION_LONG}.
             </p>
           </Card>
         </div>

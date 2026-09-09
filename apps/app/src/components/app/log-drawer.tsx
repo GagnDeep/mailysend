@@ -19,7 +19,7 @@ import { DataTable } from '~/components/app/data-table.tsx'
 import { dateTime, duration } from '~/components/app/format.ts'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { DetailSkeleton, ErrorState } from '~/components/app/states.tsx'
-import type { EmailTimelineEventRecord, WebhookAttemptRecord } from '~/lib/api-client.ts'
+import type { EmailTimelineEventRecord, WebhookDeliveryRecord } from '~/lib/api-client.ts'
 import { qk } from '~/lib/query.ts'
 
 /**
@@ -195,47 +195,59 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
   }
   if (!detail.data) return null
 
-  const { email, events, raw, smtp_conversation, webhook_attempts } = detail.data
+  const message = detail.data
+  const { events, smtp, webhook_deliveries } = message
+  const raw = typeof message.raw === 'string' ? message.raw : null
 
-  const lastDelivery = [...events].reverse().find((event) => event.smtp_code || event.smtp_response)
+  const lastDelivery = [...smtp].reverse()[0] ?? null
 
-  const conversation: TerminalLine[] = (smtp_conversation ?? []).map((line, index, all) => ({
-    text: line.line,
-    kind:
-      line.direction === 'out'
-        ? 'command'
-        : index === all.length - 1 && /^2\d\d/.test(line.line.trim())
-          ? 'success'
-          : 'output',
+  /**
+   * The receiver's side of the conversation, one line per response. A `2xx` is
+   * the only line rendered as a success, because it is the only one that means
+   * the receiver took the message.
+   */
+  const conversation: TerminalLine[] = smtp.map((line) => ({
+    text: [line.code, line.response].filter(Boolean).join(' ') || line.source,
+    kind: /^2\d\d/.test(String(line.code ?? '')) ? 'success' : 'output',
   }))
 
-  const attemptColumns: Column<WebhookAttemptRecord>[] = [
+  // A delivery counts as succeeded on a 2xx and nothing else; the endpoint's own
+  // status is the only thing that decides it, so it is derived here rather than
+  // stored twice.
+  const succeeded = (row: WebhookDeliveryRecord): boolean =>
+    row.response_status != null && row.response_status >= 200 && row.response_status < 300
+
+  const attemptColumns: Column<WebhookDeliveryRecord>[] = [
     {
       id: 'url',
       header: 'Endpoint',
-      cell: (row) => <span className="font-mono text-[12px] break-all">{row.url}</span>,
-      sortBy: (row) => row.url,
+      cell: (row) => (
+        <span className="font-mono text-[12px] break-all">{row.url ?? row.endpoint_id}</span>
+      ),
+      sortBy: (row) => row.url ?? row.endpoint_id,
     },
     {
       id: 'event',
       header: 'Event',
-      cell: (row) => <MonoChip size="sm">{row.event}</MonoChip>,
-      sortBy: (row) => row.event,
+      cell: (row) => <MonoChip size="sm">{row.event_type}</MonoChip>,
+      sortBy: (row) => row.event_type,
     },
     {
       id: 'status',
       header: 'Status',
       align: 'right',
-      sortBy: (row) => row.status_code ?? 0,
+      sortBy: (row) => row.response_status ?? 0,
       cell: (row) => (
         <div className="flex flex-col items-end gap-1">
           <span
-            className={`font-mono text-[12px] ${row.succeeded ? 'text-positive' : 'text-warning'}`}
+            className={`font-mono text-[12px] ${succeeded(row) ? 'text-positive' : 'text-warning'}`}
           >
-            {row.status_code ?? 'no response'}
+            {row.response_status ?? 'no response'}
           </span>
-          {!row.succeeded && row.error ? (
-            <span className="font-mono text-[11px] text-muted-2 break-all">{row.error}</span>
+          {!succeeded(row) && row.response_body ? (
+            <span className="font-mono text-[11px] text-muted-2 break-all">
+              {row.response_body.slice(0, 120)}
+            </span>
           ) : null}
         </div>
       ),
@@ -274,7 +286,7 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
           variant="outline"
           size="sm"
           disabled={replay.isPending}
-          onClick={() => replay.mutate({ webhookId: row.webhook_id, attemptId: row.id })}
+          onClick={() => replay.mutate({ webhookId: row.endpoint_id, attemptId: row.id })}
         >
           <RefreshCw aria-hidden="true" />
           Replay
@@ -287,7 +299,7 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="ms-eyebrow text-muted-2">message id</span>
-        <CopyValue value={email.id} label="message id" truncate={false} />
+        <CopyValue value={message.id} label="message id" truncate={false} />
       </div>
 
       <Tabs defaultValue="timeline">
@@ -325,8 +337,8 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
 
           {lastDelivery ? (
             <RemoteResponse
-              code={lastDelivery.smtp_code ?? null}
-              response={lastDelivery.smtp_response ?? null}
+              code={lastDelivery.code ?? null}
+              response={lastDelivery.response ?? null}
             />
           ) : (
             <NotAvailable>No receiver response has been recorded for this message.</NotAvailable>
@@ -334,17 +346,17 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
         </TabsContent>
 
         <TabsContent value="webhooks">
-          {(webhook_attempts?.length ?? 0) === 0 ? (
+          {webhook_deliveries.length === 0 ? (
             <NotAvailable>
               No webhook was fired for this message — either no endpoint subscribes to its events,
               or none have fired yet.
             </NotAvailable>
           ) : (
             <DataTable
-              rows={webhook_attempts ?? []}
+              rows={webhook_deliveries}
               columns={attemptColumns}
               rowId={(row) => row.id}
-              caption={`Webhook delivery attempts for message ${email.id}`}
+              caption={`Webhook delivery attempts for message ${message.id}`}
               defaultSort={{ columnId: 'created', direction: 'desc' }}
             />
           )}
@@ -359,16 +371,16 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
               and expires separately from the log itself.
             </NotAvailable>
           )}
-          {email.provider_message_id ? (
+          {message.provider_message_id ? (
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="ms-eyebrow text-muted-2">provider message id</span>
               <Button
                 variant="ghost"
                 size="sm"
                 aria-label={copied ? 'Provider message id copied' : 'Copy provider message id'}
-                onClick={() => copy(email.provider_message_id ?? '')}
+                onClick={() => copy(message.provider_message_id ?? '')}
               >
-                <span className="font-mono text-[12px]">{email.provider_message_id}</span>
+                <span className="font-mono text-[12px]">{message.provider_message_id}</span>
                 {copied ? (
                   <Check aria-hidden="true" className="text-positive" />
                 ) : (

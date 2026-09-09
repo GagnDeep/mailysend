@@ -22,6 +22,15 @@ export const SITE_TWITTER = '@mailysend'
 
 export const REPO_URL = 'https://github.com/GagnDeep/mailysend'
 
+/**
+ * The real one-click target. Every "Deploy to Cloudflare" affordance points
+ * here, so the button in the product and the button in the README are the same
+ * button — Cloudflare forks the repo, reads `apps/app/wrangler.jsonc` for the
+ * bindings and the root `.env.example` for the (entirely optional) variables
+ * form, then builds and deploys.
+ */
+export const DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${REPO_URL}`
+
 /** Absolute URL for a site-relative path. Idempotent for absolute input. */
 export const absoluteUrl = (path: string): string => {
   if (/^https?:\/\//.test(path)) return path

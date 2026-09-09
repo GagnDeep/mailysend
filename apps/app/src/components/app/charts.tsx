@@ -266,6 +266,15 @@ export const BreakdownChart = ({
   const reducedMotion = usePrefersReducedMotion()
   const data = rows.map((row) => ({ ...row, label: formatKey(row.key) }))
   const height = Math.max(120, data.length * 30 + 24)
+  /**
+   * A fixed axis width clipped `category:transactional` to `ry:transactional`.
+   * Tag and domain labels are caller-supplied and unbounded, so the gutter is
+   * sized from the longest one — in mono at 11px, ~6.7px per character.
+   */
+  const axisWidth = Math.min(
+    220,
+    Math.max(116, Math.round(Math.max(0, ...data.map((row) => row.label.length)) * 6.7) + 12),
+  )
 
   return (
     <ChartFrame
@@ -306,7 +315,7 @@ export const BreakdownChart = ({
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={false}
-            width={116}
+            width={axisWidth}
           />
           <RechartsTooltip
             cursor={{ fill: 'var(--color-line-soft)' }}

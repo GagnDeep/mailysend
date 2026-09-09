@@ -267,11 +267,15 @@ logs.get('/:id', async (c) => {
   const deliveries = eventIds.length
     ? await ctx.sql
         .prepare(
-          `SELECT id, endpoint_id, event_id, event_type, attempt, status, response_status,
-                  response_body, duration_ms, created_at
-             FROM webhook_deliveries
-            WHERE workspace_id = ? AND event_id IN (${eventIds.map(() => '?').join(', ')})
-            ORDER BY created_at ASC LIMIT 200`,
+          // The endpoint's URL is joined in because the drawer's whole job is to
+          // say *where* a webhook went; an endpoint id is not an answer to that.
+          `SELECT d.id, d.endpoint_id, e.url, d.event_id, d.event_type, d.attempt, d.status,
+                  d.response_status, d.response_body, d.duration_ms, d.created_at
+             FROM webhook_deliveries d
+             LEFT JOIN webhook_endpoints e
+               ON e.id = d.endpoint_id AND e.workspace_id = d.workspace_id
+            WHERE d.workspace_id = ? AND d.event_id IN (${eventIds.map(() => '?').join(', ')})
+            ORDER BY d.created_at ASC LIMIT 200`,
         )
         .bind(ctx.workspace.id, ...eventIds)
         .all()
