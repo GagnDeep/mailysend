@@ -33,6 +33,37 @@ const serverDir = dirname(generated)
 delete config.configPath
 delete config.userConfigPath
 
+/**
+ * Analytics Engine is opt-in, because it is opt-in on the account.
+ *
+ * A dataset binding is validated at upload, and an account that has not clicked
+ * Enable on the Analytics Engine page fails the whole deploy:
+ *
+ *   You need to enable Analytics Engine. Head to the Cloudflare Dashboard to
+ *   enable [code: 10089]
+ *
+ * That is the last thing a one-click deploy should die on, and the binding buys
+ * the deployment nothing it cannot live without: AE is the hot query layer for
+ * charts, sampled and three-month retained, and `consumeEvents` already treats
+ * it as optional — every count of record comes from D1. So the bindings are
+ * dropped unless the operator asks for them with `MS_ANALYTICS_ENGINE=1`, in
+ * which case they must enable the feature on the account first.
+ */
+const wantsAnalyticsEngine = process.env.MS_ANALYTICS_ENGINE === '1'
+if (!wantsAnalyticsEngine && config.analytics_engine_datasets?.length) {
+  const dropped = config.analytics_engine_datasets.map((d) => d.binding).join(', ')
+  delete config.analytics_engine_datasets
+  console.log(
+    `[wrangler] Analytics Engine left out (${dropped}) — set MS_ANALYTICS_ENGINE=1 to include it, ` +
+      'after enabling Analytics Engine on the account.',
+  )
+  // The bundle's own config is deployed by `pnpm deploy:cf` and `wrangler dev`,
+  // so it has to agree with the one at the root or the two paths diverge.
+  const bundled = JSON.parse(readFileSync(generated, 'utf8'))
+  delete bundled.analytics_engine_datasets
+  writeFileSync(generated, `${JSON.stringify(bundled, null, 2)}\n`)
+}
+
 const fromRoot = (p) => relative(root, resolve(serverDir, p)).split('\\').join('/')
 
 config.main = fromRoot(config.main)

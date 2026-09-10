@@ -177,7 +177,26 @@ This is also why no `database_id` or KV `id` appears in `wrangler.jsonc`. A
 generated id cannot be committed, and a literal placeholder is worse than
 omitting one — it passes JSON validation and fails the deploy.
 
-Analytics Engine datasets need no provisioning: they are created on first write.
+### Analytics Engine is left out unless you ask for it
+
+The dataset bindings are dropped from the generated config, and the deploy is
+the reason: a binding is validated at upload, and an account that has not
+clicked Enable on the Analytics Engine page fails the whole thing with
+
+```
+You need to enable Analytics Engine. Head to the Cloudflare Dashboard to
+enable [code: 10089]
+```
+
+after a 6 MB upload. That is not something a one-click deploy should die on,
+and the binding is not load-bearing: Analytics Engine is the hot query layer
+for the dashboard's charts — sampled under load, three months of retention —
+while every count of record comes from D1, and the events consumer already
+treats the binding as optional.
+
+Enable Analytics Engine on the account, then build with
+`MS_ANALYTICS_ENGINE=1` to include the bindings. The datasets themselves need
+no provisioning; they are created on first write.
 
 If you would rather do it yourself, one idempotent command covers the same
 ground:
