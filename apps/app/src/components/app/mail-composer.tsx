@@ -124,6 +124,17 @@ export function MailComposer({ seed, onClose, onSent }: MailComposerProps) {
   const [dirty, setDirty] = useState(false)
   const [testMode, setTestMode] = useState(environment === 'test')
   const [scheduledAt, setScheduledAt] = useState('')
+  /**
+   * Deliver on the request, rather than handing the message to the send queue.
+   *
+   * On by default, and the reason is what happens when it is off: the API
+   * answers `202` the moment the message is on the queue, the composer says
+   * Sent, and if nothing is consuming that queue — Cloudflare Queues are not on
+   * every plan, and a consumer can simply not be attached — the message sits at
+   * `sending` with no provider and no error, forever. Inline sending is slower
+   * by exactly one provider call and tells the truth.
+   */
+  const [immediate, setImmediate] = useState(true)
   const [attachments, setAttachments] = useState<
     { key: string; filename: string; content_type: string; size: number }[]
   >([])
@@ -334,7 +345,7 @@ export function MailComposer({ seed, onClose, onSent }: MailComposerProps) {
         html,
         text,
         ...(attachments.length ? { attachments } : {}),
-        ...(scheduledAt ? { scheduled_at: new Date(scheduledAt).toISOString() } : {}),
+        ...(scheduledAt ? { scheduled_at: new Date(scheduledAt).toISOString() } : { immediate }),
         ...(parent?.message_id ? { in_reply_to: parent.message_id } : {}),
         ...(parent
           ? { references: [...parent.references, parent.message_id].filter(Boolean) }
@@ -348,7 +359,9 @@ export function MailComposer({ seed, onClose, onSent }: MailComposerProps) {
           ? 'Sent in Test mode — switch the environment switch to Test to read it'
           : scheduledAt
             ? 'Scheduled'
-            : 'Sent',
+            : immediate
+              ? 'Sent'
+              : 'Queued',
         { description: result.id },
       )
       onSent()
@@ -693,7 +706,8 @@ export function MailComposer({ seed, onClose, onSent }: MailComposerProps) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" disabled={!canSend} onClick={() => send.mutate()}>
-              <Send className="size-4" /> {scheduledAt ? 'Schedule' : 'Send'}
+              <Send className="size-4" />{' '}
+              {scheduledAt ? 'Schedule' : immediate ? 'Send now' : 'Send'}
             </Button>
 
             <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] text-muted">
@@ -719,6 +733,17 @@ export function MailComposer({ seed, onClose, onSent }: MailComposerProps) {
                 aria-label="Schedule send"
               />
             </span>
+
+            {scheduledAt ? null : (
+              <span className="inline-flex items-center gap-2 text-[12.5px] text-muted">
+                <Switch
+                  checked={immediate}
+                  onCheckedChange={setImmediate}
+                  aria-label="Send immediately"
+                />
+                {immediate ? 'Send immediately' : 'Queue for background sending'}
+              </span>
+            )}
           </div>
 
           <span className="inline-flex items-center gap-2 text-[12.5px] text-muted">

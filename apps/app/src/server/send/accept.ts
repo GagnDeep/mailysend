@@ -155,6 +155,16 @@ export interface AcceptOptions {
   broadcastId?: string
   automationId?: string
   contactId?: string
+  /**
+   * Deliver before answering, rather than handing the message to a queue.
+   *
+   * What somebody pressing Send in the composer wants is the send, and what a
+   * queue gives them is a hop that has to exist and has to be consumed —
+   * Cloudflare Queues are not on every plan, and a deployment whose consumer is
+   * not attached leaves every message at `sending` with nothing to show for it.
+   * Bulk traffic still queues, because that is what a queue is good at.
+   */
+  immediate?: boolean
 }
 
 export async function acceptEmail(
@@ -285,6 +295,16 @@ export async function acceptEmail(
     // message, because a delayed message cannot be cancelled and `DELETE
     // /v1/emails/:id` has to work.
     await scheduleLater(ctx, emailId, scheduledAtIso, job)
+  } else if (opts.immediate || !ctx.env.SEND_QUEUE) {
+    // Inline, and then the queue only if the failure was worth retrying. A
+    // deployment with no queue binding at all takes this path whatever the
+    // caller asked for: losing the message to a binding that is not there is
+    // the one outcome nobody can act on.
+    const { deliverNow } = await import('./consumer.ts')
+    const outcome = await deliverNow(job, ctx.env)
+    if (!outcome.delivered && outcome.retryable && ctx.env.SEND_QUEUE) {
+      await ctx.env.SEND_QUEUE.send(job)
+    }
   } else {
     await ctx.env.SEND_QUEUE.send(job)
   }

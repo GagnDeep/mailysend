@@ -531,6 +531,9 @@ describe('test mode', () => {
         to: ['someone@example.com'],
         subject: 'Does this thing work?',
         html: '<p>Apparently it does.</p>',
+        // The queued path specifically: this test drives the consumer itself,
+        // and needs the job in its hands rather than already delivered.
+        immediate: false,
       }),
     })
     expect(res.status).toBe(200)
@@ -563,5 +566,148 @@ describe('test mode', () => {
     expect(full.messages[0]?.html).toContain('Apparently it does.')
     // The original MIME, kept — so "raw .eml" is a real tab and not a promise.
     expect(full.messages[0]?.has_raw).toBe(true)
+  })
+})
+
+/**
+ * The composer's default, and the reason it is the default.
+ *
+ * A queue is an excellent way to send a hundred thousand messages and a poor
+ * way to send one: it adds a hop that has to exist (Cloudflare Queues are not
+ * on every plan) and has to be consumed. When either is untrue the API still
+ * answers 202, the composer still says Sent, and the message sits at `sending`
+ * with no provider and no error — which is the state the user reported and the
+ * one state nobody can act on from the outside.
+ */
+describe('immediate sending', () => {
+  it('delivers a test-mode send inline, with no consumer and no queue', async () => {
+    const testHarness = await harness()
+    const userId = await claimFor(testHarness)
+    const testCookie = await sessionFor(testHarness, userId)
+    await verifiedDomain(testHarness, 'acme.dev')
+
+    const jobs: unknown[] = []
+    testHarness.env.SEND_QUEUE = {
+      send: async (job: unknown) => {
+        jobs.push(job)
+      },
+      sendBatch: async () => {},
+    } as never
+
+    const res = await testHarness.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Straight through',
+        html: '<p>No queue involved.</p>',
+      }),
+    })
+    expect(res.status).toBe(200)
+    // Nothing was handed to the queue, and yet the mail arrived.
+    expect(jobs).toHaveLength(0)
+
+    const delivered = await testHarness.fetch('/v1/mail/threads?folder=inbox', {
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+    })
+    const body = (await delivered.json()) as { data: { subject: string }[] }
+    expect(body.data.map((t) => t.subject)).toContain('Straight through')
+  })
+
+  it('records the failure on the send itself rather than leaving it at sending', async () => {
+    const testHarness = await harness()
+    const userId = await claimFor(testHarness)
+    const testCookie = await sessionFor(testHarness, userId)
+    await verifiedDomain(testHarness, 'acme.dev')
+
+    const res = await testHarness.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie: testCookie,
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Nowhere to go',
+        text: 'No provider is configured on this instance.',
+      }),
+    })
+    expect(res.status).toBe(200)
+    const { id } = (await res.json()) as { id: string }
+
+    // By the time the composer's request returns, the message has a verdict:
+    // a permanent failure with a reason a person can read, not `sending`.
+    const detail = await testHarness.fetch(`/v1/emails/${id}`, { cookie: testCookie })
+    const email = (await detail.json()) as {
+      last_event: string
+      provider: string | null
+      error: string | null
+    }
+    expect(email.last_event).toBe('failed')
+    expect(email.error).toMatch(/no sending provider is configured/i)
+    // And routed-then-refused, so the reader is not left with `unassigned`.
+    expect(email.provider).toBe('cloudflare')
+  })
+
+  it('still queues when the caller asks it to', async () => {
+    const testHarness = await harness()
+    const userId = await claimFor(testHarness)
+    const testCookie = await sessionFor(testHarness, userId)
+    await verifiedDomain(testHarness, 'acme.dev')
+
+    const jobs: unknown[] = []
+    testHarness.env.SEND_QUEUE = {
+      send: async (job: unknown) => {
+        jobs.push(job)
+      },
+      sendBatch: async () => {},
+    } as never
+
+    const res = await testHarness.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie: testCookie,
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Take your time',
+        text: 'Bulk traffic still belongs on a queue.',
+        immediate: false,
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(jobs).toHaveLength(1)
+  })
+
+  it('sends inline when there is no queue binding at all', async () => {
+    const testHarness = await harness()
+    const userId = await claimFor(testHarness)
+    const testCookie = await sessionFor(testHarness, userId)
+    await verifiedDomain(testHarness, 'acme.dev')
+
+    // A deployment on a plan without Queues. Asking to queue cannot be honoured,
+    // and dropping the message would be the worst of the available outcomes.
+    testHarness.env.SEND_QUEUE = undefined as never
+
+    const res = await testHarness.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'No queue here',
+        html: '<p>Delivered anyway.</p>',
+        immediate: false,
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const delivered = await testHarness.fetch('/v1/mail/threads?folder=inbox', {
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+    })
+    const body = (await delivered.json()) as { data: { subject: string }[] }
+    expect(body.data.map((t) => t.subject)).toContain('No queue here')
   })
 })

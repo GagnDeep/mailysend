@@ -516,6 +516,14 @@ const ComposeRequest = z.object({
     .max(20)
     .optional(),
   scheduled_at: z.string().max(64).optional(),
+  /**
+   * Send before answering, rather than queueing. The default, because a person
+   * watching the composer close is owed the outcome: a queue that is missing —
+   * Cloudflare Queues are not on every plan — or whose consumer is not attached
+   * leaves the message at `sending` forever, and nobody can tell from the
+   * outside which of those happened.
+   */
+  immediate: z.boolean().default(true),
   /** `reply`, `reply_all` and `forward` differ only in what the client prefills. */
   in_reply_to: z.string().max(998).optional(),
   references: z.array(z.string().max(998)).max(50).optional(),
@@ -611,7 +619,9 @@ mail.post('/send', async (c) => {
     ...(Object.keys(headers).length ? { headers } : {}),
   })
 
-  const accepted = await acceptEmail(ctx, request)
+  // Scheduled mail always goes to the shard actor; `immediate` only decides
+  // between delivering now and handing to the queue.
+  const accepted = await acceptEmail(ctx, request, { immediate: body.immediate })
   return json({
     object: 'mail_send',
     id: accepted.id,

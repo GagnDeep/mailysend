@@ -67,6 +67,38 @@ export async function consumeSend(batch: QueueBatch<SendJob>, env: Env): Promise
   }
 }
 
+/**
+ * Deliver one message on the caller's own time, without a queue.
+ *
+ * A queue is the right shape for a broadcast and the wrong shape for a person
+ * pressing Send: it adds a hop that can be missing (Queues are not on every
+ * Cloudflare plan) or unattached, and when it is, the message sits at `sending`
+ * forever with nothing to show for it. The dashboard's composer therefore
+ * delivers inline and reports the outcome, and this is the same `handleOne` the
+ * consumer runs — the lease, the router, the provider call and the status
+ * write, once, with the same at-least-once guarantees.
+ *
+ * `retryable` says whether the queue should still be given a chance: a
+ * transient failure deserves the retry schedule a queue provides, and a
+ * permanent one has already been written to the message row.
+ */
+export async function deliverNow(
+  job: SendJob,
+  env: Env,
+): Promise<{ delivered: boolean; retryable: boolean; error?: string }> {
+  try {
+    await handleOne(job, env)
+    return { delivered: true, retryable: false }
+  } catch (err) {
+    const transient = err instanceof SendError && err.kind !== 'permanent' && err.kind !== 'auth'
+    if (transient) return { delivered: false, retryable: true, error: describe(err) }
+    await markFailed(env, job, err)
+    return { delivered: false, retryable: false, error: describe(err) }
+  }
+}
+
+const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
 async function handleOne(job: SendJob, env: Env): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
 
