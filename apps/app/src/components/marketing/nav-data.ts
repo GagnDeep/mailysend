@@ -48,31 +48,19 @@ export const PRODUCT_GROUP: NavGroup = {
   ],
 }
 
-export const MORE_GROUP: NavGroup = {
-  label: 'More',
-  matches: ['/compare', '/resources'],
-  items: [
-    {
-      label: 'Compare & migrate',
-      href: '/compare',
-      description: 'Resend, SES, SendGrid, Postmark',
-    },
-    {
-      label: 'Resources',
-      href: '/resources',
-      description: 'Changelog, glossary, security, status',
-    },
-    {
-      label: 'Self-host (MIT)',
-      href: '/resources#selfhost',
-      description: 'Deploy into your own account',
-    },
-  ],
-}
+/**
+ * "More" was a dropdown of three two-line rows whose second lines were
+ * comma-jammed keyword lists — a 290px panel to hold two real destinations,
+ * because the third ("Self-host (MIT)") only duplicated the deploy button that
+ * now goes straight to Cloudflare. Two links do not need a menu, so they sit in
+ * the bar with Docs and Cost.
+ */
 
 export const FLAT_LINKS: NavLink[] = [
   { label: 'Docs', href: '/docs' },
   { label: 'Cost', href: '/pricing' },
+  { label: 'Compare', href: '/compare' },
+  { label: 'Resources', href: '/resources' },
 ]
 
 export interface FooterColumn {

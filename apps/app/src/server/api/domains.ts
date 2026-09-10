@@ -404,6 +404,84 @@ function readiness(
 }
 
 /**
+ * `POST /v1/domains/:id/receiving-check` — is this domain's MX pointed at us?
+ *
+ * Receiving has always been the half of a domain the product could not check.
+ * `docs/RECEIVING.md` told the operator to resolve the MX by hand and compare
+ * it to `*.mx.cloudflare.net`; nothing in the app did it, so "I bound the
+ * catch-all and nothing arrived" had no first step. This is that step, and it
+ * is pure observation — no API token, the same DoH resolver the sending checks
+ * use, and the same four-word vocabulary.
+ *
+ * `error` is a real answer here, exactly as it is for sending records: a
+ * resolver that would not answer is not a domain that failed.
+ */
+domains.post('/:id/receiving-check', async (c) => {
+  const ctx = c.get('ctx')
+  requireScope(ctx.actor, 'domains:read')
+  const row = await loadDomain(ctx, c.req.param('id'))
+
+  let answers: DohAnswer[]
+  try {
+    answers = await resolve(row.name, 'MX')
+  } catch (err) {
+    return json({
+      object: 'receiving_check',
+      domain: row.name,
+      status: 'error' as const,
+      found: null,
+      expected: '*.mx.cloudflare.net',
+      detail: `The MX lookup did not complete: ${err instanceof Error ? err.message : String(err)}. That is not evidence the domain is wrong — try again.`,
+      mailboxes: await mailboxSummary(ctx, row.name),
+    })
+  }
+
+  const exchanges = answers.map((a) => canonical(a.data.trim().split(/\s+/).pop() ?? a.data))
+  const found = answers.map((a) => a.data.trim()).join(' | ') || null
+  const cloudflare = exchanges.filter((e) => e.endsWith('mx.cloudflare.net'))
+
+  const status =
+    exchanges.length === 0 ? 'pending' : cloudflare.length > 0 ? 'verified' : ('failed' as const)
+
+  const detail =
+    status === 'verified'
+      ? 'Cloudflare Email Routing is receiving for this domain. The remaining question is whether its catch-all rule is bound to this Worker — that part is zone-side and cannot be observed from here.'
+      : status === 'pending'
+        ? 'This domain publishes no MX at all, so nothing can deliver mail to it. Enable Email Routing on the zone and Cloudflare publishes the records itself.'
+        : `This domain's mail is delivered somewhere else (${found}). Receiving through MailySend needs the MX pointed at Cloudflare Email Routing; changing it moves *all* mail for this domain.`
+
+  return json({
+    object: 'receiving_check',
+    domain: row.name,
+    status,
+    found,
+    expected: '*.mx.cloudflare.net',
+    detail,
+    mailboxes: await mailboxSummary(ctx, row.name),
+  })
+})
+
+/**
+ * The other half of "why did nothing arrive": routing can be perfect and the
+ * address still have nowhere to land. Reported together so the answer is one
+ * screen rather than two.
+ */
+async function mailboxSummary(
+  ctx: Ctx,
+  domain: string,
+): Promise<{ count: number; catch_all: string | null }> {
+  const rows = await ctx.sql
+    .prepare(
+      `SELECT address, is_catch_all FROM inbound_mailboxes
+        WHERE workspace_id = ? AND (domain = ? OR address LIKE ?)`,
+    )
+    .bind(ctx.workspace.id, domain, `%@${domain}`)
+    .all<{ address: string; is_catch_all: number }>()
+  const catchAll = rows.results.find((r) => r.is_catch_all)
+  return { count: rows.results.length, catch_all: catchAll?.address ?? null }
+}
+
+/**
  * `POST /:id/identity` — ask the transport to create the sending identity.
  *
  * The wizard used to compute a record set from first principles and present it

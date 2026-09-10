@@ -1,6 +1,7 @@
 import { DEFAULT_WORKSPACE } from '@mailysend/core'
 import { VERSION } from '../../version.ts'
 import {
+  claimCodeRequired,
   isClaimed,
   LAST_SEND_ERROR_KEY,
   PREVIOUS_URL_KEY,
@@ -34,7 +35,7 @@ instance.get('/', async () => {
   const env = getEnv()
   const sql = tenancyFor(env).db('')
 
-  const [claimed, verified, previousUrl, lastSendError] = await Promise.all([
+  const [claimed, verified, previousUrl, lastSendError, codeRequired] = await Promise.all([
     isClaimed(sql),
     sql
       .prepare(`SELECT COUNT(*) AS n FROM domains WHERE workspace_id = ? AND status = 'verified'`)
@@ -42,6 +43,7 @@ instance.get('/', async () => {
       .first<{ n: number }>(),
     readInstanceSetting(sql, PREVIOUS_URL_KEY),
     readInstanceSetting(sql, LAST_SEND_ERROR_KEY),
+    claimCodeRequired(sql, env.MS_OWNER_EMAIL),
   ])
 
   const verifiedDomains = verified?.n ?? 0
@@ -51,6 +53,13 @@ instance.get('/', async () => {
   return Response.json({
     object: 'instance',
     claimed,
+    // What `/setup` must ask for, and nothing about who. `code_required` says a
+    // code was minted on first boot and has not been spent; `reserved` says
+    // `MS_OWNER_EMAIL` is set. The address itself stays out of an
+    // unauthenticated response — knowing that *an* address is required is what
+    // the form needs, and is already observable by trying; knowing *which* is a
+    // fact about a person, and is not.
+    claim: { code_required: claimed ? false : codeRequired, reserved: Boolean(env.MS_OWNER_EMAIL) },
     mode: env.MS_MODE,
     version: VERSION,
     public_url: env.MS_PUBLIC_URL,

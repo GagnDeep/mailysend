@@ -48,7 +48,7 @@ export async function handleMcp(request: Request): Promise<Response> {
   const token = bearerToken(request) ?? ''
 
   const server = new McpServer({
-    backend: restBackend(request, token),
+    backend: restBackend(request, token, sql),
     auth: {
       resolve: async (keyHash) => {
         const row = await sql
@@ -76,6 +76,11 @@ export async function handleMcp(request: Request): Promise<Response> {
     // Server-side only. An agent that could compute this signature could mint
     // its own confirmation, which is the whole thing this gate prevents.
     confirmationSecret: env.MS_SECRET,
+    // The instance's own approvals page. `MS_PUBLIC_URL` is learned and pinned
+    // on first boot, so this is right on a workers.dev vanity host and on a
+    // custom domain alike; the request origin is the fallback for the window
+    // before it has been learned.
+    approvalChannel: `${(env.MS_PUBLIC_URL || new URL(request.url).origin).replace(/\/$/, '')}/app/approvals`,
     approvals: new SqlApprovals(sql),
     consumed: new SqlConsumedTokens(sql),
   })
@@ -97,8 +102,44 @@ export async function handleMcp(request: Request): Promise<Response> {
  * operation", and collapsing the two would mean the tool layer deciding scopes,
  * which is exactly where an authorization bug would hide.
  */
-function restBackend(request: Request, token: string): McpBackend {
+function restBackend(request: Request, token: string, sql: Sql): McpBackend {
   const origin = new URL(request.url).origin
+
+  /**
+   * Which mailboxes this agent may see.
+   *
+   * `inbound_mailboxes.agent_enabled` had two switches writing it and nothing
+   * reading it, while `docs/RECEIVING.md` stated it scoped MCP to that mailbox
+   * and only that one. Making that true is a behaviour change for anyone who
+   * flipped it expecting nothing, so the rule is opt-in rather than
+   * fail-closed: a workspace that has never marked a mailbox is unscoped
+   * exactly as before, and marking the first one is what turns the switch into
+   * a boundary. `null` means unscoped.
+   */
+  const agentMailboxes = async (workspaceId: string): Promise<Set<string> | null> => {
+    const rows = await sql
+      .prepare('SELECT id FROM inbound_mailboxes WHERE workspace_id = ? AND agent_enabled = 1')
+      .bind(workspaceId)
+      .all<{ id: string }>()
+    if (rows.results.length === 0) return null
+    return new Set(rows.results.map((row) => row.id))
+  }
+
+  /** The mailbox a conversation belongs to, for the check above. */
+  const threadMailbox = async (workspaceId: string, threadId: string): Promise<string | null> => {
+    const row = await sql
+      .prepare('SELECT mailbox_id FROM mail_threads WHERE workspace_id = ? AND id = ?')
+      .bind(workspaceId, threadId)
+      .first<{ mailbox_id: string | null }>()
+    return row?.mailbox_id ?? null
+  }
+
+  const mayReadThread = async (workspaceId: string, threadId: string): Promise<boolean> => {
+    const allowed = await agentMailboxes(workspaceId)
+    if (!allowed) return true
+    const mailboxId = await threadMailbox(workspaceId, threadId)
+    return mailboxId !== null && allowed.has(mailboxId)
+  }
 
   async function call<T>(
     method: string,
@@ -165,7 +206,7 @@ function restBackend(request: Request, token: string): McpBackend {
     },
 
     async searchThreads(
-      _ctx: AuthContext,
+      authCtx: AuthContext,
       input: { query: string; limit: number },
     ): Promise<ThreadHit[]> {
       const result = await call<{
@@ -178,7 +219,20 @@ function restBackend(request: Request, token: string): McpBackend {
           received_at: string
         }[]
       }>('GET', `/inbound/search${query({ q: input.query, limit: input.limit })}`)
-      return result.data.map((hit) => ({
+      const allowed = await agentMailboxes(authCtx.workspaceId)
+      const visible = allowed
+        ? (
+            await Promise.all(
+              result.data.map(async (hit) => ({
+                hit,
+                ok: allowed.has((await threadMailbox(authCtx.workspaceId, hit.thread_id)) ?? ''),
+              })),
+            )
+          )
+            .filter((entry) => entry.ok)
+            .map((entry) => entry.hit)
+        : result.data
+      return visible.map((hit) => ({
         thread_id: hit.thread_id,
         message_id: hit.id,
         subject: hit.subject,
@@ -188,7 +242,11 @@ function restBackend(request: Request, token: string): McpBackend {
       }))
     },
 
-    async getThread(_ctx: AuthContext, threadId: string): Promise<ThreadDetail | null> {
+    async getThread(authCtx: AuthContext, threadId: string): Promise<ThreadDetail | null> {
+      // Not found rather than forbidden: a thread outside the agent's
+      // mailboxes must not be distinguishable from one that does not exist, or
+      // the boundary leaks the subject line it was drawn to protect.
+      if (!(await mayReadThread(authCtx.workspaceId, threadId))) return null
       try {
         const thread = await call<{
           id: string
@@ -216,11 +274,16 @@ function restBackend(request: Request, token: string): McpBackend {
     },
 
     async replyToThread(
-      _ctx: AuthContext,
+      authCtx: AuthContext,
       payload: ReplyPayload,
       options: SendOptions,
     ): Promise<RepliedMessage> {
       const { thread_id: threadId, ...body } = payload
+      if (!(await mayReadThread(authCtx.workspaceId, threadId))) {
+        throw new Error(
+          'That conversation is not in a mailbox this agent may act on. Turn on Agent for its mailbox under the domain’s Receiving tab.',
+        )
+      }
       const replied = await call<{ id: string; thread_id: string }>(
         'POST',
         `/inbound/threads/${encodeURIComponent(threadId)}/reply`,

@@ -85,6 +85,7 @@ function SetupPage() {
         <AlreadyClaimed />
       ) : step === 'claim' ? (
         <ClaimStep
+          instance={instance}
           busy={busy}
           setBusy={setBusy}
           setError={setError}
@@ -122,11 +123,13 @@ function SetupPage() {
 // ---------------------------------------------------------------------------
 
 function ClaimStep({
+  instance,
   busy,
   setBusy,
   setError,
   onClaimed,
 }: {
+  instance: Instance | null
   busy: boolean
   setBusy: (value: boolean) => void
   setError: (value: string | null) => void
@@ -134,18 +137,29 @@ function ClaimStep({
 }) {
   const [email, setEmail] = useState('')
   const [workspace, setWorkspace] = useState('')
+  const [claimCode, setClaimCode] = useState('')
   const supported = passkeysSupported()
+  // Absent on an instance that predates the claim code, and false once
+  // `MS_OWNER_EMAIL` already narrows the claim — asking for both would be two
+  // locks on one door.
+  const needsCode = instance?.claim?.code_required ?? false
+  const reserved = instance?.claim?.reserved ?? false
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const { challenge, response } = await createPasskey('/v1/setup/claim/options', { email })
+      const code = claimCode.trim().toUpperCase()
+      const { challenge, response } = await createPasskey('/v1/setup/claim/options', {
+        email,
+        ...(code ? { claim_code: code } : {}),
+      })
       const verify = await postJson('/v1/setup/claim/verify', {
         email,
         challenge,
         response,
+        ...(code ? { claim_code: code } : {}),
         ...(workspace ? { workspace_name: workspace } : {}),
       })
       if (!verify.ok) throw new Error(await failure(verify, 'This instance could not be claimed.'))
@@ -170,6 +184,31 @@ function ClaimStep({
         email to wait for, and nothing for us to hold on your behalf.
       </p>
 
+      {needsCode ? (
+        <>
+          <Label htmlFor="setup-code" className="mb-[7px]">
+            Claim code
+          </Label>
+          <Input
+            id="setup-code"
+            name="claim_code"
+            required
+            autoComplete="off"
+            spellCheck={false}
+            value={claimCode}
+            onChange={(event) => setClaimCode(event.target.value.toUpperCase())}
+            placeholder="ABCD-EFGH-JKMN"
+            className="mb-1.5 h-[50px] rounded-md font-mono tracking-[0.08em]"
+          />
+          <p className="m-0 mb-4 text-[13px] leading-[1.6] text-muted-2">
+            Printed once in this deployment’s log the first time it booted. On Cloudflare it is in{' '}
+            <code className="font-mono text-muted">wrangler tail</code>, or the Worker’s{' '}
+            <strong>Logs</strong> tab in the dashboard. It is what stops whoever finds this URL
+            first from claiming the instance ahead of you.
+          </p>
+        </>
+      ) : null}
+
       <Label htmlFor="setup-email" className="mb-[7px]">
         Your email
       </Label>
@@ -185,8 +224,18 @@ function ClaimStep({
         className="mb-1.5 h-[50px] rounded-md"
       />
       <p className="m-0 mb-4 text-[13px] leading-[1.6] text-muted-2">
-        Used to label your account and address alerts to you. Nothing is sent to it now — this
-        instance has no verified sending domain yet.
+        This address becomes the owner of the instance — it labels your account and is where alerts
+        are addressed. Nothing is sent to it now; this instance has no verified sending domain yet.
+        {reserved ? (
+          <>
+            {' '}
+            <strong className="text-muted">
+              This deployment is reserved for one specific address
+            </strong>{' '}
+            (<code className="font-mono">MS_OWNER_EMAIL</code> is set), so only that one will be
+            accepted.
+          </>
+        ) : null}
       </p>
 
       <Label htmlFor="setup-workspace" className="mb-[7px]">
@@ -203,7 +252,7 @@ function ClaimStep({
 
       <Button
         type="submit"
-        disabled={busy || !supported}
+        disabled={busy || !supported || (needsCode && !claimCode.trim())}
         className="h-[52px] w-full rounded-md text-[15px]"
       >
         {busy ? 'Waiting for your device…' : 'Create a passkey and claim'}

@@ -16,7 +16,7 @@ import {
 } from '@mailysend/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Check, Globe, Minus, Plus, X } from 'lucide-react'
+import { Check, ExternalLink, Globe, Minus, Plus, X } from 'lucide-react'
 import { useId, useState } from 'react'
 import type { Column } from '~/components/app/data-table.tsx'
 import { DataTable } from '~/components/app/data-table.tsx'
@@ -337,48 +337,115 @@ const AddDomainWizard = ({
 
         {step > 0 && domain ? (
           <div className="flex flex-col gap-3">
-            <p className="m-0 text-[14px] text-muted">
-              {managed
-                ? `${domain.name} is set up by the transport itself — there is nothing for you to copy here. The records below are listed because we check them.`
-                : step === 1
-                  ? `Add these records to the DNS zone for ${domain.name}. Leave them in place — removing one later stops the domain sending.`
-                  : 'We resolve each record ourselves. Anything still pending has simply not reached our resolver yet.'}
-            </p>
-
-            {/* For an `observe`-only transport the hand-off is the primary
-                action, not a footnote under an empty table. */}
-            {identity?.external ? (
-              <Callout variant="info" title="This transport does its own setup">
-                {identity.detail ?? 'The records below are checked, not copied.'}
-                <span className="mt-2 block">
-                  <a
-                    className="text-accent underline-offset-2 hover:underline"
-                    href={identity.external.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {identity.external.label} →
-                  </a>
+            {/*
+              The easy path first.
+              
+              When the transport publishes its own records — every row
+              `observe`, which is every Cloudflare domain — copying is not the
+              job and never was. Leading with a table of values nobody types
+              made a two-click hand-off read like fifteen minutes of DNS work,
+              so the hand-off is the affordance and the records fold away
+              beneath it as "what we will check".
+            */}
+            {managed && identity?.external ? (
+              <div className="flex flex-col gap-3 rounded-code border border-line bg-tint p-4">
+                <span>
+                  <span className="block text-[14px] font-semibold text-ink">
+                    Cloudflare sets {domain.name} up for you
+                  </span>
+                  <span className="mt-1 block text-[13.5px] leading-[1.6] text-muted">
+                    In the Cloudflare dashboard go to <strong>Email</strong> →{' '}
+                    <strong>Email Sending</strong> and onboard this domain. Cloudflare writes every
+                    DNS record itself — there is nothing here to copy, and nothing to paste. Come
+                    back and press <strong>Check records</strong> when it is done.
+                  </span>
                 </span>
-              </Callout>
-            ) : null}
+                <span className="flex flex-wrap items-center gap-2">
+                  <Button asChild variant="primary">
+                    <a href={identity.external.url} target="_blank" rel="noopener noreferrer">
+                      {identity.external.label}
+                      <ExternalLink aria-hidden="true" className="size-[15px]" />
+                    </a>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={verify.isPending}
+                    onClick={() => {
+                      setStep(2)
+                      verify.mutate(domain.id)
+                    }}
+                  >
+                    {verify.isPending ? 'Checking…' : 'Check records'}
+                  </Button>
+                </span>
+                {identity.detail ? (
+                  <span className="block text-[12.5px] leading-[1.6] text-muted-2">
+                    {identity.detail}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <p className="m-0 text-[14px] text-muted">
+                  {step === 1
+                    ? `Add these records to the DNS zone for ${domain.name}. Leave them in place — removing one later stops the domain sending.`
+                    : 'We resolve each record ourselves. Anything still pending has simply not reached our resolver yet.'}
+                </p>
+                {identity?.external ? (
+                  <Callout variant="info" title="This transport does its own setup">
+                    {identity.detail ?? 'The records below are checked, not copied.'}
+                    <span className="mt-2 block">
+                      <a
+                        className="text-accent underline-offset-2 hover:underline"
+                        href={identity.external.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {identity.external.label} →
+                      </a>
+                    </span>
+                  </Callout>
+                ) : null}
+              </>
+            )}
+
             {step === 2 ? (
               <p className="m-0 flex items-center gap-2 text-[13.5px] text-muted">
                 Current state: <StatusBadge status={domain.status} size="sm" />
               </p>
             ) : null}
-            <DnsRecordTable
-              domain={domain}
-              verifying={verify.isPending}
-              // The sentence above already says who publishes these, and
-              // saying it twice above one four-row table is most of what made
-              // this screen unreadable.
-              managedNote={!managed}
-              onVerify={() => {
-                setStep(2)
-                verify.mutate(domain.id)
-              }}
-            />
+
+            {managed ? (
+              <details className="rounded-code border border-line bg-paper p-3">
+                <summary className="cursor-pointer list-none text-[13.5px] font-semibold text-muted hover:text-ink">
+                  Records we will check ({records.length})
+                </summary>
+                <div className="mt-3">
+                  <DnsRecordTable
+                    domain={domain}
+                    verifying={verify.isPending}
+                    managedNote={false}
+                    onVerify={() => {
+                      setStep(2)
+                      verify.mutate(domain.id)
+                    }}
+                  />
+                </div>
+              </details>
+            ) : (
+              <DnsRecordTable
+                domain={domain}
+                verifying={verify.isPending}
+                // The sentence above already says who publishes these, and
+                // saying it twice above one four-row table is most of what made
+                // this screen unreadable.
+                managedNote={true}
+                onVerify={() => {
+                  setStep(2)
+                  verify.mutate(domain.id)
+                }}
+              />
+            )}
           </div>
         ) : null}
 

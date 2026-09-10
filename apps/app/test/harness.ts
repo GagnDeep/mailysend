@@ -1,9 +1,10 @@
+import { hashApiKey } from '@mailysend/core'
 import { migrate } from '@mailysend/db'
 import { MailboxActor, SendingDomainActor, WorkspaceHubActor } from '@mailysend/durable'
 import type { Blob, BlobBody, BlobObject, Kv } from '@mailysend/platform'
 import { NodeActorRegistry, NodeSql } from '@mailysend/platform/node'
 import { api } from '../src/server/api/index.ts'
-import { configure } from '../src/server/bootstrap.ts'
+import { CLAIM_CODE_KEY, configure } from '../src/server/bootstrap.ts'
 import { type Env, runWithEnv } from '../src/server/env.ts'
 import { issueSession } from '../src/server/session.ts'
 
@@ -127,6 +128,9 @@ export interface Harness {
   cookieFrom(response: Response): string
 }
 
+/** The claim code every harness instance is pinned to. */
+export const CLAIM_CODE = 'TEST-CODE-0001'
+
 export async function harness(overrides: Partial<Env> = {}): Promise<Harness> {
   const sql = new NodeSql(':memory:')
   await migrate(sql)
@@ -165,6 +169,15 @@ export async function harness(overrides: Partial<Env> = {}): Promise<Harness> {
   } as unknown as Env
 
   const env = await configure(base, new Request('https://mail.acme.dev/'))
+
+  // First boot mints a claim code and prints it beside the bootstrap API key,
+  // keeping only its hash. A test cannot read the log line, so the row is
+  // rewritten here to a constant — the gate under test is "the right code and
+  // no other", not the randomness of the generator.
+  await sql
+    .prepare(`UPDATE settings SET value = ? WHERE workspace_id = '' AND key = ?`)
+    .bind(await hashApiKey(CLAIM_CODE), CLAIM_CODE_KEY)
+    .run()
 
   return {
     env,

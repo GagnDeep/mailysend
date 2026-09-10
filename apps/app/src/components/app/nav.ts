@@ -1,6 +1,8 @@
 import {
   AtSign,
+  BadgeCheck,
   BarChart3,
+  Bot,
   Braces,
   Contact2,
   FileCode2,
@@ -155,6 +157,31 @@ export const NAV: NavGroup[] = [
         icon: AtSign,
         chord: 'e',
         keywords: 'inbox address receiving forward webhook agent identity from',
+      },
+    ],
+  },
+  {
+    /**
+     * The agent surface, which existed entirely in `packages/mcp` and had no
+     * screen at all. The confirmation gate in particular was only half a
+     * feature without one: an agent's send waits for a person to approve it,
+     * and there was nowhere for a person to do that.
+     */
+    label: 'Agents',
+    items: [
+      {
+        to: '/app/agents',
+        label: 'MCP & agents',
+        icon: Bot,
+        chord: 'g',
+        keywords: 'mcp model context protocol tools claude cursor skill agent',
+      },
+      {
+        to: '/app/approvals',
+        label: 'Approvals',
+        icon: BadgeCheck,
+        chord: 'v',
+        keywords: 'mcp confirmation approve reject pending agent send',
       },
     ],
   },

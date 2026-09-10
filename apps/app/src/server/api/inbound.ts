@@ -29,6 +29,8 @@ interface MailboxRow {
   name: string | null
   forward_webhook_id: string | null
   agent_enabled: number
+  is_catch_all: number
+  domain: string | null
   created_at: string
 }
 
@@ -71,6 +73,8 @@ const toMailbox = (row: MailboxRow) => ({
   name: row.name,
   forward_webhook_id: row.forward_webhook_id,
   agent_enabled: Boolean(row.agent_enabled),
+  is_catch_all: Boolean(row.is_catch_all),
+  domain: row.domain ?? row.address.split('@')[1] ?? null,
   created_at: row.created_at,
 })
 
@@ -103,11 +107,29 @@ const toThread = (row: ThreadRow) => ({
 // Mailboxes
 // ---------------------------------------------------------------------------
 
+/**
+ * At most one catch-all per domain, enforced before the write rather than by it.
+ *
+ * The partial unique index is the backstop, but a constraint violation surfaces
+ * as a 500 with a SQLite string in it — useless to somebody who just flipped a
+ * switch. Clearing first makes the switch behave the way a radio group does.
+ */
+async function clearCatchAll(ctx: Ctx, domain: string): Promise<void> {
+  await ctx.sql
+    .prepare(
+      `UPDATE inbound_mailboxes SET is_catch_all = 0
+        WHERE workspace_id = ? AND is_catch_all = 1
+          AND (domain = ? OR (domain IS NULL AND address LIKE ?))`,
+    )
+    .bind(ctx.workspace.id, domain, `%@${domain}`)
+    .run()
+}
+
 inbound.get('/mailboxes', async (c) => {
   const ctx = c.get('ctx')
   const rows = await ctx.sql
     .prepare(
-      `SELECT id, address, name, forward_webhook_id, agent_enabled, created_at
+      `SELECT id, address, name, forward_webhook_id, agent_enabled, is_catch_all, domain, created_at
          FROM inbound_mailboxes WHERE workspace_id = ? ORDER BY id DESC LIMIT 200`,
     )
     .bind(ctx.workspace.id)
@@ -130,6 +152,7 @@ inbound.post('/mailboxes', async (c) => {
       name: z.string().max(120).optional(),
       forward_webhook_id: z.string().max(64).optional(),
       agent_enabled: z.boolean().optional(),
+      is_catch_all: z.boolean().optional(),
     })
     .parse(await c.req.json())
 
@@ -168,13 +191,15 @@ inbound.post('/mailboxes', async (c) => {
     })
   }
 
+  if (body.is_catch_all) await clearCatchAll(ctx, domain)
+
   const id = newId('inbound')
   const now = new Date().toISOString()
   await ctx.sql
     .prepare(
       `INSERT INTO inbound_mailboxes
-         (id, workspace_id, address, name, forward_webhook_id, agent_enabled, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, workspace_id, address, name, forward_webhook_id, agent_enabled, is_catch_all, domain, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -183,6 +208,8 @@ inbound.post('/mailboxes', async (c) => {
       body.name ?? null,
       body.forward_webhook_id ?? null,
       body.agent_enabled ? 1 : 0,
+      body.is_catch_all ? 1 : 0,
+      domain,
       now,
     )
     .run()
@@ -194,6 +221,8 @@ inbound.post('/mailboxes', async (c) => {
     name: body.name ?? null,
     forward_webhook_id: body.forward_webhook_id ?? null,
     agent_enabled: Boolean(body.agent_enabled),
+    is_catch_all: Boolean(body.is_catch_all),
+    domain,
     created_at: now,
     domain_status: owned.status,
     note:
@@ -212,6 +241,7 @@ inbound.patch('/mailboxes/:id', async (c) => {
       name: z.string().max(120).nullable().optional(),
       forward_webhook_id: z.string().max(64).nullable().optional(),
       agent_enabled: z.boolean().optional(),
+      is_catch_all: z.boolean().optional(),
     })
     .parse(await c.req.json())
 
@@ -229,7 +259,28 @@ inbound.patch('/mailboxes/:id', async (c) => {
     sets.push('agent_enabled = ?')
     params.push(body.agent_enabled ? 1 : 0)
   }
+  if (body.is_catch_all !== undefined) {
+    sets.push('is_catch_all = ?')
+    params.push(body.is_catch_all ? 1 : 0)
+  }
   if (sets.length === 0) throw apiError('validation_error', { message: 'Nothing to change.' })
+
+  // Turning one on turns the others off, rather than letting the unique index
+  // answer with a constraint error the operator cannot act on. Only one mailbox
+  // per domain can be the catch-all, and the last switch flipped is the one the
+  // person meant.
+  if (body.is_catch_all) {
+    const target = await ctx.sql
+      .prepare('SELECT address, domain FROM inbound_mailboxes WHERE id = ? AND workspace_id = ?')
+      .bind(c.req.param('id'), ctx.workspace.id)
+      .first<{ address: string; domain: string | null }>()
+    if (!target) throw apiError('not_found')
+    const domain = target.domain ?? target.address.split('@')[1] ?? ''
+    await clearCatchAll(ctx, domain)
+    // Backfilled rows may still have a null `domain`; the index needs one.
+    sets.push('domain = ?')
+    params.push(domain)
+  }
 
   const res = await ctx.sql
     .prepare(`UPDATE inbound_mailboxes SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`)
@@ -239,7 +290,7 @@ inbound.patch('/mailboxes/:id', async (c) => {
 
   const row = await ctx.sql
     .prepare(
-      `SELECT id, address, name, forward_webhook_id, agent_enabled, created_at
+      `SELECT id, address, name, forward_webhook_id, agent_enabled, is_catch_all, domain, created_at
          FROM inbound_mailboxes WHERE id = ? AND workspace_id = ?`,
     )
     .bind(c.req.param('id'), ctx.workspace.id)

@@ -74,7 +74,7 @@ function DpaPage() {
           <li>
             <strong className="text-ink">Cloudflare, Inc.</strong> — compute and storage for every
             deployment (Workers, Email Sending and Routing, Queues, Durable Objects, D1, KV, R2,
-            Workflows, Workers AI, Analytics Engine).
+            Workflows, Analytics Engine).
           </li>
           <li>
             <strong className="text-ink">Any provider you configure</strong> — Amazon Web Services

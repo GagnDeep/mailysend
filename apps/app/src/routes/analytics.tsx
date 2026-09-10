@@ -129,7 +129,9 @@ function AnalyticsPage() {
           </p>
           <div className="mt-[30px] flex flex-wrap justify-center gap-3">
             <Button asChild>
-              <a href="/resources#selfhost">Deploy and see your own numbers</a>
+              <a href={DEPLOY_URL} rel="noreferrer">
+                Deploy and see your own numbers
+              </a>
             </Button>
             <Button asChild variant="outline" className="border-line hover:border-ink">
               <a href="/dashboard-tour">Product tour</a>

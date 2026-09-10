@@ -61,7 +61,7 @@ if you would rather be explicit.
 | 📥 **Inbound** | Real mailboxes, MIME parsing, reply threading, full-text search, attachments streamed straight to R2 |
 | 📊 **Deliverability** | Delivery events, bounce classification, parsed DMARC aggregate reports, seed-list inbox placement with its source labelled |
 | 👁️ **Analytics** | Opens and clicks with bot / MPP classification, per-domain and per-tag breakdowns, daily rollups, long-term NDJSON archive in R2 |
-| 🤖 **Agents** | A nine-tool MCP server so an assistant can read and draft mail — with mandatory human confirmation before anything sends |
+| 🤖 **Agents** | A nine-tool MCP server so an assistant can read and draft mail — with a confirmation you approve at `/app/approvals` before anything sends |
 | 🎨 **Templates** | Handlebars, MJML, a restricted JSX AST compiler, versioning with diff and rollback |
 | 🔗 **Webhooks** | HMAC-signed, retried on a queue then a durable tail, every attempt's response stored, replayable |
 | 🔐 **Auth** | Passkeys and single-use recovery codes for the dashboard, Cloudflare Access when you have it, a CLI device flow, hashed API keys for the API, RBAC, invites, audit log — and no password store anywhere |
@@ -100,11 +100,19 @@ than we do; that row says so too.
 
 | | Monthly | Basis |
 |---|---|---|
-| **MailySend, sending via Cloudflare** | **$40.15** | $5 Workers Paid + $0.35/1k after the 3,000 included + ~$1.20 storage/queues/analytics |
-| **MailySend, same deployment via SES** | **$16.20** | $5 Workers Paid + $0.10/1k + ~$1.20 — one config line |
+| **MailySend + SES** | **$16.20** | $5 Workers Paid + $0.10/1k + ~$1.20 storage/queues/analytics — one config line |
+| **MailySend + Cloudflare** | **$40.15** | $5 Workers Paid + $0.35/1k after the 3,000 included + ~$1.20 — no second account |
 | Resend | $90 | published plan ladder (Pro 100k) |
 | SendGrid | $60 | ≈$0.60 per 1,000 |
-| Amazon SES alone | $10 | plus building your own dashboard, analytics, segments and broadcasts |
+
+Same product either way: same API, same dashboard, same logs, same analytics, same inbound.
+The transport is one line of configuration and you can change it later, so the row to read
+is whichever backend you already have an account with.
+
+Amazon SES on its own is about **$10** at this volume, and it is worth being clear about what
+that buys: an SMTP wire. No dashboard, no event timeline, no segments, no broadcasts, no
+inbound, and CloudWatch where the analytics would be. MailySend runs *on top of* SES for the
+same $0.10 per thousand — that is the first row of this table, not a competitor to it.
 
 Estimates for planning, not a quote — and the same formulas the site's own calculator runs,
 so you can move the slider at [mailysend.com/pricing](https://mailysend.com/pricing) and check
@@ -216,17 +224,30 @@ The button forks the repo, connects it to Workers Builds, then builds and deploy
 build creates the account resources the Worker binds — see below; the button itself
 provisions less than its documentation implies.
 
-**Nothing on the deploy form is required.** Every variable it offers is optional and
-already filled in, because there is nothing you need to know before the first boot: on
-its first request the instance applies its own migrations, creates the workspace,
+**There is nothing on the deploy form to fill in.** Every variable it offers already
+carries a working value, because there is nothing you need to know before the first boot:
+on its first request the instance applies its own migrations, creates the workspace,
 generates and stores a 32-byte signing secret, learns its own public URL from the request
-it is answering, and prints one bootstrap API key to the log.
+it is answering, and prints one bootstrap API key and one claim code to the log.
+
+That form is built from the repo's `.env.example`, and Cloudflare renders it as key names
+only — never the comments — storing every answer as a secret, which it displays masked. A
+key shipped with an empty value therefore appears as a blank, mandatory-looking password
+box with nothing to explain it. So the keys that have no sensible default are not on the
+form at all: `MS_OWNER_EMAIL` and the `MS_OIDC_*` group are set afterwards with
+`wrangler secret put`, and are documented in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 When it finishes, open the deployment's URL. It lands on **`/setup`**, where you claim the
 instance with a passkey — no email, no DNS and no identity provider needed, because a
-freshly deployed Worker has none of those. Set `MS_OWNER_EMAIL` beforehand if the URL will
-be public before you get to it: it does not create an owner, it restricts who may claim.
-Everything else can wait until you are inside.
+freshly deployed Worker has none of those.
+
+`/setup` asks for the **claim code** printed in the deploy log (`wrangler tail`, or the
+Worker's *Logs* tab). That is what makes a public URL safe before you get to it: whoever
+finds the deployment first cannot claim it without reading its log, and only the person who
+pressed deploy can. Setting `MS_OWNER_EMAIL` narrows the claim to one address instead, in
+which case the code is not asked for — it does not create an owner, it restricts who may
+become one. Everything else can wait until you are inside.
 
 **The build creates what the button does not.** `wrangler deploy` validates every binding
 before it uploads, so a missing queue or namespace is a failed deploy rather than a
@@ -286,9 +307,11 @@ signing secret, and prints one API key. The key is printed exactly once, because
 SHA-256 hash is ever stored. Then open `http://localhost:8917/`, which sends you to
 `/setup` to claim the instance with a passkey.
 
-Set `MS_OWNER_EMAIL=you@your-domain.com` to restrict who may claim it, and `MS_SECRET` to
-a 32-byte hex string if you would rather keep the signing key out of the database and be
-able to rotate it. Both are optional. The full list is in
+First boot also prints a **claim code**, and `/setup` asks for it — the log is the one
+place it exists, and reading the log is the proof. Set `MS_OWNER_EMAIL=you@your-domain.com`
+to narrow the claim to a single address instead (the code is then not asked for), and
+`MS_SECRET` to a 32-byte hex string if you would rather keep the signing key out of the
+database and be able to rotate it. All optional. The full list is in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 The guides, once it is up:
@@ -296,9 +319,12 @@ The guides, once it is up:
 | | |
 |---|---|
 | [docs/SENDING.md](docs/SENDING.md) | Choosing a transport, and a real walkthrough for each of the four |
-| [docs/RECEIVING.md](docs/RECEIVING.md) | Email Routing, the catch-all binding, mailboxes, and what `matched_by` means |
+| [docs/RECEIVING.md](docs/RECEIVING.md) | Email Routing, the catch-all toggle, mailboxes, the MX preflight, and what `matched_by` means |
 | [docs/MAIL.md](docs/MAIL.md) | The inbox, test mode, and the keyboard |
 | [docs/AUTH.md](docs/AUTH.md) | Every door in, OIDC included |
+| [docs/MCP.md](docs/MCP.md) | The nine agent tools, the confirmation protocol, and how a key scopes an agent |
+| [docs/AGENTS.md](docs/AGENTS.md) | The agent skill, and what to give an agent first |
+| [docs/WEBHOOKS.md](docs/WEBHOOKS.md) | Signature, tolerance, the retry ladder, auto-disable |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables and bindings |
 
 <details>
@@ -364,6 +390,26 @@ The `id` comes back **before any provider is contacted**. That is deliberate: th
 ours, minted at accept time, so it survives a failover, a provider migration, and a
 provider that loses its own id. `provider_message_id` is recorded later and is queryable,
 but it is never the identity of a message.
+
+### And then receive something
+
+Sending and receiving are two independent setups on the same domain, and the second one is
+configured in two different places — which is the whole reason the first test message
+usually bounces.
+
+1. **Cloudflare dashboard → Email → Email Routing.** Enable it (Cloudflare publishes the MX
+   records itself), then add a **catch-all** rule whose action is **Send to a Worker**,
+   pointed at this instance's script. That is what delivers the domain's mail to MailySend.
+2. **In MailySend, under the domain's Receiving tab**, create a mailbox — and turn on
+   **Catch-all** on it if you want every address on the domain to land there rather than
+   only the one you named.
+
+Step 1 alone is not enough. Mail for an address with no mailbox and no catch-all is refused
+at the door with a legible `550 5.1.1 No such mailbox`, which is the honest answer to a
+typo and tells a spammer nothing — but it is also exactly what "I bound the catch-all and
+nothing arrived" looks like. **Check receiving** on the domain resolves its MX and says
+which of the two halves is missing, and both outcomes are written to the event timeline
+rather than only to `wrangler tail`.
 
 ### Getting into the dashboard
 
@@ -483,6 +529,9 @@ These appear in the docs, in the UI, and here.
   the cost of timing quantised to the cohort clock.
 - **Analytics Engine keeps three months and samples under load.** It is the hot query layer
   for charts. The count of record is `rollups_daily` in SQL; the archive is NDJSON in R2.
+- **`alerts` and `alert_incidents` are schema, not a feature.** The tables exist and
+  nothing reads or writes them; there is no alerting in the product. They are named here
+  rather than left to be discovered in a schema dump.
 - **One SDK is first-party.** `mailysend` for Node is written and published. The other
   languages are generated from `/v1/openapi.json` with `openapi-generator` — we ship the
   spec rather than claim nine hand-maintained SDKs.
@@ -569,7 +618,7 @@ for the long form.
 | `MS_MODE` | `single` | `single` (self-hosted) or `saas` |
 | `MS_DATA_KEY` | `MS_SECRET` | Encrypts stored provider credentials |
 | `MS_DEFAULT_PROVIDER` | `cloudflare` | Fallback transport when nothing is configured |
-| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup` |
+| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup`. Not on the Cloudflare deploy form — set it with `wrangler secret put`. When set, the first-boot claim code is not asked for |
 | `MS_LANDING` | `app` in single mode | What `/` serves. `app` redirects to your dashboard (or `/setup` while unclaimed); `marketing` serves the public site, which is what `mailysend.com` runs |
 | `MS_ACCESS_TEAM` | — | Cloudflare Access team domain, e.g. `acme.cloudflareaccess.com` |
 | `MS_ACCESS_AUD` | — | The Access application's AUD tag. Both are required for Access sign-in |

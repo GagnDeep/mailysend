@@ -218,6 +218,15 @@ export interface McpServerOptions {
   consumed?: ConsumedTokens
   /** Short by design: a stale approval is an approval for a forgotten message. */
   confirmationTtlSeconds?: number
+  /**
+   * Where a person goes to approve a pending confirmation.
+   *
+   * Hardcoded to `https://mailysend.com/app/approvals` until now, which is a
+   * 404 on the hosted site and the wrong host on every self-hosted instance —
+   * so the one instruction an agent hands back to its user pointed nowhere.
+   * The server derives it from the request origin when this is unset.
+   */
+  approvalChannel?: string
   serverInfo?: { name: string; version: string }
   instructions?: string
   now?: () => number

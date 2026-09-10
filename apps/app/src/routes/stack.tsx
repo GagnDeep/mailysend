@@ -6,7 +6,7 @@ import {
   resendCost,
   selfHostedCost,
   sendgridCost,
-  sesRawCost,
+  sesProviderCost,
 } from '~/components/marketing/cost-calculator.tsx'
 import { DEPLOY_DURATION, DeployButton } from '~/components/marketing/deploy.tsx'
 import { PageShell, Section } from '~/components/marketing/page-shell.tsx'
@@ -88,12 +88,6 @@ const STACK: StackRow[] = [
     role: 'Automations: multi-day drips, branching, durable retries',
     cost: 'Billed as Workers',
     beyond: 'requests + CPU',
-  },
-  {
-    product: 'Workers AI',
-    role: 'Spam scoring, subject-line suggestions, agent drafting',
-    cost: 'Neurons',
-    beyond: '10k/day free',
   },
   {
     product: 'Analytics Engine + Access',
@@ -265,26 +259,40 @@ function StackPage() {
           eyebrow="CALCULATOR"
           title="What will you actually pay?"
           lede="Drag to your monthly volume. MailySend runs in your own Cloudflare account, so your bill is Cloudflare's list prices. The others are published plan rates for the same volume."
+          /*
+            MailySend against products, not against a bare wire.
+
+            This used to highlight MailySend on Cloudflare beside a raw Amazon
+            SES tile — $47.95 next to $10 at 100k — which reads as MailySend
+            being nearly five times the price of the alternative. It is not the
+            alternative: SES is an SMTP wire with no dashboard, no logs, no
+            analytics and no inbound, and MailySend runs *on top of it* for the
+            same $0.10 per thousand. So the cheapest honest configuration of
+            this product leads, Cloudflare sits beside it as the zero-account
+            option, and the bare wire is a footnote rather than a competitor.
+          */
           tiles={[
             {
-              label: 'MAILYSEND ON CLOUDFLARE',
-              cost: selfHostedCost,
-              basis: '$5 Workers + $0.35/1k over 3,000',
+              label: 'MAILYSEND + SES',
+              cost: sesProviderCost,
+              basis: '$5 Workers + $0.10/1k · one config line',
               highlight: true,
+            },
+            {
+              label: 'MAILYSEND + CLOUDFLARE',
+              cost: selfHostedCost,
+              basis: '$5 Workers + $0.35/1k over 3,000 · no second account',
             },
             { label: 'RESEND', cost: resendCost, basis: 'Free → Pro → Pro 100k → quote' },
             { label: 'SENDGRID', cost: sendgridCost, basis: '≈$0.60 per 1,000' },
-            {
-              label: 'AMAZON SES',
-              cost: sesRawCost,
-              basis: '$0.10 per 1,000 · you build the rest',
-            },
           ]}
           note={
             <>
-              SES is the cheapest wire on the market and MailySend can use it as a provider —{' '}
+              Same product either way — same API, same logs, same analytics, same inbound. The
+              backend is one line of configuration, and you can change it later.{' '}
               <span className="text-on-dark-2">
-                point a domain at SES and keep this API, these logs, these analytics.
+                Amazon SES on its own is ~$0.10 per 1,000 plus your own infrastructure: no
+                dashboard, no event timeline, no inbound, and CloudWatch for analytics.
               </span>{' '}
               <a href="/docs#providers" className="text-accent-on-dark">
                 How providers work →

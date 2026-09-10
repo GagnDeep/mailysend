@@ -14,9 +14,42 @@ somebody@example.com
   → /app/mail
 ```
 
-Mail to an address that is not a mailbox is rejected at the door with a **550**
-rather than silently dropped. A sender who typoed gets told; a spammer probing
-for valid addresses learns nothing more than that.
+Two things have to be true and they are configured in different places, which is
+why the first test message so often bounces. Cloudflare has to deliver the
+domain **to this Worker** — its catch-all rule, zone-side — and the address has
+to exist **here**, as a mailbox or through one marked catch-all.
+
+Mail to an address that is neither is rejected at the door with a **550** rather
+than silently dropped. A sender who typoed gets told; a spammer probing for
+valid addresses learns nothing more than that. Both outcomes — delivered and
+rejected — are written to the event timeline, so a rejection is distinguishable
+from a Worker that was never invoked.
+
+## The catch-all toggle
+
+A mailbox can be marked **Catch-all**, and then every address on its domain
+lands in it: `anything@example.com` reaches the catch-all when no mailbox
+matches exactly. Exact addresses always win, so a mailbox with its own webhook
+and its own threads keeps receiving its own mail with a catch-all beside it.
+
+One per domain. Turning it on somewhere else turns it off here rather than
+failing — two catch-alls would make delivery depend on row order.
+
+It is **off by default**, including on every mailbox that existed before this
+column did. Cloudflare's catch-all rule and this switch are not the same thing:
+the first decides what reaches the Worker, the second decides what the Worker
+accepts.
+
+## Checking it
+
+**Check receiving** on a domain resolves its apex MX and reports whether it
+points at `*.mx.cloudflare.net`, alongside how many mailboxes the domain has and
+whether one of them is the catch-all. That is the whole of what can be observed:
+Cloudflare does not expose the catch-all *rule* over its API, so a verified MX
+means mail reaches Cloudflare, not that it reaches you.
+
+A resolver that will not answer reports `error`, not `failed` — the same
+distinction the sending checks make, and for the same reason.
 
 ## Cloudflare Email Routing
 
@@ -25,19 +58,29 @@ for valid addresses learns nothing more than that.
 2. Create a **catch-all** rule and set its action to **Send to a Worker**,
    choosing this instance's Worker script.
 3. Create the mailboxes you want in MailySend, on the domain's page under
-   **Receiving**.
+   **Receiving** — and turn on **Catch-all** on one of them if you want the rest
+   of the domain to arrive rather than bounce.
 
-Confirm it by resolving the domain's MX and checking it points at
-`*.mx.cloudflare.net`. As with sending, this needs no API token — it is
-observation.
+Confirm it with **Check receiving** on the domain's page, which resolves the MX
+and checks it points at `*.mx.cloudflare.net`. As with sending, this needs no API
+token — it is observation.
 
 ## Mailboxes
 
 On a domain's page, **Receiving** creates and removes mailboxes. An address that
 is not listed there does not exist as far as the inbound handler is concerned.
 
-**Agent** on a mailbox exposes it over the MCP endpoint, so an agent can read and
-act on that mailbox and only that one.
+**Agent** on a mailbox scopes the MCP endpoint to it. The rule is opt-in rather
+than fail-closed: a workspace that has never marked a mailbox is unscoped, and
+marking the first one is what turns the switch into a boundary — from then on an
+agent's `search_threads`, `get_thread` and `reply_to_thread` see only the
+mailboxes you have marked. A conversation outside them reads as *not found*
+rather than *forbidden*, because "forbidden" would leak the subject line the
+boundary exists to protect. See [MCP.md](MCP.md).
+
+**Forward to webhook** on a mailbox posts each parsed message to one of your
+webhook endpoints, signed and retried on the same ladder as every other event.
+See [WEBHOOKS.md](WEBHOOKS.md).
 
 ## Threading
 

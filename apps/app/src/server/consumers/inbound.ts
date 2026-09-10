@@ -1,9 +1,9 @@
 import { doName, newId, r2Key, sha256Hex, verifyReplyToken } from '@mailysend/core'
-import type { QueueBatch } from '@mailysend/platform'
+import type { QueueBatch, Sql } from '@mailysend/platform'
 import PostalMime from 'postal-mime'
 import { tenancyFor } from '../context.ts'
 import type { Env } from '../env.ts'
-import { parseAuthResults } from '../inbound-handler.ts'
+import { parseAuthResults, recordInboundReject, resolveMailbox } from '../inbound-handler.ts'
 import {
   type MailAttachmentInput,
   normalizeSubject,
@@ -34,6 +34,10 @@ export interface InboundJob {
   raw_key: string
   to: string
   from: string
+  /** Resolved at the door, so the two stages cannot disagree about the mailbox. */
+  mailbox_id?: string
+  /** How the door matched it: the address itself, or the domain's catch-all. */
+  matched?: 'address' | 'catch_all'
   /** SPF/DKIM/DMARC as the receiving edge saw them; unavailable to us later. */
   auth?: { spf: string | null; dkim: string | null; dmarc: string | null }
   received_at: string
@@ -64,11 +68,31 @@ export async function consumeInbound(batch: QueueBatch<InboundJob>, env: Env): P
 async function handleInbound(job: InboundJob, env: Env): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
 
-  const mailbox = await sql
-    .prepare('SELECT id, address FROM inbound_mailboxes WHERE workspace_id = ? AND address = ?')
-    .bind(job.workspace_id, job.to.toLowerCase())
-    .first<{ id: string; address: string }>()
-  if (!mailbox) return
+  // The same resolution the door ran — exact address, then the domain's
+  // catch-all — rather than a second copy of half of it. The old query here
+  // matched only the exact address, so a catch-all delivery would have been
+  // accepted at SMTP time and then dropped here.
+  const mailbox = job.mailbox_id
+    ? await sql
+        .prepare('SELECT id, address FROM inbound_mailboxes WHERE workspace_id = ? AND id = ?')
+        .bind(job.workspace_id, job.mailbox_id)
+        .first<{ id: string; address: string }>()
+    : await resolveMailbox(sql, job.workspace_id, job.to)
+
+  if (!mailbox) {
+    // The message was accepted at the door and its bytes are already in R2, so
+    // this is not a rejection — it is a delivery that lost its destination
+    // between the two stages (the mailbox was deleted, or the catch-all turned
+    // off, while the message was in flight). It used to `return` with no log
+    // and no row: the sender saw a 250, the operator saw nothing at all, and
+    // the R2 object was orphaned. Both halves of that are now visible.
+    console.warn(
+      `[inbound] dropped ${job.to} — the mailbox it was accepted for no longer exists ` +
+        `(raw bytes kept at ${job.raw_key})`,
+    )
+    await recordInboundReject(sql, job.workspace_id, job.to, job.from, 'mailbox_vanished')
+    return
+  }
 
   const object = await env.BUCKET.get(job.raw_key)
   if (!object) throw new Error(`raw inbound ${job.raw_key} is missing`)
@@ -257,6 +281,24 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     message_id: job.inbound_id,
   })
 
+  // A received message left no trace on the event timeline, which is where the
+  // product's answer to "did anything arrive?" lives. Without it a working
+  // delivery and a Worker that was never invoked looked identical from the
+  // dashboard — the exact ambiguity that made a broken catch-all so hard to
+  // diagnose.
+  await recordInboundReceived(sql, job, mailbox.address)
+
+  // `forward_webhook_id` had a Select writing it and nothing reading it, so a
+  // mailbox configured to forward simply did not. It posts through the same
+  // signed, retried delivery ladder every other webhook uses.
+  await forwardToWebhook(sql, env, job, {
+    mailboxId: mailbox.id,
+    threadId,
+    subject: parsed.subject ?? '',
+    from: parsed.from?.address ?? job.from,
+    snippet,
+  })
+
   // The Mail surface subscribes to this hub, so a message that arrives while
   // someone is reading appears without a refresh. `inbound.received` is not a
   // delivery event and deliberately does not go through the events queue — it
@@ -363,3 +405,110 @@ const sanitizeFilename = (name: string): string =>
   name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100) || 'attachment'
 
 export { sha256Hex }
+
+/**
+ * One row per delivered message, on the same timeline as everything else.
+ *
+ * `message_id` points at the inbound id rather than being null the way a
+ * rejection's is: this message exists, and the reader wants to get from the
+ * event to it.
+ */
+async function recordInboundReceived(
+  sql: Sql,
+  job: InboundJob,
+  mailboxAddress: string,
+): Promise<void> {
+  try {
+    await sql
+      .prepare(
+        `INSERT INTO message_events (event_id, workspace_id, message_id, type, recipient, occurred_at, diagnostic, created_at)
+         VALUES (?,?,?,'inbound.received',?,?,?,?)
+         ON CONFLICT (event_id) DO NOTHING`,
+      )
+      .bind(
+        await sha256Hex(`inbound.received|${job.workspace_id}|${job.raw_key}`),
+        job.workspace_id,
+        job.inbound_id,
+        job.to,
+        job.received_at,
+        job.matched === 'catch_all'
+          ? `Delivered by the catch-all on ${mailboxAddress.split('@')[1] ?? ''}`
+          : `Delivered to ${mailboxAddress}`,
+        new Date().toISOString(),
+      )
+      .run()
+  } catch (err) {
+    // A missing breadcrumb must never cost the message it describes: this runs
+    // after the mail is filed, and throwing here would retry a delivery that
+    // already succeeded.
+    console.error('[inbound] could not record the receipt', err)
+  }
+}
+
+/**
+ * Forward the parsed message to the mailbox's chosen endpoint.
+ *
+ * Deliberately reuses `WEBHOOK_QUEUE` rather than posting inline: the retry
+ * ladder, the signature, the delivery log and the auto-disable at twenty
+ * consecutive failures are all on the other side of it, and an inbound forward
+ * has no business having weaker delivery guarantees than a bounce notification.
+ */
+async function forwardToWebhook(
+  sql: Sql,
+  env: Env,
+  job: InboundJob,
+  summary: {
+    mailboxId: string
+    threadId: string
+    subject: string
+    from: string
+    snippet: string
+  },
+): Promise<void> {
+  try {
+    const mailbox = await sql
+      .prepare('SELECT forward_webhook_id FROM inbound_mailboxes WHERE id = ? AND workspace_id = ?')
+      .bind(summary.mailboxId, job.workspace_id)
+      .first<{ forward_webhook_id: string | null }>()
+    const endpointId = mailbox?.forward_webhook_id
+    if (!endpointId) return
+
+    // A disabled or deleted endpoint is not an error worth retrying the message
+    // for — the mail is filed either way.
+    const endpoint = await sql
+      .prepare(
+        `SELECT id FROM webhook_endpoints
+          WHERE id = ? AND workspace_id = ? AND status = 'enabled'`,
+      )
+      .bind(endpointId, job.workspace_id)
+      .first<{ id: string }>()
+    if (!endpoint) {
+      console.warn(
+        `[inbound] mailbox ${summary.mailboxId} forwards to ${endpointId}, which is disabled or gone`,
+      )
+      return
+    }
+
+    await env.WEBHOOKS_QUEUE.send({
+      workspace_id: job.workspace_id,
+      endpoint_id: endpointId,
+      event_id: newId('event'),
+      type: 'inbound.received',
+      created_at: new Date().toISOString(),
+      data: {
+        mailbox_id: summary.mailboxId,
+        thread_id: summary.threadId,
+        message_id: job.inbound_id,
+        to: job.to,
+        from: summary.from,
+        subject: summary.subject,
+        snippet: summary.snippet.slice(0, 500),
+        raw_key: job.raw_key,
+        matched: job.matched ?? 'address',
+        received_at: job.received_at,
+      },
+    })
+  } catch (err) {
+    console.error('[inbound] could not enqueue the mailbox forward', err)
+  }
+}

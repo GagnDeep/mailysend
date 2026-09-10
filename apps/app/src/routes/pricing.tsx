@@ -196,16 +196,20 @@ function PricingPage() {
           title="Drag to your volume."
           lede="Left column is what Cloudflare charges you to run MailySend. The rest are published list prices for the same volume elsewhere, for context."
           tiles={[
+            // The cheapest honest configuration leads. Highlighting the dearer
+            // of our own two backends made the product look expensive against
+            // its own alternative, which is a strange argument to make about
+            // something that is one config line either way.
             {
-              label: 'MAILYSEND ON CLOUDFLARE',
-              cost: selfHostedCost,
-              basis: '$5 + $0.35/1k over 3,000',
+              label: 'MAILYSEND + SES',
+              cost: sesProviderCost,
+              basis: '$5 + $0.10/1k · one config line',
               highlight: true,
             },
             {
-              label: 'SAME, VIA SES PROVIDER',
-              cost: sesProviderCost,
-              basis: '$5 + $0.10/1k · one config line',
+              label: 'MAILYSEND + CLOUDFLARE',
+              cost: selfHostedCost,
+              basis: '$5 + $0.35/1k over 3,000 · no second account',
             },
             {
               label: 'RESEND LIST PRICE',

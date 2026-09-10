@@ -121,6 +121,7 @@ function MailScreen() {
   const [cursor, setCursor] = useState(0)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [newMailbox, setNewMailbox] = useState<string | null>(null)
+  const [newLabel, setNewLabel] = useState<string | null>(null)
   const [anchor, setAnchor] = useState<number | null>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -153,6 +154,35 @@ function MailScreen() {
   const labels = useQuery({
     queryKey: qk.mailLabels(environment),
     queryFn: () => api.listMailLabels(),
+  })
+
+  /**
+   * Labels had a rail, an API and no way to create one.
+   *
+   * `POST /v1/mail/labels` and its client wrapper have existed since the Mail
+   * surface was written, `docs/MAIL.md` documents labels as a feature, and the
+   * only affordance was a list that was always empty. Two mutations is the
+   * whole gap.
+   */
+  const createLabel = useMutation({
+    mutationFn: (name: string) => api.createMailLabel({ name }),
+    onSuccess: (created) => {
+      setNewLabel(null)
+      void queryClient.invalidateQueries({ queryKey: qk.mailLabels(environment) })
+      toast.success(`${created.name ?? 'Label'} created`)
+    },
+    onError: (error: Error) =>
+      toast.error('Could not create that label', { description: error.message }),
+  })
+
+  const deleteLabel = useMutation({
+    mutationFn: (id: string) => api.deleteMailLabel(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.mailLabels(environment) })
+      toast.success('Label removed')
+    },
+    onError: (error: Error) =>
+      toast.error('Could not remove that label', { description: error.message }),
   })
 
   const counts = useQuery({
@@ -538,18 +568,57 @@ function MailScreen() {
             </form>
           ) : null}
 
-          <RailSection title="Labels" empty="No labels yet.">
+          <RailSection title="Labels" onAdd={() => setNewLabel('')} empty="No labels yet.">
             {(labels.data?.data ?? []).map((label) => (
-              <li key={label.id}>
+              <li key={label.id} className="group/label flex items-center gap-1">
                 <RailButton
                   icon={Tag}
                   label={label.name ?? label.id}
                   active={activeLabel === label.id}
                   onClick={() => filterBy('label', activeLabel === label.id ? null : label.id)}
                 />
+                <button
+                  type="button"
+                  aria-label={`Remove ${label.name ?? label.id}`}
+                  disabled={deleteLabel.isPending}
+                  onClick={() => deleteLabel.mutate(label.id)}
+                  className="shrink-0 px-1 text-muted-2 opacity-0 hover:text-ink group-hover/label:opacity-100 focus-visible:opacity-100"
+                >
+                  <Trash2 className="size-3" />
+                </button>
               </li>
             ))}
           </RailSection>
+
+          {newLabel !== null ? (
+            <form
+              className="flex flex-col gap-1.5"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (newLabel.trim()) createLabel.mutate(newLabel.trim())
+              }}
+            >
+              <Input
+                autoFocus
+                value={newLabel}
+                onChange={(event) => setNewLabel(event.target.value)}
+                placeholder="Billing"
+                aria-label="New label name"
+                className="h-8 text-[12px]"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setNewLabel(null)
+                }}
+              />
+              <span className="flex gap-1.5">
+                <Button size="sm" type="submit" disabled={createLabel.isPending}>
+                  Create
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setNewLabel(null)}>
+                  Cancel
+                </Button>
+              </span>
+            </form>
+          ) : null}
 
           <button
             type="button"

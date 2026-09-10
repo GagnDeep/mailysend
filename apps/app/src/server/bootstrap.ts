@@ -33,6 +33,8 @@ import type { Env } from './env.ts'
 /** Instance-wide settings live under the empty workspace id. */
 const INSTANCE = ''
 const SECRET_KEY = 'instance_secret'
+/** SHA-256 of the first-boot claim code. The code itself exists only in the log. */
+export const CLAIM_CODE_KEY = 'instance_claim_code'
 export const PUBLIC_URL_KEY = 'instance_public_url'
 
 /**
@@ -148,18 +150,81 @@ async function ensureWorkspace(env: Env): Promise<void> {
     )
     .run()
 
-  // The only time this string exists anywhere but in the operator's hands:
-  // the table stores its SHA-256 and nothing else. On Workers it lands in
+  // The claim code closes the window the deploy form used to hold open.
+  //
+  // `MS_OWNER_EMAIL` was the only thing standing between a fresh deployment and
+  // whoever found its URL first — and it was asked for as an empty, masked,
+  // mandatory-looking box on Cloudflare's variables form, which is why it is no
+  // longer asked for there at all. A code minted here restores the guarantee
+  // without the question: the operator reading this log is the operator who
+  // pressed deploy, and nobody else can read it. Stored as a hash, like the key
+  // above.
+  const claimCode = claimCodeString()
+  await env.DB.prepare(
+    'INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)',
+  )
+    .bind(INSTANCE, CLAIM_CODE_KEY, await hashApiKey(claimCode), now)
+    .run()
+
+  // The only time these strings exist anywhere but in the operator's hands:
+  // the table stores their SHA-256 and nothing else. On Workers they land in
   // `wrangler tail` and the dashboard's live logs.
   console.log('\n  MailySend is set up. Your first API key — this is the only time it is shown:\n')
   console.log(`      ${token}\n`)
+  console.log('  Your claim code — /setup asks for this before it will let anyone in:\n')
+  console.log(`      ${claimCode}\n`)
   console.log(
-    '  Open /setup to claim this instance with a passkey. Nobody owns it until\n' +
-      '  somebody does, so do it before you share the URL.\n' +
+    '  Open /setup, enter the code above and create a passkey. Nobody owns this\n' +
+      '  deployment until somebody does, and the code is what makes that safe\n' +
+      '  even if the URL is public before you get there.\n' +
       (env.MS_OWNER_EMAIL
-        ? `  Only ${env.MS_OWNER_EMAIL} may claim it (MS_OWNER_EMAIL is set).\n`
-        : '  Set MS_OWNER_EMAIL to restrict who may claim it.\n'),
+        ? `  Only ${env.MS_OWNER_EMAIL} may claim it (MS_OWNER_EMAIL is set), so the\n` +
+          '  code is not asked for.\n'
+        : '  Lost it? `npx mailysend claim` writes a fresh nonce straight into this\n' +
+          '  database and is the break-glass path back in.\n'),
   )
+}
+
+/**
+ * A code a human reads off a log and types into a form.
+ *
+ * Crockford's alphabet minus the letters that a terminal font and a tired
+ * operator disagree about, in three groups of four — 60 bits, which is far more
+ * than a code that lives until the first claim needs, and still shorter than
+ * anything anyone would paste rather than read.
+ */
+const CLAIM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
+
+const claimCodeString = (): string => {
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  const chars = Array.from(bytes, (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length])
+  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8, 12)]
+    .map((group) => group.join(''))
+    .join('-')
+}
+
+/**
+ * Does `/setup` need a claim code?
+ *
+ * Three answers, and only one of them asks. A deployment that predates this —
+ * no code row — is never locked out by a code it was never shown. A deployment
+ * with `MS_OWNER_EMAIL` set is already narrowed to one address, and asking for
+ * both would be two locks on the same door. Everything else asks.
+ */
+export const claimCodeRequired = async (sql: Sql, ownerEmail?: string): Promise<boolean> => {
+  if (ownerEmail) return false
+  return (await readInstanceSetting(sql, CLAIM_CODE_KEY)) !== null
+}
+
+/** Constant-time-ish comparison against the stored hash. Returns false if unset. */
+export const claimCodeMatches = async (sql: Sql, code: string): Promise<boolean> => {
+  const stored = await readInstanceSetting(sql, CLAIM_CODE_KEY)
+  if (!stored) return true
+  const given = await hashApiKey(code.trim().toUpperCase().replace(/\s/g, ''))
+  if (given.length !== stored.length) return false
+  let diff = 0
+  for (let i = 0; i < given.length; i += 1) diff |= given.charCodeAt(i) ^ stored.charCodeAt(i)
+  return diff === 0
 }
 
 /**

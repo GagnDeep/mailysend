@@ -179,7 +179,9 @@ export class McpServer {
       auth,
       backend: this.#options.backend,
       confirmations: this.#confirmations,
-      approvalChannel: 'https://mailysend.com/app/approvals',
+      // Derived from the deployment rather than hardcoded: the agent's user
+      // has to be able to open this, and they are not on mailysend.com.
+      approvalChannel: this.#options.approvalChannel ?? 'https://mailysend.com/app/approvals',
     }
     const argsObject = args === undefined || args === null ? {} : (args as Record<string, unknown>)
     if (typeof argsObject !== 'object' || Array.isArray(argsObject)) {

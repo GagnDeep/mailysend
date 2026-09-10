@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { bool, createdAt, json, updatedAt, workspaceId } from './_shared.ts'
 
@@ -377,9 +378,27 @@ export const inboundMailboxes = sqliteTable(
     /** Forward parsed mail to a webhook, an agent, or neither. */
     forwardWebhookId: text('forward_webhook_id'),
     agentEnabled: bool('agent_enabled').notNull().default(false),
+    /**
+     * Accept every address on this mailbox's domain, not just its own.
+     *
+     * The catch-all an operator binds in Cloudflare Email Routing delivers the
+     * whole domain to this Worker; without this the handler still rejected
+     * every address it had no exact row for, which is not what "catch-all"
+     * means to the person who just turned it on.
+     */
+    isCatchAll: bool('is_catch_all').notNull().default(false),
+    /** Denormalised from `address`, so the catch-all lookup is one index hit. */
+    domain: text('domain'),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex('inbound_mailboxes_address').on(t.workspaceId, t.address)],
+  (t) => [
+    uniqueIndex('inbound_mailboxes_address').on(t.workspaceId, t.address),
+    // At most one catch-all per domain: two would make delivery depend on row
+    // order, which is a coin toss dressed up as configuration.
+    uniqueIndex('inbound_mailboxes_catch_all')
+      .on(t.workspaceId, t.domain)
+      .where(sql`"is_catch_all" = 1`),
+  ],
 )
 
 export const inboundThreads = sqliteTable(

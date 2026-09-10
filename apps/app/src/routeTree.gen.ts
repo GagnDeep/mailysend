@@ -23,8 +23,10 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as StackRouteImport } from './routes/stack'
 import { Route as UseCasesRouteImport } from './routes/use-cases'
 import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppAgentsRouteImport } from './routes/app/agents'
 import { Route as AppAnalyticsRouteImport } from './routes/app/analytics'
 import { Route as AppApiKeysRouteImport } from './routes/app/api-keys'
+import { Route as AppApprovalsRouteImport } from './routes/app/approvals'
 import { Route as AppInboundRouteImport } from './routes/app/inbound'
 import { Route as AppLogsRouteImport } from './routes/app/logs'
 import { Route as AppMailRouteImport } from './routes/app/mail'
@@ -124,6 +126,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAgentsRoute = AppAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -132,6 +139,11 @@ const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
 const AppApiKeysRoute = AppApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppApprovalsRoute = AppApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInboundRoute = AppInboundRouteImport.update({
@@ -291,8 +303,10 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
   '/use-cases': typeof UseCasesRoute
+  '/app/agents': typeof AppAgentsRoute
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/api-keys': typeof AppApiKeysRoute
+  '/app/approvals': typeof AppApprovalsRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
@@ -336,8 +350,10 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
   '/use-cases': typeof UseCasesRoute
+  '/app/agents': typeof AppAgentsRoute
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/api-keys': typeof AppApiKeysRoute
+  '/app/approvals': typeof AppApprovalsRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
@@ -383,8 +399,10 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
   '/use-cases': typeof UseCasesRoute
+  '/app/agents': typeof AppAgentsRoute
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/api-keys': typeof AppApiKeysRoute
+  '/app/approvals': typeof AppApprovalsRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
@@ -431,8 +449,10 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/stack'
     | '/use-cases'
+    | '/app/agents'
     | '/app/analytics'
     | '/app/api-keys'
+    | '/app/approvals'
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
@@ -476,8 +496,10 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/stack'
     | '/use-cases'
+    | '/app/agents'
     | '/app/analytics'
     | '/app/api-keys'
+    | '/app/approvals'
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
@@ -522,8 +544,10 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/stack'
     | '/use-cases'
+    | '/app/agents'
     | '/app/analytics'
     | '/app/api-keys'
+    | '/app/approvals'
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
@@ -674,6 +698,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/agents': {
+      id: '/app/agents'
+      path: '/agents'
+      fullPath: '/app/agents'
+      preLoaderRoute: typeof AppAgentsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/analytics': {
       id: '/app/analytics'
       path: '/analytics'
@@ -686,6 +717,13 @@ declare module '@tanstack/react-router' {
       path: '/api-keys'
       fullPath: '/app/api-keys'
       preLoaderRoute: typeof AppApiKeysRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/approvals': {
+      id: '/app/approvals'
+      path: '/approvals'
+      fullPath: '/app/approvals'
+      preLoaderRoute: typeof AppApprovalsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/inbound': {
@@ -888,8 +926,10 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAgentsRoute: typeof AppAgentsRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppApiKeysRoute: typeof AppApiKeysRoute
+  AppApprovalsRoute: typeof AppApprovalsRoute
   AppInboundRoute: typeof AppInboundRoute
   AppLogsRoute: typeof AppLogsRoute
   AppMailRoute: typeof AppMailRoute
@@ -919,8 +959,10 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAgentsRoute: AppAgentsRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppApiKeysRoute: AppApiKeysRoute,
+  AppApprovalsRoute: AppApprovalsRoute,
   AppInboundRoute: AppInboundRoute,
   AppLogsRoute: AppLogsRoute,
   AppMailRoute: AppMailRoute,

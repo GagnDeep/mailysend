@@ -16,7 +16,7 @@ import { OWNERSHIP_BADGE } from '~/components/marketing/claims.ts'
 import { DEPLOY_DURATION_LONG } from '~/components/marketing/deploy.tsx'
 import { PageShell } from '~/components/marketing/page-shell.tsx'
 import type { TechArticleEntry } from '~/seo'
-import { breadcrumbSchema, pageHead, techArticleSchemas } from '~/seo'
+import { breadcrumbSchema, DEPLOY_URL, pageHead, techArticleSchemas } from '~/seo'
 
 /**
  * Every section of the page, once.
@@ -1011,9 +1011,11 @@ function DocsPage() {
           <DocSectionShell anchor="mcp" heading="MCP & agents">
             <Lede>
               Your workspace exposes an MCP endpoint at <Mono>/mcp</Mono> with nine tools: search
-              threads, read a message, draft a reply, send with confirmation, look up delivery
-              status, manage contacts. Agent sends are always attributed and always require an
-              explicit confirmation step you can audit.
+              threads, read a message, reply, send, look up delivery status, list domains, read
+              analytics, manage contacts. The two that send mail never send on their first call —
+              they return a confirmation bound to that exact message, which a person approves at{' '}
+              <Mono>/app/approvals</Mono>. There is no MCP method that approves one, so an agent
+              holding a valid key still cannot approve its own send.
             </Lede>
             <Code>
               {'{\n  '}
@@ -1076,7 +1078,9 @@ function DocsPage() {
             </div>
             <div className="flex flex-wrap gap-2.5">
               <Button asChild>
-                <a href="/resources#selfhost">Deploy to Cloudflare</a>
+                <a href={DEPLOY_URL} rel="noreferrer">
+                  Deploy to Cloudflare
+                </a>
               </Button>
               <Button asChild variant="outline">
                 <a href="/resources#selfhost">Self-host guide</a>

@@ -371,10 +371,12 @@ function ResourcesPage() {
           <Card className="flex flex-col gap-4 p-6">
             <Eyebrow>FROM THE BROWSER</Eyebrow>
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
-              Press the button and pick your Cloudflare account. Every variable on the form is
-              optional and already filled in, because there is nothing you have to know yet. D1, KV
-              and R2 are created for you; queues and the analytics datasets need one command
-              afterwards, and the app tells you when it needs it.
+              Press the button and pick your Cloudflare account. The form has nothing for you to
+              fill in — every variable already carries a working value — because there is nothing
+              you have to know yet. D1, KV and R2 are created for you; queues and the analytics
+              datasets need one command afterwards, and the app tells you when it needs it. Your
+              claim code is printed in the deploy log;{' '}
+              <code className="font-mono text-[13px] text-ink">/setup</code> asks for it.
             </p>
             <Button asChild size="lg" className="mt-auto self-start">
               {/* Cloudflare's own flow, not our sign-up: this section *is* the
@@ -400,27 +402,6 @@ function ResourcesPage() {
           </Card>
         </div>
 
-        <Callout
-          variant="warn"
-          title="The SMTP relay is a container, not a Worker"
-          className="mt-8"
-        >
-          <p className="m-0">
-            <code className="font-mono text-[13px]">smtp.your-domain.com:587</code> cannot run on
-            Workers — there is no inbound TCP listener — so the relay ships as an OCI container
-            image you run yourself, on Cloudflare Containers, Fly, or any VM. If you would rather
-            not run one, point your app at Cloudflare’s own{' '}
-            <code className="font-mono text-[13px]">smtp.mx.cloudflare.net:465</code> instead. The
-            trade-off is not subtle: those sends bypass MailySend entirely, so they will not appear
-            in your logs, analytics or webhooks.
-          </p>
-          <p className="m-0 mt-3">
-            <a href="/docs#smtp" className="font-semibold text-accent hover:text-ink">
-              SMTP relay docs →
-            </a>
-          </p>
-        </Callout>
-
         <dl className={`${definitionGrid} mt-10 lg:grid-cols-4`}>
           {DEPLOY_FACTS.map((fact) => (
             <div key={fact.term}>
@@ -429,6 +410,25 @@ function ResourcesPage() {
             </div>
           ))}
         </dl>
+
+        {/*
+          A true caveat, and a secondary one. It used to sit immediately under
+          the primary deploy button, where the first thing a reader met after
+          "1-CLICK" was a paragraph about running containers — a limit of one
+          optional transport, presented as a limit of the deploy. It belongs
+          after the facts, and the full version lives in the SMTP docs.
+        */}
+        <Callout variant="info" title="One thing the Worker cannot do" className="mt-10">
+          <p className="m-0">
+            <code className="font-mono text-[13px]">smtp.your-domain.com:587</code> cannot run on
+            Workers — there is no inbound TCP listener — so the optional SMTP relay ships as an OCI
+            container image you run yourself, on Cloudflare Containers, Fly, or any VM. Nothing else
+            here needs it.{' '}
+            <a href="/docs#smtp" className="font-semibold text-accent hover:text-ink">
+              SMTP relay docs →
+            </a>
+          </p>
+        </Callout>
       </Section>
 
       <Section id="changelog" className="scroll-mt-24 py-16 sm:py-20">

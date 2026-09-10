@@ -109,3 +109,21 @@ localhost. Thirty days.
 `MS_OWNER_EMAIL` is a **restriction, not a nomination**: setting it creates
 nobody and sends nothing. It says only that no other address may claim this
 instance.
+
+## The claim code
+
+First boot prints one, once, into the deployment's log — alongside the bootstrap
+API key, and stored the same way: only its SHA-256 is kept. `/setup` asks for it
+before it will claim an instance.
+
+That is the answer to the obvious objection to first-claimant-wins. Reading a
+Worker's log is something only the person who deployed it can do, and it needs
+no email, no DNS and no identity provider — the same reason a passkey is the
+claim credential. `wrangler tail`, or the Worker's *Logs* tab in the Cloudflare
+dashboard.
+
+Two deployments are never asked for it: one that booted before the code existed
+(it has no stored hash, and would otherwise be permanently unclaimable), and one
+with `MS_OWNER_EMAIL` set, which is already narrowed to a single address. Lost
+the log? `npx mailysend claim` writes a nonce straight into the deployment's own
+database, which is a strictly stronger proof and stays available afterwards.

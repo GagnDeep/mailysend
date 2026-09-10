@@ -108,11 +108,11 @@ function TermsPage() {
       <LegalSection id="cloudflare" heading="Cloudflare governs the transport">
         <p className="m-0">
           MailySend sends through Cloudflare. Your use of Workers, Email Sending, Email Routing,
-          Queues, Durable Objects, D1, KV, R2, Workflows and Workers AI is governed by Cloudflare's
-          own terms and billed by Cloudflare directly — we never see that bill and never take a cut
-          of it. Cloudflare Email Sending is itself a public beta, which is a real risk you accept
-          when you choose it as your transport; MailySend also supports Amazon SES and Resend as
-          providers, each under their own terms.
+          Queues, Durable Objects, D1, KV, R2 and Workflows is governed by Cloudflare's own terms
+          and billed by Cloudflare directly — we never see that bill and never take a cut of it.
+          Cloudflare Email Sending is itself a public beta, which is a real risk you accept when you
+          choose it as your transport; MailySend also supports Amazon SES and Resend as providers,
+          each under their own terms.
         </p>
       </LegalSection>
 

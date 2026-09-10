@@ -75,6 +75,14 @@ async function sweepExpired(env: Env): Promise<void> {
     // the counts, and doing it on the minute tick is what makes "snooze until
     // 9am" mean 9am.
     sql.prepare('UPDATE mail_threads SET snoozed_until = NULL WHERE snoozed_until <= ?').bind(now),
+    // `mcp.ts` has always documented this table as swept here, and it never
+    // was — so every confirmation an agent ever minted stayed forever. An
+    // expired one cannot be approved or redeemed, so keeping it buys nothing
+    // and costs a table that only grows. A grace hour keeps a just-expired
+    // token readable long enough for the approvals page to say what happened.
+    sql
+      .prepare('DELETE FROM mcp_confirmations WHERE expires_at < ?')
+      .bind(Date.now() - 60 * 60_000),
   ])
 }
 

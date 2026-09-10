@@ -361,14 +361,14 @@ function UseCasesPage() {
             <Eyebrow wide>07 · NEW</Eyebrow>
             <h2 className="ms-display-2 mt-3.5">Email for AI agents</h2>
             <p className="mt-4 max-w-[52ch] text-[16.5px] leading-[1.6] text-muted">
-              Agents need a real address: to receive, to read a thread, to draft, and to send only
-              when a human says yes. That’s an MCP endpoint plus nine tools, on the same Agents SDK
-              primitives Cloudflare’s own agentic-inbox demo uses.
+              Agents need a real address: to receive, to read a thread, and to send only when a
+              human says yes. That is an MCP endpoint with nine tools, an API key for a credential,
+              and a confirmation a person approves in the dashboard before anything leaves.
             </p>
             <CheckList
               items={[
-                'Per-agent mailbox, isolated state, its own reply routing',
-                'Every agent send is attributed and needs confirmation',
+                'Mark a mailbox Agent and it is the only one an agent can read',
+                'Sending returns a confirmation first — you approve it, not the agent',
                 'Works from Claude, Cursor or your own runtime',
               ]}
             />

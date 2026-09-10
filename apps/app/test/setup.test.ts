@@ -1,7 +1,7 @@
 import { hashApiKey } from '@mailysend/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { claimInstance, isClaimed } from '../src/server/bootstrap.ts'
-import { claimFor, type Harness, harness } from './harness.ts'
+import { CLAIM_CODE, claimFor, type Harness, harness } from './harness.ts'
 
 /**
  * First run.
@@ -29,7 +29,7 @@ describe('claiming', () => {
   it('starts unclaimed and offers a registration challenge', async () => {
     const response = await h.fetch('/v1/setup/claim/options', {
       method: 'POST',
-      body: JSON.stringify({ email: 'owner@acme.dev' }),
+      body: JSON.stringify({ email: 'owner@acme.dev', claim_code: CLAIM_CODE }),
     })
     expect(response.status).toBe(200)
     const body = (await response.json()) as {
@@ -40,6 +40,23 @@ describe('claiming', () => {
     expect(body.rp_id).toBe('mail.acme.dev')
     expect(body.user_id).toMatch(/^usr_/)
     expect(body.options.challenge).toBeTruthy()
+  })
+
+  it('will not hand the instance to whoever finds the URL first', async () => {
+    // Dropping MS_OWNER_EMAIL from the deploy form removed the only thing
+    // standing between a fresh deployment and a passer-by. The code printed on
+    // first boot is what replaced it, so an absent or wrong one must not pass.
+    const without = await h.fetch('/v1/setup/claim/options', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'stranger@else.dev' }),
+    })
+    expect(without.status).toBe(401)
+
+    const wrong = await h.fetch('/v1/setup/claim/options', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'stranger@else.dev', claim_code: 'WRON-GCOD-E000' }),
+    })
+    expect(wrong.status).toBe(401)
   })
 
   it('refuses to offer one once the instance has an owner', async () => {

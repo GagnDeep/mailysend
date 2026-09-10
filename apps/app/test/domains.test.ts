@@ -260,3 +260,70 @@ describe('a rewritten record set', () => {
     expect(rows.results.every((r) => r.status === 'not_started')).toBe(true)
   })
 })
+
+/**
+ * The receiving preflight.
+ *
+ * Same vocabulary as the sending checks, and for the same reason: an operator
+ * whose catch-all is bound but whose MX still points at Google needs to be
+ * told that, and a resolver that would not answer must never launder into a
+ * pass.
+ */
+describe('the MX preflight', () => {
+  const check = async (id: string) => {
+    const res = await h.fetch(`/v1/domains/${id}/receiving-check`, { method: 'POST', cookie })
+    expect(res.status).toBe(200)
+    return (await res.json()) as {
+      status: string
+      found: string | null
+      detail: string
+      mailboxes: { count: number; catch_all: string | null }
+    }
+  }
+
+  it('reports error when the resolver will not answer, never a pass', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({ 'acme.dev/MX': 'boom' })
+
+    const body = await check(id)
+    expect(body.status).toBe('error')
+    expect(body.found).toBeNull()
+    expect(body.detail).toContain('not evidence')
+  })
+
+  it('recognises Cloudflare Email Routing', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({
+      'acme.dev/MX': {
+        Status: 0,
+        Answer: [{ name: 'acme.dev', type: TYPE.MX, data: '10 route1.mx.cloudflare.net.' }],
+      },
+    })
+
+    const body = await check(id)
+    expect(body.status).toBe('verified')
+  })
+
+  it('says so when the mail goes somewhere else', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({
+      'acme.dev/MX': {
+        Status: 0,
+        Answer: [{ name: 'acme.dev', type: TYPE.MX, data: '1 aspmx.l.google.com.' }],
+      },
+    })
+
+    const body = await check(id)
+    expect(body.status).toBe('failed')
+    expect(body.found).toContain('google')
+  })
+
+  it('calls a domain with no MX at all pending, not failed', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({ 'acme.dev/MX': { Status: 0, Answer: [] } })
+
+    const body = await check(id)
+    expect(body.status).toBe('pending')
+    expect(body.mailboxes.count).toBe(0)
+  })
+})

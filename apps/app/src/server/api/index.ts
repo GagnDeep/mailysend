@@ -16,6 +16,7 @@ import { inbound } from './inbound.ts'
 import { instance } from './instance.ts'
 import { logs } from './logs.ts'
 import { mail } from './mail.ts'
+import { mcpConfirmations } from './mcp-confirmations.ts'
 import { openApiDocument } from './openapi.ts'
 import { preferences } from './preferences.ts'
 import { providers } from './providers.ts'
@@ -72,6 +73,7 @@ api.route('/logs', logs)
 api.route('/analytics', analytics)
 api.route('/inbound', inbound)
 api.route('/mail', mail)
+api.route('/mcp/confirmations', mcpConfirmations)
 api.route('/providers', providers)
 api.route('/workspace', workspace)
 api.route('/preference-centre', preferences)

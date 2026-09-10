@@ -19,11 +19,17 @@ import {
   StepCard,
 } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
-import { DEPLOY_DURATION, DEPLOY_RANGE, DeployTerminal } from '~/components/marketing/deploy'
+import {
+  DEPLOY_DURATION,
+  DEPLOY_RANGE,
+  DeployButton,
+  DeployTerminal,
+  SelfHostGuideLink,
+} from '~/components/marketing/deploy'
 import type { FaqItem } from '~/components/marketing/faq'
 import { Faq, toFaqEntries } from '~/components/marketing/faq'
 import { PageShell, Section } from '~/components/marketing/page-shell'
-import { faqPageSchema, pageHead, softwareApplicationSchema } from '~/seo'
+import { DEPLOY_URL, faqPageSchema, pageHead, softwareApplicationSchema } from '~/seo'
 
 /**
  * The artboards colour exactly three things inside a code block: string
@@ -306,7 +312,9 @@ const ARCHITECTURE_ROWS = [
   ],
   [
     { kicker: 'R2', title: 'attachments & raw MIME' },
-    { kicker: 'WORKERS AI', title: 'spam scoring & drafting' },
+    // Was `WORKERS AI · spam scoring & drafting`. Nothing in the repo calls
+    // Workers AI; the agent surface is the thing that actually exists.
+    { kicker: 'MCP ENDPOINT', title: 'nine agent tools, gated sends' },
     { kicker: 'ANALYTICS ENGINE', title: 'event stream & charts' },
   ],
 ]
@@ -484,14 +492,7 @@ function HomePage() {
             analytics. One click deploys it into your own account. No bill from us, ever.
           </p>
           <div className="mt-[34px] flex flex-wrap justify-center gap-3">
-            <Button asChild size="lg">
-              <a href="#deploy">
-                Deploy in one click
-                <span aria-hidden="true" className="font-mono text-[13px]">
-                  →
-                </span>
-              </a>
-            </Button>
+            <DeployButton label="Deploy in one click" size="lg" />
             <Button asChild size="lg" variant="outline">
               <a href="#compat">Swap Resend in one line</a>
             </Button>
@@ -742,7 +743,7 @@ function HomePage() {
             <ul className="m-0 mb-[22px] flex list-none flex-col gap-2.5 p-0 text-[14.5px]">
               {[
                 `Ready in ${DEPLOY_DURATION} — most of it DNS propagation`,
-                'No required variables — the form is already filled in',
+                'No variables to fill in — every field on the form already has a value',
                 'Migrates itself and prints your first API key on boot',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
@@ -753,14 +754,10 @@ function HomePage() {
                 </li>
               ))}
             </ul>
-            <Button asChild size="lg" className="mt-auto">
-              <a href="/resources#selfhost">
-                Deploy to Cloudflare
-                <span aria-hidden="true" className="font-mono text-[12px]">
-                  →
-                </span>
-              </a>
-            </Button>
+            <div className="mt-auto flex flex-wrap items-center gap-2">
+              <DeployButton size="lg" />
+              <SelfHostGuideLink />
+            </div>
           </div>
 
           <div className="flex flex-col rounded-block border border-ink bg-ink p-7 text-paper">
@@ -1003,7 +1000,7 @@ function HomePage() {
           actions={
             <>
               <Button asChild variant="accent" size="lg">
-                <a href="/resources#selfhost">
+                <a href={DEPLOY_URL} rel="noreferrer">
                   Deploy to Cloudflare
                   <span aria-hidden="true" className="font-mono text-[13px]">
                     →

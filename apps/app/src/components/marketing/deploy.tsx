@@ -1,5 +1,6 @@
 import type { TerminalLine } from '@mailysend/ui'
 import { Button, cn, MonoChip, Terminal } from '@mailysend/ui'
+import { DEPLOY_URL } from '~/seo'
 
 /**
  * The deploy claim, in one place.
@@ -73,7 +74,7 @@ export const DeployButton = ({
   className,
 }: DeployButtonProps) => (
   <Button asChild variant={variant} size={size} className={className}>
-    <a href="/resources#selfhost">
+    <a href={DEPLOY_URL} rel="noreferrer">
       {label}
       {chip ? (
         <MonoChip
@@ -89,5 +90,25 @@ export const DeployButton = ({
         </span>
       )}
     </a>
+  </Button>
+)
+
+/**
+ * The quieter alternative beside the primary CTA.
+ *
+ * The self-host guide used to *be* the deploy button — a tollgate between the
+ * homepage and Cloudflare that made a one-click deploy take three. It is still
+ * worth reading if you want the CLI path or the bindings explained, so it keeps
+ * a link; it just no longer stands in front of the button.
+ */
+export const SelfHostGuideLink = ({
+  label = 'Read the self-host guide',
+  className,
+}: {
+  label?: string
+  className?: string
+}) => (
+  <Button asChild variant="ghost" size="md" className={className}>
+    <a href="/resources#selfhost">{label}</a>
   </Button>
 )

@@ -22,6 +22,9 @@ export const qk = {
 
   apiKeys: (env: Environment) => [env, 'api-keys'] as const,
 
+  mcpConfirmations: (env: Environment, status: string) =>
+    [env, 'mcp-confirmations', status] as const,
+
   audiences: (env: Environment) => [env, 'audiences'] as const,
   audience: (env: Environment, id: string) => [env, 'audience', id] as const,
   contacts: (env: Environment, audienceId: string, filters: Record<string, unknown> = {}) =>

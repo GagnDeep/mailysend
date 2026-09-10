@@ -1,4 +1,5 @@
-import { DEFAULT_WORKSPACE, newId, r2Key } from '@mailysend/core'
+import { DEFAULT_WORKSPACE, newId, r2Key, sha256Hex } from '@mailysend/core'
+import type { Sql } from '@mailysend/platform'
 import { tenancyFor } from './context.ts'
 import type { Env } from './env.ts'
 
@@ -64,10 +65,53 @@ export function parseAuthResults(header: string | null): {
   return { spf: read('spf'), dkim: read('dkim'), dmarc: read('dmarc') }
 }
 
+/**
+ * The one place that decides whether an address is deliverable.
+ *
+ * Exported because the queue consumer has to reach the same answer: it used to
+ * run its own copy of the exact-address query, so the day the two drifted would
+ * be the day a message was accepted at the door and then silently dropped after
+ * the raw bytes were already in R2. One function, two callers.
+ *
+ * Exact address first, then the domain's catch-all. That order matters: a
+ * mailbox with its own webhook, agent flag and threads must keep receiving its
+ * own mail even when a catch-all exists beside it.
+ */
+export async function resolveMailbox(
+  sql: Sql,
+  workspaceId: string,
+  recipient: string,
+): Promise<{ id: string; address: string; matched: 'address' | 'catch_all' } | null> {
+  const to = recipient.toLowerCase()
+  const exact = await sql
+    .prepare('SELECT id, address FROM inbound_mailboxes WHERE workspace_id = ? AND address = ?')
+    .bind(workspaceId, to)
+    .first<{ id: string; address: string }>()
+  if (exact) return { ...exact, matched: 'address' }
+
+  const domain = to.split('@')[1]
+  if (!domain) return null
+
+  // `domain` is denormalised and backfilled, but a row written before the
+  // column existed and never touched since can still hold null — so the
+  // fallback matches on the address suffix rather than missing the catch-all.
+  const catchAll = await sql
+    .prepare(
+      `SELECT id, address FROM inbound_mailboxes
+        WHERE workspace_id = ? AND is_catch_all = 1
+          AND (domain = ? OR (domain IS NULL AND address LIKE ?))
+        LIMIT 1`,
+    )
+    .bind(workspaceId, domain, `%@${domain}`)
+    .first<{ id: string; address: string }>()
+  return catchAll ? { ...catchAll, matched: 'catch_all' } : null
+}
+
 export async function handleInboundEmail(message: EmailMessageLike, env: Env): Promise<void> {
   const to = message.to.toLowerCase()
   const workspaceId = await resolveWorkspace(env, to)
   if (!workspaceId) {
+    console.warn(`[inbound] rejected ${to} — no workspace owns that domain`)
     message.setReject(`550 5.1.1 No such mailbox: ${to}`)
     return
   }
@@ -76,14 +120,20 @@ export async function handleInboundEmail(message: EmailMessageLike, env: Env): P
   // No `enabled` predicate: `inbound_mailboxes` has never had that column, so
   // this query threw inside Cloudflare's mail pipeline on every single inbound
   // message. Every one of them was deferred and then bounced.
-  const mailbox = await sql
-    .prepare('SELECT id FROM inbound_mailboxes WHERE workspace_id = ? AND address = ?')
-    .bind(workspaceId, to)
-    .first<{ id: string }>()
+  const mailbox = await resolveMailbox(sql, workspaceId, to)
 
   if (!mailbox) {
     // Rejecting at SMTP time is the honest answer: the sender gets an immediate
     // 550 naming the address, instead of silence that looks like delivery.
+    //
+    // It is also the failure an operator is most likely to hit — bind the
+    // catch-all in Cloudflare, send a test from Gmail, watch nothing arrive —
+    // and until now it left no trace anywhere: no log line, no row, nothing to
+    // distinguish it from a Worker that was never invoked. Both now exist.
+    console.warn(
+      `[inbound] rejected ${to} — no mailbox and no catch-all on ${to.split('@')[1] ?? '?'}`,
+    )
+    await recordInboundReject(sql, workspaceId, to, message.from, 'no_mailbox')
     message.setReject(`550 5.1.1 No such mailbox: ${to}`)
     return
   }
@@ -104,7 +154,53 @@ export async function handleInboundEmail(message: EmailMessageLike, env: Env): P
     raw_key: rawKey,
     to,
     from: message.from,
+    mailbox_id: mailbox.id,
+    matched: mailbox.matched,
     auth: parseAuthResults(message.headers.get('authentication-results')),
     received_at: new Date().toISOString(),
   })
+}
+
+/**
+ * A rejection somebody can find without `wrangler tail`.
+ *
+ * `message_events` is where the product already looks for "what happened to
+ * this address", and an inbound rejection has exactly the shape it wants: a
+ * type, a recipient, a time and a diagnostic. `message_id` is null because
+ * there is no message — nothing was accepted — which is precisely the fact
+ * being recorded.
+ *
+ * Never allowed to throw. This runs on the path to a `setReject` that has to
+ * happen whether or not the database is reachable; a failure to write the
+ * breadcrumb must not turn a clean 550 into a deferral.
+ */
+export async function recordInboundReject(
+  sql: Sql,
+  workspaceId: string,
+  to: string,
+  from: string,
+  reason: 'no_mailbox' | 'mailbox_vanished',
+): Promise<void> {
+  try {
+    const now = new Date().toISOString()
+    await sql
+      .prepare(
+        `INSERT INTO message_events (event_id, workspace_id, message_id, type, recipient, occurred_at, diagnostic, created_at)
+         VALUES (?,?,NULL,'inbound.rejected',?,?,?,?)
+         ON CONFLICT (event_id) DO NOTHING`,
+      )
+      .bind(
+        await sha256Hex(`inbound.rejected|${workspaceId}|${to}|${from}|${now}`),
+        workspaceId,
+        to,
+        now,
+        reason === 'no_mailbox'
+          ? `550 5.1.1 No such mailbox: ${to}. Create it under the domain's Receiving tab, or turn on the catch-all there.`
+          : `Accepted at the door, then the mailbox was gone before the message was filed: ${to}`,
+        now,
+      )
+      .run()
+  } catch (err) {
+    console.error('[inbound] could not record the rejection', err)
+  }
 }

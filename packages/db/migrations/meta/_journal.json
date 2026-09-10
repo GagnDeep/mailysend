@@ -50,6 +50,13 @@
       "when": 1789026614099,
       "tag": "0006_dns_error",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789060002037,
+      "tag": "0007_inbound_catch_all",
+      "breakpoints": true
     }
   ]
 }

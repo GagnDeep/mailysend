@@ -14,7 +14,8 @@ import {
 } from '@mailysend/ui'
 import { useRouterState } from '@tanstack/react-router'
 import { useState } from 'react'
-import { FLAT_LINKS, MORE_GROUP, type NavGroup, PRODUCT_GROUP } from './nav-data.ts'
+import { DEPLOY_URL } from '~/seo'
+import { FLAT_LINKS, type NavGroup, PRODUCT_GROUP } from './nav-data.ts'
 import { Wordmark } from './wordmark.tsx'
 
 const linkClasses =
@@ -100,7 +101,6 @@ export const SiteNav = () => {
               {link.label}
             </a>
           ))}
-          <MenuGroup group={MORE_GROUP} active={groupActive(MORE_GROUP)} />
         </div>
 
         <div className="flex items-center gap-1.5 max-lg:hidden">
@@ -108,7 +108,9 @@ export const SiteNav = () => {
             Sign in
           </a>
           <Button asChild size="sm" className="h-10 px-[17px] text-[14px]">
-            <a href="/resources#selfhost">Deploy free</a>
+            <a href={DEPLOY_URL} rel="noreferrer">
+              Deploy free
+            </a>
           </Button>
         </div>
 
@@ -137,18 +139,16 @@ export const SiteNav = () => {
               <SheetTitle>Menu</SheetTitle>
             </SheetHeader>
             <div className="flex flex-col gap-6">
-              {[PRODUCT_GROUP, MORE_GROUP].map((group) => (
-                <div key={group.label}>
-                  <div className="ms-eyebrow mb-2.5">{group.label}</div>
-                  <div className="flex flex-col">
-                    {group.items.map((item) => (
-                      <a key={item.href} href={item.href} className={drawerLinkClasses}>
-                        {item.label}
-                      </a>
-                    ))}
-                  </div>
+              <div>
+                <div className="ms-eyebrow mb-2.5">{PRODUCT_GROUP.label}</div>
+                <div className="flex flex-col">
+                  {PRODUCT_GROUP.items.map((item) => (
+                    <a key={item.href} href={item.href} className={drawerLinkClasses}>
+                      {item.label}
+                    </a>
+                  ))}
                 </div>
-              ))}
+              </div>
               <div>
                 <div className="ms-eyebrow mb-2.5">REFERENCE</div>
                 <div className="flex flex-col">
@@ -164,7 +164,9 @@ export const SiteNav = () => {
               </div>
             </div>
             <Button asChild className="w-full">
-              <a href="/resources#selfhost">Deploy free</a>
+              <a href={DEPLOY_URL} rel="noreferrer">
+                Deploy free
+              </a>
             </Button>
           </SheetContent>
         </Sheet>

@@ -10,7 +10,7 @@ import {
 import { DEPLOY_DURATION } from '~/components/marketing/deploy.tsx'
 import { failure, type Instance, postJson, useInstance } from '~/lib/instance.ts'
 import { assertPasskey, PasskeyError, passkeysSupported } from '~/lib/passkey.ts'
-import { breadcrumbSchema, pageHead } from '~/seo'
+import { breadcrumbSchema, DEPLOY_URL, pageHead } from '~/seo'
 
 /**
  * Sign in.
@@ -333,7 +333,7 @@ function SignInPage() {
 
       <p className="mt-[26px] border-t border-line pt-[22px] text-[14.5px] leading-[1.7] text-muted">
         No instance yet?{' '}
-        <a href="/resources#selfhost" className={AUTH_LINK_STRONG}>
+        <a href={DEPLOY_URL} rel="noreferrer" className={AUTH_LINK_STRONG}>
           Deploy to Cloudflare
         </a>{' '}
         — {DEPLOY_DURATION} — then open <code className="font-mono text-[13.5px]">/setup</code> on

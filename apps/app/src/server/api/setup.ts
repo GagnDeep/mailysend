@@ -9,7 +9,13 @@ import {
 } from '@mailysend/core'
 import type { Sql } from '@mailysend/platform'
 import { z } from 'zod'
-import { CLAIMED_KEY, claimInstance, isClaimed } from '../bootstrap.ts'
+import {
+  CLAIMED_KEY,
+  claimCodeMatches,
+  claimCodeRequired,
+  claimInstance,
+  isClaimed,
+} from '../bootstrap.ts'
 import { tenancyFor } from '../context.ts'
 import { getEnv } from '../env.ts'
 import { clientIp, issueSession, normalizeEmail, sessionResponse } from '../session.ts'
@@ -50,6 +56,7 @@ const RECOVERY_CODE_COUNT = 10
 
 const ClaimOptionsBody = z.object({
   email: z.string().trim().email().max(320),
+  claim_code: z.string().trim().max(64).optional(),
 })
 
 const ClaimVerifyBody = z.object({
@@ -58,6 +65,7 @@ const ClaimVerifyBody = z.object({
   workspace_name: z.string().min(1).max(120).optional(),
   challenge: z.string().min(1),
   response: z.unknown(),
+  claim_code: z.string().trim().max(64).optional(),
 })
 
 /** Refuses everything below once the instance has an owner. */
@@ -82,6 +90,29 @@ function assertAllowedClaimant(email: string): void {
   }
 }
 
+/**
+ * The code printed on first boot, checked on both legs of the claim.
+ *
+ * Checked twice on purpose: `claim/options` is what a browser calls first, and
+ * refusing there is the difference between "you cannot claim this" and a
+ * passkey prompt that fails after the operator has already touched their key.
+ * `claim/verify` checks again because the options leg is not a session and
+ * nothing carries between them but the challenge.
+ *
+ * A deployment with no stored code — anything that booted before this existed —
+ * is not locked out: `claimCodeRequired` is false and this is a no-op.
+ */
+async function assertClaimCode(sql: Sql, code: string | undefined): Promise<void> {
+  if (!(await claimCodeRequired(sql, getEnv().MS_OWNER_EMAIL))) return
+  if (!code || !(await claimCodeMatches(sql, code))) {
+    throw apiError('not_signed_in', {
+      message:
+        'That claim code is not right. It was printed in this deployment’s log on first boot — ' +
+        '`wrangler tail`, or the Worker’s live logs in the Cloudflare dashboard.',
+    })
+  }
+}
+
 /** `POST /v1/setup/claim/options` — a registration challenge for the first owner. */
 setup.post('/claim/options', async (c) => {
   const env = getEnv()
@@ -91,6 +122,7 @@ setup.post('/claim/options', async (c) => {
   const body = ClaimOptionsBody.parse(await c.req.json())
   const email = normalizeEmail(body.email)
   assertAllowedClaimant(email)
+  await assertClaimCode(sql, body.claim_code)
 
   const rp = relyingParty(env)
   // The user id is minted now and carried on the challenge, so the credential
@@ -129,6 +161,7 @@ setup.post('/claim/verify', async (c) => {
   const body = ClaimVerifyBody.parse(await c.req.json())
   const email = normalizeEmail(body.email)
   assertAllowedClaimant(email)
+  await assertClaimCode(sql, body.claim_code)
 
   const rp = relyingParty(env)
   const pending = await consumeChallenge(sql, body.challenge, CLAIM_SCOPE.register)

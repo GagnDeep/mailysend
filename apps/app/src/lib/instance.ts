@@ -28,6 +28,12 @@ export interface Instance {
     /** What the button should say, e.g. "Okta". */
     oidc_label?: string | null
   }
+  /**
+   * What `/setup` must ask for before it will claim this instance — never who.
+   * `code_required` is the first-boot claim code; `reserved` says
+   * `MS_OWNER_EMAIL` narrows the claim to one address the API does not name.
+   */
+  claim?: { code_required: boolean; reserved: boolean }
   sending: { ready: boolean; verified_domains: number; last_error: string | null }
   previous_public_url: string | null
 }

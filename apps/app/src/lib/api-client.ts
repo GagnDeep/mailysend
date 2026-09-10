@@ -8,8 +8,6 @@ import {
   Domain,
   Email,
   ErrorBody,
-  InboundMessage,
-  InboundThread,
   listResponse,
   PlacementFigure,
   Segment,
@@ -160,8 +158,6 @@ export type BroadcastRecord = z.infer<typeof Broadcast>
 export type AutomationRecord = z.infer<typeof Automation>
 export type WebhookRecord = z.infer<typeof Webhook>
 export type SuppressionRecord = z.infer<typeof Suppression>
-export type InboundThreadRecord = z.infer<typeof InboundThread>
-export type InboundMessageRecord = z.infer<typeof InboundMessage>
 export type PlacementFigureRecord = z.infer<typeof PlacementFigure>
 
 // ---------------------------------------------------------------------------
@@ -476,9 +472,46 @@ export const InboundMailbox = z.object({
   name: z.string().nullable(),
   forward_webhook_id: z.string().nullable(),
   agent_enabled: z.boolean(),
+  /** Accepts every address on its domain, not just its own. One per domain. */
+  is_catch_all: z.boolean().default(false),
+  domain: z.string().nullable().default(null),
   created_at: z.string(),
 })
 export type InboundMailboxRecord = z.infer<typeof InboundMailbox>
+
+/**
+ * One pending agent action, waiting on a person.
+ *
+ * `summary` is whatever the tool put in the confirmation — for `send_email`,
+ * the from/to/subject and a digest of the body — and is deliberately typed
+ * loosely: the gate owns its shape, and the page renders whatever is there
+ * rather than silently dropping a field it does not know about.
+ */
+export const McpConfirmation = z.object({
+  object: z.literal('mcp_confirmation'),
+  token: z.string(),
+  tool: z.string(),
+  summary: z.record(z.string(), z.unknown()).or(z.unknown()),
+  status: z.string(),
+  decided_by: z.string().nullable().default(null),
+  consumed_at: z.string().nullable().default(null),
+  created_at: z.string(),
+  expires_at: z.string(),
+  expired: z.boolean().default(false),
+})
+export type McpConfirmationRecord = z.infer<typeof McpConfirmation>
+
+/** What `POST /domains/:id/receiving-check` observed about the domain's MX. */
+export const ReceivingCheck = z.object({
+  object: z.literal('receiving_check'),
+  domain: z.string(),
+  status: z.enum(['verified', 'pending', 'failed', 'error']),
+  found: z.string().nullable(),
+  expected: z.string(),
+  detail: z.string(),
+  mailboxes: z.object({ count: z.number(), catch_all: z.string().nullable() }),
+})
+export type ReceivingCheckResult = z.infer<typeof ReceivingCheck>
 
 // ---------------------------------------------------------------------------
 // Transports
@@ -917,11 +950,26 @@ export const createApiClient = (scope: RequestScope) => {
 
     // --- receiving ---------------------------------------------------------
     listMailboxes: () => get('/inbound/mailboxes', list(InboundMailbox)),
-    createMailbox: (body: { address: string; name?: string; agent_enabled?: boolean }) =>
-      post('/inbound/mailboxes', InboundMailbox, body),
+    createMailbox: (body: {
+      address: string
+      name?: string
+      agent_enabled?: boolean
+      is_catch_all?: boolean
+    }) => post('/inbound/mailboxes', InboundMailbox, body),
     updateMailbox: (id: string, body: Record<string, unknown>) =>
       patch(`/inbound/mailboxes/${id}`, InboundMailbox, body),
     deleteMailbox: (id: string) => del(`/inbound/mailboxes/${id}`, deleted),
+    /** Resolves the domain's MX and says whether Email Routing is receiving for it. */
+    checkReceiving: (id: string) => post(`/domains/${id}/receiving-check`, ReceivingCheck, {}),
+
+    // --- agents ------------------------------------------------------------
+    /** Pending by default; pass `all` to include decided and expired rows. */
+    listConfirmations: (status?: string) =>
+      get('/mcp/confirmations', list(McpConfirmation), status ? { status } : {}),
+    approveConfirmation: (token: string) =>
+      post(`/mcp/confirmations/${token}/approve`, McpConfirmation.partial(), {}),
+    rejectConfirmation: (token: string) =>
+      post(`/mcp/confirmations/${token}/reject`, McpConfirmation.partial(), {}),
 
     // --- api keys ----------------------------------------------------------
     listApiKeys: (params: ListParams = {}) => get('/api-keys', list(ApiKey), params),
@@ -1016,20 +1064,11 @@ export const createApiClient = (scope: RequestScope) => {
     deleteSuppression: (email: string) =>
       del(`/suppressions/${encodeURIComponent(email)}`, deleted),
 
-    // --- inbound -----------------------------------------------------------
-    listThreads: (params: ListParams & Record<string, unknown> = {}) =>
-      get('/inbound/threads', list(InboundThread), params),
-    getThread: (id: string) => get(`/inbound/threads/${id}`, InboundThread),
-    listThreadMessages: (id: string) =>
-      get(`/inbound/threads/${id}/messages`, list(InboundMessage)),
-    replyToThread: (id: string, body: { text: string; html?: string }) =>
-      post(`/inbound/threads/${id}/reply`, InboundMessage, body),
-    markThreadRead: (id: string, unread: boolean) =>
-      patch(`/inbound/threads/${id}`, InboundThread, { unread }),
-
     // --- mail --------------------------------------------------------------
     // One surface over both directions. `/v1/inbound/*` still exists as a shim
-    // over the same tables, but nothing in the dashboard calls it any more.
+    // over the same tables for API clients written against it, but the
+    // dashboard reaches it through `/v1/mail` — so the five thread wrappers
+    // that used to sit here were dead the day `/app/inbound` became a redirect.
     listMailThreads: (params: Record<string, unknown> = {}) =>
       get('/mail/threads', MailThreadList, params),
     mailCounts: () => get('/mail/counts', MailCounts),
