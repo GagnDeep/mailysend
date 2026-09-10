@@ -90,11 +90,32 @@ const FIRST_BOOT: Array<[string, string, string]> = [
 
 const FAILURES: Array<[string, ReactNode, ReactNode]> = [
   [
-    'A binding error during provisioning, not a billing message',
-    <>The account is not on Workers Paid. Durable Objects and Queues both require it.</>,
+    'CPU limits are not supported for the Free plan [code: 100328]',
     <>
-      Upgrade the account. This is first because it is cheapest to check and looks like anything but
-      itself.
+      A <Mono>limits.cpu_ms</Mono> in the Worker config. The CPU limit is a fixed 10&nbsp;ms on the
+      Free plan and cannot be set at all, so the API rejects the upload — after every resource has
+      already been created, which is what makes it read like a provisioning failure.
+    </>,
+    <>
+      Remove the <Mono>limits</Mono> block. MailySend ships without one, because 30,000&nbsp;ms was
+      already the Workers Paid default and setting it explicitly bought nothing. If you have raised
+      it on purpose, you have made your deploy paid-only.
+    </>,
+  ],
+  [
+    'A binding error during provisioning, not a billing message',
+    <>
+      A resource the account cannot create. Note that this is <em>not</em> usually the plan: every
+      binding here works on Workers Free — the ten Durable Objects are all declared as{' '}
+      <Mono>new_sqlite_classes</Mono>, and Queues and Workflows both have free tiers. Analytics
+      Engine is the one that needs enabling, and it is already left out unless you ask for it.
+    </>,
+    <>
+      Read which binding the error names rather than assuming billing. You still want Workers Paid
+      to actually run this — 10&nbsp;ms of CPU is not much of a budget, and Cloudflare Email Service
+      is Workers Paid only, so the default transport cannot send without it — but the plan is not
+      what makes the <em>deploy</em> succeed, and treating it as the answer hides the binding that
+      really failed.
     </>,
   ],
   [

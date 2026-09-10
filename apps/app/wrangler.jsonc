@@ -205,7 +205,19 @@
 
   "triggers": {
     "crons": ["* * * * *", "0 * * * *", "0 3 * * *"]
-  },
+  }
 
-  "limits": { "cpu_ms": 30000 }
+  // No `limits.cpu_ms`, deliberately. 30000 is already the Workers Paid
+  // default, so setting it explicitly bought nothing — and it is rejected
+  // outright by an account on the Free plan, where the CPU limit is a fixed
+  // 10 ms that cannot be configured at all:
+  //
+  //   CPU limits are not supported for the Free plan [code: 100328]
+  //
+  // That failed the entire one-click deploy at the upload step, after every
+  // resource had been created, for a setting that changed nothing. Everything
+  // else here works on Free: the Durable Objects are all `new_sqlite_classes`,
+  // and Queues and Workflows both have free tiers. If a handler ever genuinely
+  // needs more than 30 s of CPU, raise it here — and know that you have just
+  // made the deploy paid-only.
 }
