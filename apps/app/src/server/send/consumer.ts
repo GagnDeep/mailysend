@@ -10,7 +10,7 @@ import {
   signTrackingToken,
 } from '@mailysend/core'
 import { eventId } from '@mailysend/events'
-import type { QueueBatch } from '@mailysend/platform'
+import type { QueueBatch, Sql } from '@mailysend/platform'
 import { buildMime, type OutboundMessage, type ProviderName, SendError } from '@mailysend/providers'
 import { injectTracking, injectUnsubscribe, renderTemplate } from '@mailysend/templates'
 import { tenancyFor } from '../context.ts'
@@ -56,7 +56,13 @@ export async function consumeSend(batch: QueueBatch<SendJob>, env: Env): Promise
     } catch (err) {
       const transient = err instanceof SendError && err.kind !== 'permanent' && err.kind !== 'auth'
       if (transient && message.attempts < 5) {
-        message.retry({ delaySeconds: Math.min(2 ** message.attempts * 10, 900) })
+        const delaySeconds = Math.min(2 ** message.attempts * 10, 900)
+        console.warn(
+          `[send] ${message.body.email_id} attempt ${message.attempts} failed, retrying in ${delaySeconds}s: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+        message.retry({ delaySeconds })
       } else {
         // Give up on the wire, but never silently: the message row is marked
         // failed so it shows in the log with a reason the user can act on.
@@ -91,7 +97,10 @@ export async function deliverNow(
     return { delivered: true, retryable: false }
   } catch (err) {
     const transient = err instanceof SendError && err.kind !== 'permanent' && err.kind !== 'auth'
-    if (transient) return { delivered: false, retryable: true, error: describe(err) }
+    if (transient) {
+      console.warn(`[send] ${job.email_id} could not be delivered inline: ${describe(err)}`)
+      return { delivered: false, retryable: true, error: describe(err) }
+    }
     await markFailed(env, job, err)
     return { delivered: false, retryable: false, error: describe(err) }
   }
@@ -180,8 +189,37 @@ async function handleOne(job: SendJob, env: Env): Promise<void> {
     )
     .bind(now + LEASE_MS, job.email_id, job.workspace_id, now)
     .run()
-  if (lease.meta.changes === 0) return
+  if (lease.meta.changes === 0) {
+    // Somebody else holds it, or it is already past sending. Both are ordinary
+    // — but they are also what a lost message looks like, so say which.
+    console.log(`[send] ${job.email_id} was already claimed; nothing to do`)
+    return
+  }
 
+  // Everything past this point owns the lease, and a failure has to give it
+  // back. It used to keep it: an attempt that threw left `lease_until` set for
+  // its full two minutes, the queue redelivered twenty seconds later, the
+  // conditional claim above matched nothing, and this function returned quietly
+  // and acked the message. The row then sat at `sending` forever — no provider,
+  // no error, no further attempt — which is exactly the state that started this
+  // investigation. Releasing on the way out is what makes a retry a retry.
+  try {
+    await attempt(job, env, sql)
+  } catch (err) {
+    await sql
+      .prepare(
+        `UPDATE messages SET lease_until = NULL
+          WHERE id = ? AND workspace_id = ? AND state_rank < 30`,
+      )
+      .bind(job.email_id, job.workspace_id)
+      .run()
+      .catch(() => {})
+    throw err
+  }
+}
+
+/** The delivery itself. Runs holding the lease `handleOne` took. */
+async function attempt(job: SendJob, env: Env, sql: Sql): Promise<void> {
   const envelope = await loadEnvelope(job, env)
   if (!envelope)
     throw new SendError('permanent', 'cloudflare', 'send envelope is missing from the spool')
@@ -535,6 +573,17 @@ async function markFailed(env: Env, job: SendJob, err: unknown): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
   const message = err instanceof Error ? err.message : String(err)
   const kind = err instanceof SendError ? err.kind : 'unknown'
+  // Said out loud, because until now it was not said anywhere a deployment can
+  // read. A failed send wrote its reason to a database column and to nothing
+  // else, so the Workers log for a message that never arrived showed a `POST
+  // /v1/mail/send` returning 200, an `ms-send` consumer invocation, and no
+  // indication that either had gone wrong — which is a bad position to debug a
+  // send from, and the position this was debugged from twice.
+  console.error(
+    `[send] ${job.email_id} failed (${kind}${
+      err instanceof SendError && err.provider ? ` via ${err.provider}` : ''
+    }): ${message}`,
+  )
   // The provider is recorded on failure as well as on success. Only `recordSent`
   // ever wrote this column, so a message that reached a transport and was
   // refused by it read as `unassigned` — indistinguishable from one that never

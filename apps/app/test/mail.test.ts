@@ -831,3 +831,90 @@ describe('sends whose worker died', () => {
     expect(row?.status).toBe('sending')
   })
 })
+
+/**
+ * The bug that made a message sit at `sending` with nothing after it.
+ *
+ * A send that fails transiently is supposed to be retried. It was not: the
+ * failing attempt kept the lease it had taken, for the full two minutes, and
+ * the redelivery twenty seconds later found the conditional claim unsatisfied,
+ * returned without a word and acked the message. No provider, no error, no
+ * second attempt — and no way to tell from the outside that anything had
+ * happened at all.
+ */
+describe('a failed attempt gives the lease back', () => {
+  const throttleOnce = (h: Harness) => {
+    // The governor denying a reservation is an ordinary transient failure, and
+    // the first thing `handleOne` does after taking the lease.
+    let calls = 0
+    h.env.SENDING_DOMAIN = {
+      get: () => ({
+        reserve: async () => {
+          calls += 1
+          return calls === 1
+            ? { granted: 0, reason: 'rate' as const, retryAfterMs: 1000 }
+            : { granted: 50, reason: null, retryAfterMs: 0 }
+        },
+        setVerification: async () => {},
+      }),
+    } as never
+  }
+
+  it('lets the next attempt claim a message the last one failed on', async () => {
+    const { consumeSend } = await import('../src/server/send/consumer.ts')
+    const h2 = await harness()
+    const userId = await claimFor(h2)
+    const cookie = await sessionFor(h2, userId)
+    await verifiedDomain(h2, 'acme.dev')
+
+    const jobs: unknown[] = []
+    h2.env.SEND_QUEUE = {
+      send: async (job: unknown) => {
+        jobs.push(job)
+      },
+      sendBatch: async () => {},
+    } as never
+    throttleOnce(h2)
+
+    const res = await h2.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      headers: { 'ms-environment': 'test' },
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Second time lucky',
+        html: '<p>Throttled, then not.</p>',
+      }),
+    })
+    expect(res.status).toBe(200)
+    const { id } = (await res.json()) as { id: string }
+
+    // The inline attempt was throttled, so it handed the job to the queue…
+    expect(jobs).toHaveLength(1)
+    // …and released the lease on its way out, which is the whole fix.
+    const held = await h2.sql
+      .prepare('SELECT status, lease_until FROM messages WHERE id = ?')
+      .bind(id)
+      .first<{ status: string; lease_until: number | null }>()
+    expect(held?.status).toBe('sending')
+    expect(held?.lease_until).toBeNull()
+
+    // The redelivery therefore claims it and sends, instead of finding the
+    // lease held, returning in silence and acking the only copy of the message.
+    const message = jobs[0] as Record<string, unknown>
+    await consumeSend(
+      {
+        queue: 'ms-send',
+        messages: [{ body: message, attempts: 1, ack: () => {}, retry: () => {} }],
+      } as never,
+      h2.env,
+    )
+
+    const after = await h2.sql
+      .prepare('SELECT status FROM messages WHERE id = ?')
+      .bind(id)
+      .first<{ status: string }>()
+    expect(after?.status).not.toBe('sending')
+  })
+})

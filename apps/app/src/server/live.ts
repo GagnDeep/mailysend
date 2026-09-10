@@ -26,5 +26,22 @@ export async function handleLiveSocket(request: Request, env: Env): Promise<Resp
   if (!actor) return new Response('Not signed in.', { status: 401 })
 
   const hub = env.WORKSPACE_HUB.get(doName('WorkspaceHub', actor.workspaceId))
-  return hub.fetch(request)
+  try {
+    return await hub.fetch(request)
+  } catch (err) {
+    // A deploy replaces the script under every live stub, and the next call on
+    // one throws "This script has been upgraded. Please send a new request to
+    // connect to the new version." There is nothing wrong and nothing to do
+    // except connect again, so this answers with a status that says so rather
+    // than raising a 500 that shows up at error level in the runtime log — a
+    // misleading thing to find while debugging something else entirely.
+    const message = err instanceof Error ? err.message : String(err)
+    if (/has been upgraded/i.test(message)) {
+      return new Response('The instance was upgraded. Reconnect.', {
+        status: 503,
+        headers: { 'retry-after': '1' },
+      })
+    }
+    throw err
+  }
 }

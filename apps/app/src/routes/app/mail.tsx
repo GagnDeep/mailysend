@@ -1054,20 +1054,46 @@ function useMailLiveUpdates(onEvent: () => void) {
     if (typeof window === 'undefined') return
     const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/v1/live`
     let socket: WebSocket | null = null
-    try {
-      socket = new WebSocket(url)
-    } catch {
-      // No upgrade available (a proxy, an old runtime). Polling covers it.
-      return
-    }
-    socket.onmessage = (event) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let attempt = 0
+    let closed = false
+
+    const connect = () => {
+      if (closed) return
       try {
-        const payload = JSON.parse(String(event.data)) as { type?: string }
-        if (payload.type?.startsWith('inbound.') || payload.type?.startsWith('email.')) onEvent()
+        socket = new WebSocket(url)
       } catch {
-        // A frame we cannot parse is not a reason to tear the socket down.
+        // No upgrade available (a proxy, an old runtime). Polling covers it.
+        return
+      }
+      socket.onopen = () => {
+        attempt = 0
+      }
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(String(event.data)) as { type?: string }
+          if (payload.type?.startsWith('inbound.') || payload.type?.startsWith('email.')) onEvent()
+        } catch {
+          // A frame we cannot parse is not a reason to tear the socket down.
+        }
+      }
+      // Every deploy drops every socket — the runtime replaces the script under
+      // the Durable Object holding it — so a connection made once and never
+      // remade means live updates die at the first release and stay dead for
+      // the life of the page. Backoff, capped, because the socket is an
+      // accelerator: if it never comes back, polling still has it covered.
+      socket.onclose = () => {
+        if (closed) return
+        const delay = Math.min(1000 * 2 ** attempt++, 30_000)
+        timer = setTimeout(connect, delay)
       }
     }
-    return () => socket?.close()
+    connect()
+
+    return () => {
+      closed = true
+      if (timer) clearTimeout(timer)
+      socket?.close()
+    }
   }, [onEvent])
 }
