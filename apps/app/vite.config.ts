@@ -99,7 +99,29 @@ export default defineConfig({
   cacheDir,
   define: { __MS_VERSION__: JSON.stringify(VERSION) },
   resolve: {
-    alias: { '~': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: [
+      /**
+       * The one module that differs between the two targets, and it has to be
+       * matched before `~` or the prefix rule below swallows it.
+       *
+       * An exported Durable Object class has to extend `DurableObject` from
+       * `cloudflare:workers` or Workers refuses every RPC call to it — and that
+       * specifier does not resolve anywhere else, so it cannot sit in code the
+       * Node build also loads. Swapping the base class here keeps the seam to a
+       * single file instead of a runtime branch in every actor.
+       */
+      ...(target === 'cloudflare'
+        ? [
+            {
+              find: '~/server/actor-base.ts',
+              replacement: fileURLToPath(
+                new URL('./src/server/actor-base.cloudflare.ts', import.meta.url),
+              ),
+            },
+          ]
+        : []),
+      { find: '~', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+    ],
   },
   build: {
     outDir,

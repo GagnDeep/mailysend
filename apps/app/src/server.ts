@@ -190,19 +190,26 @@ export default {
   },
 }
 
-/** Re-exported so `wrangler.jsonc` can bind them by class name. */
+/**
+ * Re-exported so `wrangler.jsonc` can bind them by class name.
+ *
+ * These used to be the actor classes themselves, which Workers accepts as
+ * Durable Objects and then refuses to call: RPC requires `extends
+ * DurableObject`, and says so only when a method is invoked. See
+ * `server/durable-objects.ts`.
+ */
 export {
-  AutomationCohortActor as AutomationCohortDO,
-  AutomationRunActor as AutomationRunDO,
-  BroadcastActor as BroadcastDO,
-  BroadcastCounterActor as BroadcastCounterDO,
-  MailboxActor as MailboxDO,
-  ScheduleShardActor as ScheduleShardDO,
-  SegmentActor as SegmentDO,
-  SendingDomainActor as SendingDomainDO,
-  WebhookEndpointActor as WebhookEndpointDO,
-  WorkspaceHubActor as WorkspaceHubDO,
-} from '@mailysend/durable'
+  AutomationCohortDO,
+  AutomationRunDO,
+  BroadcastCounterDO,
+  BroadcastDO,
+  MailboxDO,
+  ScheduleShardDO,
+  SegmentDO,
+  SendingDomainDO,
+  WebhookEndpointDO,
+  WorkspaceHubDO,
+} from './server/durable-objects.ts'
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void
