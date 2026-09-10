@@ -3,6 +3,13 @@ import type { QueueBatch } from '@mailysend/platform'
 import PostalMime from 'postal-mime'
 import { tenancyFor } from '../context.ts'
 import type { Env } from '../env.ts'
+import { parseAuthResults } from '../inbound-handler.ts'
+import {
+  type MailAttachmentInput,
+  normalizeSubject,
+  snippetOf,
+  writeMailMessage,
+} from '../services/mail.ts'
 
 /**
  * Inbound mail.
@@ -12,6 +19,13 @@ import type { Env } from '../env.ts'
  * pipeline and a slow handler there is a deferred message. Everything
  * expensive, including MIME parsing, happens here where the CPU budget is
  * generous.
+ *
+ * Two records come out of every message: the mailbox actor's index, which is
+ * the threading oracle and backs the MCP search tool, and the SQL conversation
+ * model, which is what the dashboard reads. Only the first of those was being
+ * written, and `inbound_threads` had no writer at all — so every listing
+ * filtered its results against an empty table and the inbox was structurally
+ * incapable of showing anything.
  */
 
 export interface InboundJob {
@@ -20,6 +34,8 @@ export interface InboundJob {
   raw_key: string
   to: string
   from: string
+  /** SPF/DKIM/DMARC as the receiving edge saw them; unavailable to us later. */
+  auth?: { spf: string | null; dkim: string | null; dmarc: string | null }
   received_at: string
 }
 
@@ -65,7 +81,8 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     return
   }
 
-  const parsed = await PostalMime.parse(await object.arrayBuffer())
+  const raw = await object.arrayBuffer()
+  const parsed = await PostalMime.parse(raw)
 
   // Threading, in descending order of confidence. An invalid reply token never
   // drops mail — it falls through to the next signal and is flagged, because a
@@ -82,11 +99,12 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     ...(parsed.cc ?? []).map((a) => a.address ?? ''),
   ].filter(Boolean)
 
+  const references = parseReferences(parsed.references)
   const actor = env.MAILBOX.get(doName('Mailbox', job.workspace_id, mailbox.id))
   const resolution = await actor.resolveThread({
     replyTokenThreadId,
     inReplyTo: parsed.inReplyTo ?? null,
-    references: parseReferences(parsed.references),
+    references,
     subjectNormalized,
     participants,
     receivedAt: job.received_at,
@@ -103,7 +121,7 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     { httpMetadata: { contentType: 'application/json' } },
   )
 
-  const attachments: { filename: string; content_type: string; size: number; key: string }[] = []
+  const attachments: MailAttachmentInput[] = []
   for (const attachment of parsed.attachments ?? []) {
     const filename = attachment.filename ?? 'attachment'
     const key = r2Key.inbound(
@@ -116,13 +134,20 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     })
     attachments.push({
       filename,
-      content_type: attachment.mimeType ?? 'application/octet-stream',
+      contentType: attachment.mimeType ?? 'application/octet-stream',
       size: (attachment.content as ArrayBuffer).byteLength,
-      key,
+      contentId: attachment.contentId?.replace(/^<|>$/g, '') ?? null,
+      inline: attachment.disposition === 'inline',
+      blobKey: key,
     })
   }
 
-  const snippet = (parsed.text ?? stripTags(parsed.html ?? '')).slice(0, 2048)
+  const snippet = snippetOf(parsed.text, parsed.html)
+  // The header the queue carried wins: it was read at the edge, where the
+  // connecting IP still existed. Falling back to the parsed copy covers a
+  // message replayed from R2 by a runtime with no mail pipeline of its own.
+  const auth =
+    job.auth ?? parseAuthResults(headerValue(parsed.headers, 'authentication-results') ?? null)
 
   await actor.appendMessage({
     threadId,
@@ -130,6 +155,8 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
       id: job.inbound_id,
       thread_id: threadId,
       message_id_header: parsed.messageId ?? null,
+      in_reply_to: parsed.inReplyTo ?? null,
+      matched_by: resolution.matchedBy,
       from_address: parsed.from?.address ?? job.from,
       to_addresses: JSON.stringify((parsed.to ?? []).map((a) => a.address)),
       subject: parsed.subject ?? '',
@@ -148,8 +175,8 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
       `INSERT INTO inbound_messages
          (id, workspace_id, mailbox_id, thread_id, message_id_header, in_reply_to,
           from_address, to_addresses, subject, snippet, raw_key, body_key,
-          parse_status, matched_by, received_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'parsed', ?,?)
+          spf, dkim, dmarc, parse_status, matched_by, received_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'parsed', ?,?)
        ON CONFLICT (workspace_id, raw_key) DO NOTHING`,
     )
     .bind(
@@ -165,10 +192,63 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
       snippet.slice(0, 500),
       job.raw_key,
       bodyKey,
+      auth.spf,
+      auth.dkim,
+      auth.dmarc,
       resolution.matchedBy,
       job.received_at,
     )
     .run()
+
+  // The conversation model — the half that was missing. Without this row the
+  // thread does not exist as far as any listing, search or reading pane is
+  // concerned, however completely the actor indexed it.
+  await writeMailMessage(
+    sql,
+    {
+      id: job.inbound_id,
+      workspaceId: job.workspace_id,
+      threadId,
+      direction: 'in',
+      environment: 'live',
+      mailboxId: mailbox.id,
+      sourceId: job.inbound_id,
+      messageIdHeader: parsed.messageId ?? null,
+      inReplyTo: parsed.inReplyTo ?? null,
+      references,
+      fromAddress: parsed.from?.address ?? job.from,
+      fromName: parsed.from?.name ?? null,
+      to: (parsed.to ?? []).map((a) => a.address ?? '').filter(Boolean),
+      cc: (parsed.cc ?? []).map((a) => a.address ?? '').filter(Boolean),
+      replyTo: parsed.replyTo?.[0]?.address ?? null,
+      subject: parsed.subject ?? '',
+      snippet,
+      sizeBytes: raw.byteLength,
+      bodyKey,
+      rawKey: job.raw_key,
+      spf: auth.spf,
+      dkim: auth.dkim,
+      dmarc: auth.dmarc,
+      matchedBy: resolution.matchedBy,
+      at: job.received_at,
+      attachments,
+      unread: true,
+    },
+    {
+      id: threadId,
+      workspaceId: job.workspace_id,
+      mailboxId: mailbox.id,
+      environment: 'live',
+      subject: parsed.subject || '(no subject)',
+      subjectNormalized,
+      participants,
+      folder: 'inbox',
+      lastMessageAt: job.received_at,
+      lastDirection: 'in',
+      snippet,
+      hasAttachments: attachments.length > 0,
+    },
+  )
 
   await env.AUTOMATION_QUEUE.send({
     type: 'inbound.received',
@@ -176,6 +256,19 @@ async function handleInbound(job: InboundJob, env: Env): Promise<void> {
     thread_id: threadId,
     message_id: job.inbound_id,
   })
+
+  // The Mail surface subscribes to this hub, so a message that arrives while
+  // someone is reading appears without a refresh. `inbound.received` is not a
+  // delivery event and deliberately does not go through the events queue — it
+  // has no place on the message state ladder.
+  const hub = env.WORKSPACE_HUB.get(doName('WorkspaceHub', job.workspace_id))
+  await hub.publish([
+    {
+      type: 'inbound.received',
+      at: job.received_at,
+      data: { thread_id: threadId, message_id: job.inbound_id, mailbox_id: mailbox.id },
+    },
+  ])
 }
 
 async function recordRawOnly(job: InboundJob, env: Env, err: unknown): Promise<void> {
@@ -201,6 +294,47 @@ async function recordRawOnly(job: InboundJob, env: Env, err: unknown): Promise<v
       job.received_at,
     )
     .run()
+
+  // A message we could not parse still belongs in the inbox, in its own thread,
+  // with the raw bytes one click away. Hiding it until someone reads the logs
+  // is how "we never lose mail" quietly stops being true.
+  const threadId = newId('thread')
+  await writeMailMessage(
+    sql,
+    {
+      id: job.inbound_id,
+      workspaceId: job.workspace_id,
+      threadId,
+      direction: 'in',
+      environment: 'live',
+      sourceId: job.inbound_id,
+      fromAddress: job.from,
+      to: [job.to],
+      subject: '(unparsed message)',
+      snippet: `MIME parsing failed: ${String(err).slice(0, 200)}`,
+      rawKey: job.raw_key,
+      parseStatus: 'raw_only',
+      matchedBy: 'new',
+      at: job.received_at,
+      unread: true,
+    },
+    {
+      id: threadId,
+      workspaceId: job.workspace_id,
+      environment: 'live',
+      subject: '(unparsed message)',
+      subjectNormalized: '(unparsed message)',
+      participants: [job.from, job.to],
+      folder: 'inbox',
+      lastMessageAt: job.received_at,
+      lastDirection: 'in',
+      snippet: 'MIME parsing failed. The original bytes are intact.',
+      hasAttachments: false,
+    },
+  ).catch((writeErr) => {
+    console.warn('[inbound] could not index the unparsed message', writeErr)
+    return false
+  })
 }
 
 /** `thr+<token>@domain` — the highest-confidence threading signal we mint. */
@@ -215,21 +349,14 @@ async function extractReplyToken(env: Env, recipients: string[]): Promise<string
   return null
 }
 
+/** postal-mime hands headers back as a list, not a map. */
+const headerValue = (
+  headers: { key: string; value: string }[] | undefined,
+  name: string,
+): string | undefined => headers?.find((h) => h.key.toLowerCase() === name)?.value
+
 const parseReferences = (value: string | string[] | undefined): string[] =>
   Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\s+/).filter(Boolean) : []
-
-/** Strips every `Re:`/`Fwd:` prefix, including the localised ones people actually send. */
-const normalizeSubject = (subject: string): string =>
-  subject
-    .replace(/^(\s*(re|aw|fwd?|fw|sv|vs|antw|res|rif)\s*(\[\d+\])?\s*:\s*)+/i, '')
-    .trim()
-    .toLowerCase()
-
-const stripTags = (html: string): string =>
-  html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
 
 /** Inbound filenames are attacker-controlled; the blob layer also rejects these. */
 const sanitizeFilename = (name: string): string =>

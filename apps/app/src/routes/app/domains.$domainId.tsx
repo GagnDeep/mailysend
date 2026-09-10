@@ -17,14 +17,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ConfirmDialog } from '~/components/app/confirm-dialog.tsx'
 import { DnsRecordTable } from '~/components/app/dns-records.tsx'
 import { num, shortDate } from '~/components/app/format.ts'
 import { PageHeader, PageSection } from '~/components/app/page.tsx'
+import { ReceivingPanel } from '~/components/app/receiving-panel.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { DetailSkeleton, ErrorState } from '~/components/app/states.tsx'
-import type { DomainRecord } from '~/lib/api-client.ts'
+import type { DomainIdentityRecord, DomainRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
 
@@ -97,9 +98,11 @@ function DomainDetail() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const returnPathId = useId()
+  const transportId = useId()
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [returnPath, setReturnPath] = useState<string | null>(null)
+  const [identity, setIdentity] = useState<DomainIdentityRecord | null>(null)
 
   const domainQuery = useQuery({
     queryKey: qk.domain(environment, domainId),
@@ -127,6 +130,56 @@ function DomainDetail() {
       void queryClient.invalidateQueries({ queryKey: qk.domain(environment, domainId) })
       void queryClient.invalidateQueries({ queryKey: qk.domains(environment) })
     },
+  })
+
+  /**
+   * Re-checks on its own, more slowly each time.
+   *
+   * DNS propagation is measured in minutes and a "Check records" button asks
+   * the customer to sit there pressing it. This polls while the domain is not
+   * verified and backs off — 15s, 30s, 60s, up to five minutes — so an
+   * unattended tab settles into one request every five minutes instead of
+   * hammering a resolver that will not have news.
+   */
+  const attempt = useRef(0)
+  const verifying = verify.isPending
+  const settled = domain?.status === 'verified'
+  const runVerify = verify.mutate
+  useEffect(() => {
+    if (settled || verifying) {
+      if (settled) attempt.current = 0
+      return
+    }
+    const delay = Math.min(15_000 * 2 ** attempt.current, 300_000)
+    const timer = setTimeout(() => {
+      attempt.current += 1
+      runVerify()
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [settled, verifying, runVerify])
+
+  /**
+   * The accelerator, offered rather than assumed. It only works for a zone on a
+   * Cloudflare account whose token this workspace has, and it says so plainly
+   * when it does not.
+   */
+  const automate = useMutation({
+    mutationFn: () => api.automateDomainDns(domainId),
+    onSuccess: (result) => {
+      toast.success(result.detail)
+      attempt.current = 0
+      verify.mutate()
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  })
+
+  const ensureIdentity = useMutation({
+    mutationFn: () => api.ensureDomainIdentity(domainId),
+    onSuccess: (state) => {
+      setIdentity(state)
+      void queryClient.invalidateQueries({ queryKey: qk.domain(environment, domainId) })
+    },
+    onError: (error) => toast.error(errorMessage(error)),
   })
 
   /**
@@ -201,14 +254,102 @@ function DomainDetail() {
       />
 
       <PageSection
+        title="Sending transport"
+        description="Which transport carries mail for this domain, and therefore which records it needs."
+      >
+        <div className="flex flex-col gap-4 rounded-tile border border-line-soft bg-card p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={transportId}>Transport</Label>
+              <Select
+                value={domain.provider ?? 'default'}
+                onValueChange={(value) =>
+                  update.mutate({ provider: value === 'default' ? null : value })
+                }
+              >
+                <SelectTrigger id={transportId} className="w-[260px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Whatever the workspace routes through</SelectItem>
+                  <SelectItem value="cloudflare">Cloudflare Email Service</SelectItem>
+                  <SelectItem value="ses">Amazon SES</SelectItem>
+                  <SelectItem value="resend">Resend</SelectItem>
+                  <SelectItem value="smtp">SMTP relay</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="accent"
+              disabled={ensureIdentity.isPending}
+              onClick={() => ensureIdentity.mutate()}
+            >
+              {ensureIdentity.isPending ? 'Asking…' : 'Set up with this transport'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={automate.isPending}
+              onClick={() => automate.mutate()}
+            >
+              {automate.isPending ? 'Writing…' : 'Write records for me'}
+            </Button>
+          </div>
+          <p className="m-0 max-w-[80ch] text-[13.5px] leading-relaxed text-muted">
+            Binding a transport is what makes the record list below correct. Left unbound, the
+            records are the union across every transport this workspace could fall back to, and two
+            transports that each want an apex SPF record cannot both have one — so the includes are
+            merged into a single record instead.
+          </p>
+
+          {identity ? (
+            <Callout
+              variant={
+                identity.status === 'verified'
+                  ? 'success'
+                  : identity.status === 'failed'
+                    ? 'warn'
+                    : 'info'
+              }
+              title={identity.external ? 'This transport does its own setup' : 'Transport setup'}
+            >
+              {identity.detail ?? 'No further detail.'}
+              {identity.external ? (
+                <span className="mt-2 block">
+                  <a
+                    className="text-accent underline-offset-2 hover:underline"
+                    href={identity.external.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {identity.external.label} →
+                  </a>
+                </span>
+              ) : null}
+            </Callout>
+          ) : null}
+        </div>
+      </PageSection>
+
+      <PageSection
         title="DNS records"
         description="Everything below has to resolve before this domain can send."
       >
         <DnsRecordTable
           domain={domain}
           verifying={verify.isPending}
-          onVerify={() => verify.mutate()}
+          onVerify={() => {
+            attempt.current = 0
+            verify.mutate()
+          }}
+          zoneFileHref={api.domainZoneFileUrl(domainId)}
         />
+      </PageSection>
+
+      <PageSection
+        title="Receiving"
+        description="Addresses on this domain that accept mail, and what has to be true before any arrives."
+      >
+        <ReceivingPanel domain={domain} />
       </PageSection>
 
       <PageSection

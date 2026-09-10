@@ -277,6 +277,25 @@ function SignInPage() {
             </>
           ) : null}
 
+          {/*
+            Single sign-on, offered only when the instance reports a complete
+            OIDC configuration — the same rule that removed the Access button
+            from instances that had never configured Access. This is a plain
+            link rather than a fetch: the flow is a top-level redirect and has
+            to be one, so the provider can set its own cookies and show its own
+            consent screen.
+          */}
+          {instance?.auth.oidc ? (
+            <>
+              <Divider label="or" />
+              <Button asChild variant="outline" className="h-[50px] w-full rounded-md text-[15px]">
+                <a href="/v1/auth/oidc/start">
+                  Continue with {instance.auth.oidc_label ?? 'single sign-on'}
+                </a>
+              </Button>
+            </>
+          ) : null}
+
           {/* Likewise the emailed code: offered only when mail can be sent. */}
           {instance?.auth.otp ? (
             <>
@@ -388,6 +407,7 @@ function Panel({ instance }: { instance: Instance | null }) {
           {'AUTH '}
           <span className="text-code-green">passkey</span>
           {instance?.auth.access ? ' · access' : ''}
+          {instance?.auth.oidc ? ' · sso' : ''}
           {instance?.auth.otp ? ' · email code' : ''}
         </div>
         <div>

@@ -113,8 +113,9 @@ only doors are the ones you already had.
 ## Sending credentials
 
 **Configure these in the dashboard, not here.** Credentials set through
-Settings → Providers are encrypted with AES-GCM before they are stored and are
-never returned by the API, and they take precedence over the environment.
+**Settings → Transports** are encrypted with AES-GCM before they are stored and
+are never returned by the API — the response says which fields are set, never
+what they are — and they take precedence over the environment.
 
 The environment variables below exist for one case: a fresh deployment that
 needs to send before anybody has logged in. If that is not your situation, skip
@@ -126,6 +127,25 @@ them entirely.
 | Amazon SES | `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, optionally `SES_CONFIGURATION_SET` |
 | Resend | `RESEND_API_KEY` |
 | SMTP | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` (`tls` \| `starttls` \| `none`), `SMTP_USER`, `SMTP_PASS` |
+
+When a workspace has configured nothing, `GET /v1/providers` says so explicitly
+in `environment_fallback` rather than returning an empty list — an empty list
+read as "sending is not set up" when in fact it was, from the variables above.
+
+## Single sign-on (optional)
+
+| Variable | Meaning |
+|---|---|
+| `MS_OIDC_ISSUER` | The provider's issuer URL, e.g. `https://acme.okta.com` |
+| `MS_OIDC_CLIENT_ID` | This application's client id |
+| `MS_OIDC_CLIENT_SECRET` | Its secret |
+| `MS_OIDC_ALLOWED_DOMAINS` | Comma-separated email domains. Empty means any address the provider vouches for |
+| `MS_OIDC_AUTO_PROVISION` | `true` enrols an unknown address on first sign-in. Requires an allowlist |
+| `MS_OIDC_LABEL` | What the sign-in button says. Defaults to "single sign-on" |
+
+All three of issuer, client id and secret must be set before the button appears
+on the sign-in page. The redirect URI to register with the provider is
+`${MS_PUBLIC_URL}/v1/auth/oidc/callback`. See [AUTH.md](AUTH.md).
 
 ## Bindings
 

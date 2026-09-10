@@ -77,6 +77,26 @@ export async function consumeEventQueue(batch: QueueBatch<EventJob>, env: Env): 
       },
     })
 
+    // Mirror the authoritative status onto the conversation model, so a sent
+    // message in a thread shows delivered/bounced inline. Copied from
+    // `messages` rather than derived from the event, because that column is the
+    // one with the rank guard on it — deriving it here would let a late event
+    // regress a status the ladder has already settled.
+    const emailIds = [...new Set(events.map((e) => e.email_id).filter(Boolean))]
+    if (emailIds.length > 0) {
+      await sql
+        .prepare(
+          `UPDATE mail_messages
+              SET status = (SELECT status FROM messages
+                             WHERE messages.id = mail_messages.source_id
+                               AND messages.workspace_id = mail_messages.workspace_id)
+            WHERE workspace_id = ? AND direction = 'out'
+              AND source_id IN (${emailIds.map(() => '?').join(', ')})`,
+        )
+        .bind(workspaceId, ...emailIds)
+        .run()
+    }
+
     // The live dashboard reads from the hub actor's WebSocket, not by polling.
     const hub = env.WORKSPACE_HUB.get(doName('WorkspaceHub', workspaceId))
     await hub.publish(

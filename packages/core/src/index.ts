@@ -1,5 +1,6 @@
 export * from './address.ts'
 export * from './crypto.ts'
+export * from './dkim.ts'
 export * from './ids.ts'
 export * from './keys.ts'
 export * from './limits.ts'

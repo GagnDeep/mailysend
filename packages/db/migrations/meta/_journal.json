@@ -15,6 +15,27 @@
       "when": 1789013460555,
       "tag": "0001_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789019483722,
+      "tag": "0002_mail",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789021645653,
+      "tag": "0003_domain_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789022335651,
+      "tag": "0004_dns_origin",
+      "breakpoints": true
     }
   ]
 }

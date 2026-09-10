@@ -6,14 +6,22 @@ import {
   newId,
   parseAddress,
   parseAddresses,
+  r2Key,
   signTrackingToken,
 } from '@mailysend/core'
 import { eventId } from '@mailysend/events'
 import type { QueueBatch } from '@mailysend/platform'
-import { type OutboundMessage, type ProviderName, SendError } from '@mailysend/providers'
+import { buildMime, type OutboundMessage, type ProviderName, SendError } from '@mailysend/providers'
 import { injectTracking, injectUnsubscribe, renderTemplate } from '@mailysend/templates'
 import { tenancyFor } from '../context.ts'
 import type { Env } from '../env.ts'
+import {
+  normalizeSubject,
+  resolveThreadBySql,
+  snippetOf,
+  updateOutboundStatus,
+  writeMailMessage,
+} from '../services/mail.ts'
 import { buildRouter } from '../services/providers.ts'
 import type { Envelope, SendJob } from './envelope.ts'
 
@@ -119,6 +127,14 @@ async function handleOne(job: SendJob, env: Env): Promise<void> {
       providerMessageId: `test_${job.email_id}`,
       acceptedAt: new Date().toISOString(),
       smtpResponse: '250 2.0.0 Ok: queued (test mode, not delivered)',
+    })
+    // …and then deliver it to ourselves. This is what makes the inbox useful on
+    // a brand-new instance: no domain, no DNS, no provider credentials, and a
+    // message you compose still arrives, rendered, with its attachments and its
+    // original MIME, because the bytes are the ones a provider would have been
+    // handed.
+    await deliverLoopback(sql, env, envelope, outbound).catch((err) => {
+      console.warn('[send] test-mode loopback failed', err)
     })
     return
   }
@@ -351,6 +367,10 @@ async function recordSent(
     )
     .run()
 
+  // The reading pane shows a sent message's delivery state inline, which is the
+  // one thing a mail client cannot do. It reads this column.
+  await updateOutboundStatus(sql, envelope.workspace_id, envelope.email_id, 'sent')
+
   // One event per recipient: `delivered` is per-recipient downstream, so if
   // `sent` were per-message the two would not line up in the timeline.
   const recipients = envelope.request.to
@@ -421,6 +441,8 @@ async function markFailed(env: Env, job: SendJob, err: unknown): Promise<void> {
     .bind(`${kind}: ${message}`, job.email_id, job.workspace_id)
     .run()
 
+  await updateOutboundStatus(sql, job.workspace_id, job.email_id, 'failed').catch(() => {})
+
   const occurredAt = new Date().toISOString()
   const provider = err instanceof SendError ? err.provider : 'internal'
   await env.EVENTS_QUEUE.send({
@@ -462,4 +484,116 @@ async function markFailed(env: Env, job: SendJob, err: unknown): Promise<void> {
     // no diagnostic.
     console.warn('[send] could not record the last send error', writeErr)
   }
+}
+
+/**
+ * Test-mode delivery, to ourselves.
+ *
+ * The message is built exactly as a provider would receive it — same MIME, same
+ * headers, same attachments — and then filed as received mail. The Message-ID
+ * is suffixed rather than reused: the delivered copy is a second message in the
+ * conversation, and reusing the id would collide with the sent row on the
+ * unique index that exists precisely to stop a message appearing twice.
+ */
+async function deliverLoopback(
+  sql: import('@mailysend/platform').Sql,
+  env: Env,
+  envelope: Envelope,
+  outbound: OutboundMessage,
+): Promise<void> {
+  const raw = buildMime(outbound)
+  const inboundId = newId('inbound')
+  const at = new Date().toISOString()
+
+  const inReplyTo = outbound.headers?.['In-Reply-To'] ?? null
+  const references = (outbound.headers?.References ?? '').split(/\s+/).filter(Boolean)
+  const resolved = await resolveThreadBySql(sql, envelope.workspace_id, { inReplyTo, references })
+  // A reply threads onto the conversation it answers; a fresh message starts
+  // its own, because that is what the recipient's mailbox would show.
+  const threadId = resolved.threadId ?? newId('thread')
+
+  const rawKey = r2Key.rawInbound(envelope.workspace_id, inboundId)
+  const bodyKey = r2Key.inbound(envelope.workspace_id, threadId, `${inboundId}.json`)
+  await env.BUCKET.put(rawKey, raw, { httpMetadata: { contentType: 'message/rfc822' } })
+  await env.BUCKET.put(
+    bodyKey,
+    JSON.stringify({ html: outbound.html ?? null, text: outbound.text ?? null }),
+    { httpMetadata: { contentType: 'application/json' } },
+  )
+
+  const attachments = []
+  for (const attachment of outbound.attachments ?? []) {
+    const key = r2Key.inbound(
+      envelope.workspace_id,
+      threadId,
+      `${inboundId}-${attachment.filename.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100)}`,
+    )
+    await env.BUCKET.put(key, attachment.content, {
+      httpMetadata: { contentType: attachment.contentType },
+    })
+    attachments.push({
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      size: attachment.content.byteLength,
+      contentId: attachment.contentId ?? null,
+      inline: Boolean(attachment.contentId),
+      blobKey: key,
+    })
+  }
+
+  const snippet = snippetOf(outbound.text, outbound.html)
+  const recipients = outbound.to.map((a) => a.address)
+
+  await writeMailMessage(
+    sql,
+    {
+      id: inboundId,
+      workspaceId: envelope.workspace_id,
+      threadId,
+      direction: 'in',
+      environment: 'test',
+      sourceId: envelope.email_id,
+      messageIdHeader: `<${envelope.email_id}.loopback@${outbound.from.domain}>`,
+      inReplyTo: `<${envelope.email_id}@${outbound.from.domain}>`,
+      references: [...references, `<${envelope.email_id}@${outbound.from.domain}>`],
+      fromAddress: outbound.from.address,
+      fromName: outbound.from.name ?? null,
+      to: recipients,
+      cc: outbound.cc?.map((a) => a.address) ?? [],
+      subject: outbound.subject,
+      snippet,
+      sizeBytes: new TextEncoder().encode(raw).byteLength,
+      bodyKey,
+      rawKey,
+      // Nothing authenticated this message because nothing transmitted it.
+      // Saying `pass` would be the exact dishonesty the test mode exists to
+      // avoid, so the verdicts stay null and the reader shows "none".
+      matchedBy: resolved.matchedBy,
+      at,
+      attachments,
+      unread: true,
+    },
+    {
+      id: threadId,
+      workspaceId: envelope.workspace_id,
+      environment: 'test',
+      subject: outbound.subject || '(no subject)',
+      subjectNormalized: normalizeSubject(outbound.subject ?? ''),
+      participants: [outbound.from.address, ...recipients],
+      folder: 'inbox',
+      lastMessageAt: at,
+      lastDirection: 'in',
+      snippet,
+      hasAttachments: attachments.length > 0,
+    },
+  )
+
+  const hub = env.WORKSPACE_HUB.get(doName('WorkspaceHub', envelope.workspace_id))
+  await hub.publish([
+    {
+      type: 'inbound.received',
+      at,
+      data: { thread_id: threadId, message_id: inboundId, environment: 'test' },
+    },
+  ])
 }

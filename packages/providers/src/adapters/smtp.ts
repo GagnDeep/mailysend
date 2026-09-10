@@ -1,4 +1,4 @@
-import { buildMime, mimeSize } from '../mime.ts'
+import { buildSignedMime, mimeSize } from '../mime.ts'
 import { type ConnectFn, SmtpError, SmtpSession } from '../smtp-client.ts'
 import type {
   DnsRequirement,
@@ -57,7 +57,7 @@ export class SmtpProvider implements Provider {
   }
 
   async send(message: OutboundMessage): Promise<SendResult> {
-    const raw = buildMime(message)
+    const raw = await buildSignedMime(message)
     const size = mimeSize(raw)
     if (size > this.limits.maxMessageBytes) {
       throw new SendError(
@@ -112,12 +112,14 @@ export class SmtpProvider implements Provider {
         value: `v=spf1 a mx include:${this.#config.host} ~all`,
         purpose:
           'Authorises your relay to send as this domain. Adjust the include for your provider.',
+        match: 'include',
       },
       {
         record: 'TXT',
         name: `_dmarc.${domain}`,
         value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
         purpose: 'Turns on DMARC reporting.',
+        match: 'prefix',
       },
     ]
     if (opts.dkimPublicKey) {

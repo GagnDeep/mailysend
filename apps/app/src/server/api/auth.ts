@@ -19,6 +19,7 @@ import {
   sessionCookie,
   sessionResponse,
 } from '../session.ts'
+import { oidc } from './auth-oidc.ts'
 import { createRouter } from './base.ts'
 import { device } from './device.ts'
 import { passkeys } from './passkeys.ts'
@@ -55,6 +56,7 @@ export const auth = createRouter()
 
 auth.route('/passkey', passkeys)
 auth.route('/device', device)
+auth.route('/oidc', oidc)
 
 /** Six digits. Long enough with five attempts and a ten-minute window. */
 const CODE_TTL_MS = 10 * 60_000

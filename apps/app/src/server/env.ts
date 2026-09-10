@@ -33,6 +33,20 @@ export interface Env {
   MS_ACCESS_TEAM?: string
   /** The Access application's AUD tag. Both must be set for Access to be on. */
   MS_ACCESS_AUD?: string
+  /**
+   * OpenID Connect, optional. All three of issuer, client id and client secret
+   * must be present for the sign-in button to appear — the same rule that keeps
+   * the Access button off an instance that has not configured Access.
+   */
+  MS_OIDC_ISSUER?: string
+  MS_OIDC_CLIENT_ID?: string
+  MS_OIDC_CLIENT_SECRET?: string
+  /** Comma-separated. Empty means any address the provider will vouch for. */
+  MS_OIDC_ALLOWED_DOMAINS?: string
+  /** `true` enrols an unknown address on first sign-in; requires an allowlist. */
+  MS_OIDC_AUTO_PROVISION?: string
+  /** What the button says. Defaults to "single sign-on". */
+  MS_OIDC_LABEL?: string
   /** Turning this off reconstructs message timelines from the R2 archive. */
   EVENT_DETAIL?: 'on' | 'off'
   /**

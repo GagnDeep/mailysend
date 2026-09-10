@@ -18,7 +18,16 @@ export interface Instance {
   version: string
   public_url: string
   landing: 'app' | 'marketing'
-  auth: { passkey: boolean; access: boolean; otp: boolean; device: boolean }
+  auth: {
+    passkey: boolean
+    access: boolean
+    otp: boolean
+    device: boolean
+    /** True only when the instance has a full OIDC configuration. */
+    oidc?: boolean
+    /** What the button should say, e.g. "Okta". */
+    oidc_label?: string | null
+  }
   sending: { ready: boolean; verified_domains: number; last_error: string | null }
   previous_public_url: string | null
 }

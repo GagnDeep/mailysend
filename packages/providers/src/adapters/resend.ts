@@ -1,6 +1,7 @@
 import { formatAddress } from '@mailysend/core'
 import type {
   DnsRequirement,
+  IdentityState,
   OutboundMessage,
   Provider,
   ProviderLimits,
@@ -102,13 +103,14 @@ export class ResendProvider implements Provider {
     return { providerMessageId, provider: this.name, acceptedAt: new Date().toISOString() }
   }
 
-  dnsRecords(domain: string, opts: { selector: string; returnPath: string }): DnsRequirement[] {
+  dnsRecords(domain: string, _opts: { selector: string; returnPath: string }): DnsRequirement[] {
     return [
       {
         record: 'TXT',
         name: `send.${domain}`,
         value: 'v=spf1 include:amazonses.com ~all',
         purpose: 'SPF for the Resend sending subdomain.',
+        match: 'include',
       },
       {
         record: 'MX',
@@ -122,13 +124,13 @@ export class ResendProvider implements Provider {
         name: `_dmarc.${domain}`,
         value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
         purpose: 'Turns on DMARC reporting.',
+        match: 'prefix',
       },
-      {
-        record: 'TXT',
-        name: `${opts.selector}._domainkey.${domain}`,
-        value: 'add the DKIM value shown in your Resend dashboard',
-        purpose: 'DKIM key, issued by Resend when the domain is added there.',
-      },
+      // Resend issues its own DKIM key under its own selector, and neither is
+      // knowable until the domain exists there. The row that used to sit here
+      // held the literal string "add the DKIM value shown in your Resend
+      // dashboard", which can never be verified by anything, so it is gone:
+      // `identity.ensure` fetches the real record instead.
     ]
   }
 
@@ -144,6 +146,102 @@ export class ResendProvider implements Provider {
       return { status: 'failed' as const, detail: String(err) }
     }
   }
+
+  /**
+   * Resend knows its own answer, so ask it.
+   *
+   * The DKIM key is theirs, minted per domain under a selector they choose, and
+   * their verification state is the only one that governs whether a send will
+   * be accepted. Both come back from `/domains`.
+   */
+  readonly identity = {
+    ensure: async (domain: string): Promise<IdentityState> => {
+      const existing = await this.#findDomain(domain)
+      if (existing) return this.#toState(existing)
+      const created = await this.#request('POST', '/domains', { name: domain })
+      if (!created.ok) {
+        return {
+          status: 'failed' as const,
+          records: [],
+          detail: `Resend refused the domain: HTTP ${created.status}. ${created.body}`,
+        }
+      }
+      // The create response carries the records; a follow-up read is a round
+      // trip that can only tell us the same thing.
+      return this.#toState(JSON.parse(created.body) as ResendDomain)
+    },
+    status: async (domain: string): Promise<IdentityState> => {
+      const found = await this.#findDomain(domain)
+      return found
+        ? this.#toState(found)
+        : {
+            status: 'pending' as const,
+            records: [],
+            detail: 'Not registered with Resend yet.',
+          }
+    },
+  }
+
+  async #request(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ ok: boolean; status: number; body: string }> {
+    const res = await fetch(`${this.#config.baseUrl ?? 'https://api.resend.com'}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.#config.apiKey}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+    return { ok: res.ok, status: res.status, body: await res.text() }
+  }
+
+  async #findDomain(domain: string): Promise<ResendDomain | null> {
+    const res = await this.#request('GET', '/domains')
+    if (!res.ok) return null
+    const parsed = JSON.parse(res.body) as { data?: ResendDomain[] }
+    return parsed.data?.find((entry) => entry.name === domain) ?? null
+  }
+
+  #toState(domain: ResendDomain): IdentityState {
+    return {
+      // Resend's own vocabulary, mapped onto ours without smoothing: `failed`
+      // and `temporary_failure` are different words for the same customer
+      // action, and `not_started` is genuinely pending.
+      status:
+        domain.status === 'verified'
+          ? 'verified'
+          : domain.status === 'failed'
+            ? 'failed'
+            : 'pending',
+      records: (domain.records ?? []).map((record) => ({
+        record: record.type,
+        name: record.name.endsWith(domain.name) ? record.name : `${record.name}.${domain.name}`,
+        value: record.value,
+        ...(record.priority !== undefined && record.priority !== null
+          ? { priority: Number(record.priority) }
+          : {}),
+        purpose: `${record.record ?? record.type} record, issued by Resend for this domain.`,
+      })),
+      detail: `Resend reports this domain as ${domain.status}.`,
+      external: { url: 'https://resend.com/domains', label: 'Open in Resend' },
+    }
+  }
+}
+
+interface ResendDomain {
+  id: string
+  name: string
+  status: string
+  records?: {
+    type: 'TXT' | 'MX' | 'CNAME'
+    name: string
+    value: string
+    priority?: number | string | null
+    record?: string
+  }[]
 }
 
 const base64 = (bytes: Uint8Array): string => {

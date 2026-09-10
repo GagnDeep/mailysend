@@ -1,4 +1,4 @@
-import { formatAddress } from '@mailysend/core'
+import { formatAddress, signMessage } from '@mailysend/core'
 import type { OutboundMessage } from './types.ts'
 
 /**
@@ -253,3 +253,35 @@ export function buildMime(message: OutboundMessage, options: BuildOptions = {}):
 
 /** Byte length of the rendered message, for the per-provider size check. */
 export const mimeSize = (raw: string): number => new TextEncoder().encode(raw).byteLength
+
+/**
+ * `buildMime`, then actually signed.
+ *
+ * Every adapter that puts raw MIME on the wire calls this rather than
+ * `buildMime` directly. Until it existed, `message.dkim` was carried the whole
+ * length of the send path and read by nobody: the DNS record promised a
+ * signature that never arrived, which is the one DKIM failure mode worse than
+ * having no key at all.
+ *
+ * A signing failure is not a send failure. A message that goes out unsigned
+ * lands in a spam folder; a message that does not go out at all is a bug the
+ * sender did not ask for. The failure is logged and the unsigned message is
+ * returned.
+ */
+export async function buildSignedMime(
+  message: OutboundMessage,
+  options: BuildOptions = {},
+): Promise<string> {
+  const raw = buildMime(message, options)
+  if (!message.dkim?.privateKey) return raw
+  try {
+    return await signMessage(raw, {
+      domain: message.dkim.domain,
+      selector: message.dkim.selector,
+      privateKey: message.dkim.privateKey,
+    })
+  } catch (err) {
+    console.warn('[mime] DKIM signing failed; sending unsigned', err)
+    return raw
+  }
+}

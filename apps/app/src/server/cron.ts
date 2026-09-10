@@ -57,6 +57,12 @@ async function sweepExpired(env: Env): Promise<void> {
     sql
       .prepare('DELETE FROM claim_nonces WHERE created_at < ?')
       .bind(new Date(Date.now() - 10 * 60_000).toISOString()),
+    // Snooze is a timestamp, not a folder, so nothing has to move for a
+    // conversation to come back — the thread list already hides a snoozed
+    // thread until its time passes. Clearing the stamp is what puts it back in
+    // the counts, and doing it on the minute tick is what makes "snooze until
+    // 9am" mean 9am.
+    sql.prepare('UPDATE mail_threads SET snoozed_until = NULL WHERE snoozed_until <= ?').bind(now),
   ])
 }
 
@@ -99,6 +105,36 @@ async function dailyMaintenance(env: Env): Promise<void> {
       .bind(DEFAULT_WORKSPACE, cutoff)
       .run()
   }
+
+  // Trash is a soft delete with an expiry date, which is the only kind worth
+  // having: a message deleted by a misplaced `#` is recoverable for thirty days
+  // and then genuinely gone, rather than living forever in a table nobody
+  // reads. The messages go with the threads; their bodies age out under the
+  // raw-message retention setting like every other stored body.
+  const trashCutoff = new Date(Date.now() - 30 * 86_400_000).toISOString()
+  await sql.batch([
+    sql
+      .prepare(
+        `DELETE FROM mail_attachments WHERE thread_id IN
+           (SELECT id FROM mail_threads WHERE folder = 'trash' AND updated_at < ?)`,
+      )
+      .bind(trashCutoff),
+    sql
+      .prepare(
+        `DELETE FROM mail_search WHERE thread_id IN
+           (SELECT id FROM mail_threads WHERE folder = 'trash' AND updated_at < ?)`,
+      )
+      .bind(trashCutoff),
+    sql
+      .prepare(
+        `DELETE FROM mail_messages WHERE thread_id IN
+           (SELECT id FROM mail_threads WHERE folder = 'trash' AND updated_at < ?)`,
+      )
+      .bind(trashCutoff),
+    sql
+      .prepare("DELETE FROM mail_threads WHERE folder = 'trash' AND updated_at < ?")
+      .bind(trashCutoff),
+  ])
 
   // Compaction of the NDJSON staging prefix into the monthly parquet archive.
   await env.EXPORT_QUEUE.send({

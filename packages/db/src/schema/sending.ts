@@ -13,6 +13,17 @@ export const domains = sqliteTable(
       .notNull()
       .default('not_started'),
     region: text('region').notNull().default('global'),
+    /**
+     * The transport this domain sends through. Null means "whatever the
+     * workspace's router picks".
+     *
+     * It exists because DNS requirements were computed as the *union* across
+     * every provider the router could yield, and a union of two transports that
+     * both want an apex `v=spf1` record is two apex SPF records — which is a
+     * hard fail at every receiver that checks. Records derive from one
+     * transport, or from a merge that is a single legal record.
+     */
+    provider: text('provider', { enum: ['cloudflare', 'ses', 'resend', 'smtp'] }),
     /** The DKIM selector we publish. `ms1` unless the customer already uses it. */
     dkimSelector: text('dkim_selector').notNull().default('ms1'),
     dkimPrivateKey: text('dkim_private_key'),
@@ -54,8 +65,38 @@ export const domainDnsRecords = sqliteTable(
     /** Which transport needs it. The setup screen renders the union per provider. */
     provider: text('provider').notNull().default('all'),
     purpose: text('purpose'),
+    /**
+     * Who publishes it.
+     *
+     * `copy` is a record the customer publishes. `observe` is one the transport
+     * writes itself — Cloudflare's onboarding adds every record for a domain on
+     * its account — and printing those beside a copy button invites somebody to
+     * paste a conflicting version of a record that is already correct. We check
+     * them; we do not ask for them.
+     */
+    origin: text('origin', { enum: ['copy', 'observe'] })
+      .notNull()
+      .default('copy'),
+    /**
+     * How the resolved value is compared. `exact` is the default; `include` is
+     * SPF, where merging our include into an existing record is the right
+     * answer; `prefix` is a value only the provider knows, such as the DKIM key
+     * Cloudflare mints, where all we can check is that one is there.
+     */
+    matchMode: text('match_mode', { enum: ['exact', 'include', 'prefix'] })
+      .notNull()
+      .default('exact'),
     status: text('status').notNull().default('not_started'),
+    /** What resolved at this name last time we looked, verbatim. */
+    found: text('found'),
     lastCheckedAt: text('last_checked_at'),
+    /**
+     * Set only when *we* wrote the record through an API token. It is what
+     * makes automation reversible: a record this product created can be
+     * corrected or removed, and one the operator published by hand is theirs.
+     */
+    zoneId: text('zone_id'),
+    managedAt: text('managed_at'),
   },
   (t) => [index('domain_dns_domain').on(t.workspaceId, t.domainId)],
 )

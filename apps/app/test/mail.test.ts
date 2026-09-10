@@ -1,0 +1,473 @@
+import { r2Key } from '@mailysend/core'
+import type { QueueBatch } from '@mailysend/platform'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { consumeInbound, type InboundJob } from '../src/server/consumers/inbound.ts'
+import { handleInboundEmail, parseAuthResults } from '../src/server/inbound-handler.ts'
+import { claimFor, type Harness, harness, sessionFor, verifiedDomain } from './harness.ts'
+
+/**
+ * The mail pipeline, end to end.
+ *
+ * Every bug this release fixes was invisible to a unit test and obvious the
+ * moment a message went through the real path: a `WHERE enabled = 1` against a
+ * column that does not exist, a thread table with no writer, an attachment
+ * written to storage with no row pointing at it. So these tests deliver real
+ * MIME through the real handler and the real consumer, then read the result
+ * back through the real API.
+ */
+
+let h: Harness
+let cookie: string
+
+beforeEach(async () => {
+  h = await harness()
+  const userId = await claimFor(h)
+  cookie = await sessionFor(h, userId)
+  await verifiedDomain(h, 'acme.dev')
+})
+
+/** A minimal but genuine RFC 5322 message. */
+function mime(
+  opts: {
+    from?: string
+    to?: string
+    subject?: string
+    messageId?: string
+    inReplyTo?: string
+    references?: string
+    html?: string
+  } = {},
+): string {
+  const lines = [
+    `From: ${opts.from ?? 'ana@example.com'}`,
+    `To: ${opts.to ?? 'support@acme.dev'}`,
+    `Subject: ${opts.subject ?? 'Where is my order?'}`,
+    `Message-ID: ${opts.messageId ?? '<one@example.com>'}`,
+    ...(opts.inReplyTo ? [`In-Reply-To: ${opts.inReplyTo}`] : []),
+    ...(opts.references ? [`References: ${opts.references}`] : []),
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    '',
+    opts.html ?? '<p>It never arrived.</p>',
+    '',
+  ]
+  return lines.join('\r\n')
+}
+
+/** Puts a message in storage and runs the consumer over it, as the queue would. */
+async function deliver(job: Partial<InboundJob> & { raw: string }): Promise<string> {
+  const inboundId = job.inbound_id ?? `inb_${Math.random().toString(36).slice(2, 12).toUpperCase()}`
+  const rawKey = job.raw_key ?? r2Key.rawInbound('ws_default', inboundId)
+  await h.blob.put(rawKey, job.raw)
+  const body: InboundJob = {
+    workspace_id: 'ws_default',
+    inbound_id: inboundId,
+    raw_key: rawKey,
+    to: job.to ?? 'support@acme.dev',
+    from: job.from ?? 'ana@example.com',
+    ...(job.auth ? { auth: job.auth } : {}),
+    received_at: job.received_at ?? new Date().toISOString(),
+  }
+  await consumeInbound(batchOf(body), h.env)
+  return inboundId
+}
+
+function batchOf(body: InboundJob): QueueBatch<InboundJob> {
+  return {
+    queue: 'ms-inbound',
+    messages: [
+      { id: '1', timestamp: new Date(), attempts: 1, body, ack: () => {}, retry: () => {} },
+    ],
+    ackAll: () => {},
+    retryAll: () => {},
+  } as unknown as QueueBatch<InboundJob>
+}
+
+async function addMailbox(address = 'support@acme.dev'): Promise<string> {
+  const res = await h.fetch('/v1/inbound/mailboxes', {
+    method: 'POST',
+    cookie,
+    body: JSON.stringify({ address }),
+  })
+  expect(res.status).toBe(200)
+  return ((await res.json()) as { id: string }).id
+}
+
+const listThreads = async () => {
+  const res = await h.fetch('/v1/mail/threads', { cookie })
+  expect(res.status).toBe(200)
+  return (await res.json()) as {
+    data: {
+      id: string
+      subject: string
+      unread: boolean
+      message_count: number
+      has_attachments: boolean
+      folder: string
+    }[]
+  }
+}
+
+describe('receiving', () => {
+  it('rejects mail for an address that is not a mailbox', async () => {
+    let rejection: string | null = null
+    await handleInboundEmail(
+      {
+        from: 'ana@example.com',
+        to: 'nobody@acme.dev',
+        raw: new Response('x').body!,
+        rawSize: 1,
+        headers: new Headers(),
+        setReject: (reason) => {
+          rejection = reason
+        },
+      },
+      h.env,
+    )
+    expect(rejection).toMatch(/^550 5\.1\.1 No such mailbox: nobody@acme\.dev$/)
+  })
+
+  /**
+   * The regression this whole release starts from. `inbound_mailboxes` has no
+   * `enabled` column, so the handler's lookup threw inside Cloudflare's mail
+   * pipeline and every message was deferred and then bounced.
+   */
+  it('accepts mail for a mailbox that exists', async () => {
+    await addMailbox()
+    let rejection: string | null = null
+    await handleInboundEmail(
+      {
+        from: 'ana@example.com',
+        to: 'support@acme.dev',
+        raw: new Response(mime()).body!,
+        rawSize: mime().length,
+        headers: new Headers({ 'authentication-results': 'mx; spf=pass; dkim=pass; dmarc=pass' }),
+        setReject: (reason) => {
+          rejection = reason
+        },
+      },
+      h.env,
+    )
+    expect(rejection).toBeNull()
+    const stored = await h.blob.list({ prefix: 'rawin/' })
+    expect(stored.objects).toHaveLength(1)
+  })
+
+  it('puts a delivered message in a thread the API can see', async () => {
+    await addMailbox()
+    await deliver({ raw: mime() })
+
+    const threads = await listThreads()
+    expect(threads.data).toHaveLength(1)
+    expect(threads.data[0]?.subject).toBe('Where is my order?')
+    expect(threads.data[0]?.unread).toBe(true)
+    expect(threads.data[0]?.folder).toBe('inbox')
+  })
+
+  it('does not duplicate a message the queue delivers twice', async () => {
+    await addMailbox()
+    const raw = mime()
+    const inboundId = 'inb_DUPLICATE0000000000000000'
+    await deliver({ raw, inbound_id: inboundId })
+    await deliver({ raw, inbound_id: inboundId })
+
+    const threads = await listThreads()
+    expect(threads.data).toHaveLength(1)
+    expect(threads.data[0]?.message_count).toBe(1)
+  })
+
+  it('records the authentication verdicts the edge saw', async () => {
+    await addMailbox()
+    await deliver({
+      raw: mime(),
+      auth: { spf: 'pass', dkim: 'fail', dmarc: 'pass' },
+    })
+    const threads = await listThreads()
+    const detail = await h.fetch(`/v1/mail/threads/${threads.data[0]!.id}`, { cookie })
+    const body = (await detail.json()) as { messages: { spf: string; dkim: string }[] }
+    expect(body.messages[0]?.spf).toBe('pass')
+    expect(body.messages[0]?.dkim).toBe('fail')
+  })
+
+  it('threads a reply onto its parent by In-Reply-To', async () => {
+    await addMailbox()
+    await deliver({ raw: mime({ messageId: '<one@example.com>' }) })
+    await deliver({
+      raw: mime({
+        messageId: '<two@example.com>',
+        inReplyTo: '<one@example.com>',
+        subject: 'Re: Where is my order?',
+      }),
+    })
+
+    const threads = await listThreads()
+    expect(threads.data).toHaveLength(1)
+    expect(threads.data[0]?.message_count).toBe(2)
+  })
+
+  it('threads on References when In-Reply-To was rewritten away', async () => {
+    await addMailbox()
+    await deliver({ raw: mime({ messageId: '<one@example.com>' }) })
+    await deliver({
+      raw: mime({
+        messageId: '<three@example.com>',
+        references: '<one@example.com>',
+        subject: 'Fwd: Where is my order?',
+      }),
+    })
+
+    const threads = await listThreads()
+    expect(threads.data).toHaveLength(1)
+    const detail = await h.fetch(`/v1/mail/threads/${threads.data[0]!.id}`, { cookie })
+    const body = (await detail.json()) as { messages: { matched_by: string }[] }
+    expect(body.messages[1]?.matched_by).toBe('references')
+  })
+
+  it('keeps a message it cannot parse, rather than dropping it', async () => {
+    await addMailbox()
+    // Three attempts then `recordRawOnly`, which is the path that must not lose
+    // the message. The body is absent from storage, so parsing cannot succeed.
+    const job: InboundJob = {
+      workspace_id: 'ws_default',
+      inbound_id: 'inb_BROKEN000000000000000000',
+      raw_key: 'rawin/ws_default/missing.eml',
+      to: 'support@acme.dev',
+      from: 'ana@example.com',
+      received_at: new Date().toISOString(),
+    }
+    const batch = batchOf(job)
+    ;(batch.messages[0] as { attempts: number }).attempts = 3
+    await consumeInbound(batch, h.env)
+
+    const threads = await listThreads()
+    expect(threads.data).toHaveLength(1)
+    expect(threads.data[0]?.subject).toBe('(unparsed message)')
+  })
+})
+
+describe('authentication results', () => {
+  it('reads each method out of the header', () => {
+    expect(parseAuthResults('mx.acme.dev; spf=pass; dkim=fail; dmarc=none')).toEqual({
+      spf: 'pass',
+      dkim: 'fail',
+      dmarc: 'none',
+    })
+  })
+
+  it('is null when there is no header at all, rather than guessing a pass', () => {
+    expect(parseAuthResults(null)).toEqual({ spf: null, dkim: null, dmarc: null })
+  })
+})
+
+describe('sending from the mail surface', () => {
+  it('files an accepted send as a sent conversation', async () => {
+    const res = await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['ana@example.com'],
+        subject: 'Your order shipped',
+        text: 'It is on the way.',
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const sent = await h.fetch('/v1/mail/threads?folder=sent', { cookie })
+    const body = (await sent.json()) as { data: { subject: string; last_direction: string }[] }
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0]?.subject).toBe('Your order shipped')
+    expect(body.data[0]?.last_direction).toBe('out')
+  })
+
+  it('puts a reply in the same conversation as the message it answers', async () => {
+    await addMailbox()
+    await deliver({ raw: mime({ messageId: '<one@example.com>' }) })
+    const threads = await listThreads()
+    const threadId = threads.data[0]!.id
+
+    const res = await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        thread_id: threadId,
+        from: 'support@acme.dev',
+        to: ['ana@example.com'],
+        text: 'It shipped this morning.',
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const detail = await h.fetch(`/v1/mail/threads/${threadId}`, { cookie })
+    const body = (await detail.json()) as {
+      messages: { direction: string; reply_to: string | null; subject: string }[]
+    }
+    expect(body.messages).toHaveLength(2)
+    expect(body.messages[1]?.direction).toBe('out')
+    expect(body.messages[1]?.subject).toBe('Re: Where is my order?')
+    // The reply token — minted for the first time in this release, so that a
+    // reply to our reply can be threaded with certainty instead of guessed.
+    expect(body.messages[1]?.reply_to).toMatch(/^thr\+.+@acme\.dev$/)
+  })
+})
+
+describe('organising', () => {
+  it('archives and restores a conversation', async () => {
+    await addMailbox()
+    await deliver({ raw: mime() })
+    const threadId = (await listThreads()).data[0]!.id
+
+    await h.fetch(`/v1/mail/threads/${threadId}`, {
+      method: 'PATCH',
+      cookie,
+      body: JSON.stringify({ folder: 'archive' }),
+    })
+    expect((await listThreads()).data.map((t) => t.folder)).toEqual(['archive'])
+
+    const counts = await h.fetch('/v1/mail/counts', { cookie })
+    const body = (await counts.json()) as { folders: Record<string, { threads: number }> }
+    expect(body.folders.archive?.threads).toBe(1)
+    expect(body.folders.inbox?.threads).toBe(0)
+  })
+
+  it('marks a conversation read, and its messages with it', async () => {
+    await addMailbox()
+    await deliver({ raw: mime() })
+    const threadId = (await listThreads()).data[0]!.id
+
+    await h.fetch(`/v1/mail/threads/${threadId}`, {
+      method: 'PATCH',
+      cookie,
+      body: JSON.stringify({ unread: false }),
+    })
+    expect((await listThreads()).data[0]?.unread).toBe(false)
+  })
+
+  it('deletes a conversation and everything under it', async () => {
+    await addMailbox()
+    await deliver({ raw: mime() })
+    const threadId = (await listThreads()).data[0]!.id
+
+    const res = await h.fetch(`/v1/mail/threads/${threadId}`, { method: 'DELETE', cookie })
+    expect(res.status).toBe(200)
+    expect((await listThreads()).data).toHaveLength(0)
+    const search = await h.fetch('/v1/mail/threads?q=order', { cookie })
+    expect(((await search.json()) as { data: unknown[] }).data).toHaveLength(0)
+  })
+})
+
+describe('search', () => {
+  beforeEach(async () => {
+    await addMailbox()
+    await deliver({ raw: mime({ subject: 'Refund for order 4182', from: 'ana@example.com' }) })
+    await deliver({
+      raw: mime({
+        subject: 'Shipping delay',
+        from: 'raj@other.test',
+        messageId: '<delay@other.test>',
+      }),
+    })
+  })
+
+  it('finds a conversation by a word in its subject', async () => {
+    const res = await h.fetch('/v1/mail/threads?q=refund', { cookie })
+    const body = (await res.json()) as { data: { subject: string }[] }
+    expect(body.data.map((t) => t.subject)).toEqual(['Refund for order 4182'])
+  })
+
+  it('filters by sender', async () => {
+    const res = await h.fetch(`/v1/mail/threads?q=${encodeURIComponent('from:raj')}`, { cookie })
+    const body = (await res.json()) as { data: { subject: string }[] }
+    expect(body.data.map((t) => t.subject)).toEqual(['Shipping delay'])
+  })
+
+  it('negates an operator', async () => {
+    const res = await h.fetch(`/v1/mail/threads?q=${encodeURIComponent('-from:raj')}`, { cookie })
+    const body = (await res.json()) as { data: { subject: string }[] }
+    expect(body.data.map((t) => t.subject)).toEqual(['Refund for order 4182'])
+  })
+
+  /**
+   * The property the segment DSL has and this must have too: a value is never
+   * part of the SQL string, so there is no input that can change the shape of
+   * the query. The rows have to still be there afterwards.
+   */
+  it('treats an injection attempt as text', async () => {
+    for (const attack of [
+      "from:x' OR 1=1 --",
+      "subject:'; DROP TABLE mail_threads; --",
+      'label:") OR ("a"="a',
+      'in:inbox); DELETE FROM mail_messages; --',
+    ]) {
+      const res = await h.fetch(`/v1/mail/threads?q=${encodeURIComponent(attack)}`, { cookie })
+      expect(res.status).toBe(200)
+    }
+    const still = await h.fetch('/v1/mail/threads', { cookie })
+    expect(((await still.json()) as { data: unknown[] }).data).toHaveLength(2)
+  })
+})
+
+describe('test mode', () => {
+  /**
+   * The feature that makes the inbox useful on a brand-new instance: no domain
+   * verified for live sending, no provider credentials, no DNS — and a message
+   * you compose still arrives, with its body and its original MIME intact.
+   */
+  it('delivers a test-mode send back into the inbox', async () => {
+    const { consumeSend } = await import('../src/server/send/consumer.ts')
+    const testHarness = await harness()
+    const userId = await claimFor(testHarness)
+    const testCookie = await sessionFor(testHarness, userId)
+    await verifiedDomain(testHarness, 'acme.dev')
+
+    // A test-environment session is what the environment switch produces.
+    const jobs: unknown[] = []
+    testHarness.env.SEND_QUEUE = {
+      send: async (job: unknown) => {
+        jobs.push(job)
+      },
+      sendBatch: async () => {},
+    } as never
+
+    const res = await testHarness.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie: testCookie,
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Does this thing work?',
+        html: '<p>Apparently it does.</p>',
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(jobs).toHaveLength(1)
+
+    // Force the message into the test environment, as the environment switch
+    // would, then run the consumer over the job the accept path enqueued.
+    const job = jobs[0] as { envelope: { environment: string } }
+    job.envelope.environment = 'test'
+    await testHarness.sql.prepare("UPDATE messages SET environment = 'test'").run()
+    await testHarness.sql.prepare("UPDATE mail_threads SET environment = 'test'").run()
+    await testHarness.sql.prepare("UPDATE mail_messages SET environment = 'test'").run()
+    await consumeSend(batchOf(job as never) as never, testHarness.env)
+
+    const delivered = await testHarness.fetch('/v1/mail/threads?folder=inbox', {
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+    })
+    const body = (await delivered.json()) as {
+      data: { id: string; subject: string; last_direction: string }[]
+    }
+    expect(body.data.map((t) => t.subject)).toContain('Does this thing work?')
+
+    const thread = body.data.find((t) => t.last_direction === 'in')!
+    const detail = await testHarness.fetch(`/v1/mail/threads/${thread.id}`, {
+      cookie: testCookie,
+      headers: { 'ms-environment': 'test' },
+    })
+    const full = (await detail.json()) as { messages: { html: string; has_raw: boolean }[] }
+    expect(full.messages[0]?.html).toContain('Apparently it does.')
+    // The original MIME, kept — so "raw .eml" is a real tab and not a promise.
+    expect(full.messages[0]?.has_raw).toBe(true)
+  })
+})

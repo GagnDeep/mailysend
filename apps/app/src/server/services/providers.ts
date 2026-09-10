@@ -102,6 +102,32 @@ async function buildProvider(
   }
 }
 
+/**
+ * One provider, built the way the router would build it.
+ *
+ * The Settings screen's test button needs exactly this and nothing else: the
+ * workspace's stored credentials if there are any, the deployment's variables
+ * if there are not, and `null` when neither can stand the transport up — which
+ * is a different answer from "it failed".
+ */
+export async function buildProviderFor(
+  sql: Sql,
+  workspaceId: string,
+  name: ProviderRow['provider'],
+  env: Env,
+): Promise<Provider | null> {
+  const row = await sql
+    .prepare(
+      'SELECT credentials, config FROM provider_configs WHERE workspace_id = ? AND provider = ?',
+    )
+    .bind(workspaceId, name)
+    .first<{ credentials: string | null; config: string | null }>()
+
+  const credentials = row?.credentials ? await decryptCredentials(row.credentials, env) : {}
+  const config = row?.config ? (JSON.parse(row.config) as Record<string, unknown>) : {}
+  return buildProvider(name, credentials, config, env)
+}
+
 export async function buildRouter(
   sql: Sql,
   workspaceId: string,

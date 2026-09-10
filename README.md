@@ -291,6 +291,16 @@ a 32-byte hex string if you would rather keep the signing key out of the databas
 able to rotate it. Both are optional. The full list is in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+The guides, once it is up:
+
+| | |
+|---|---|
+| [docs/SENDING.md](docs/SENDING.md) | Choosing a transport, and a real walkthrough for each of the four |
+| [docs/RECEIVING.md](docs/RECEIVING.md) | Email Routing, the catch-all binding, mailboxes, and what `matched_by` means |
+| [docs/MAIL.md](docs/MAIL.md) | The inbox, test mode, and the keyboard |
+| [docs/AUTH.md](docs/AUTH.md) | Every door in, OIDC included |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables and bindings |
+
 <details>
 <summary><b>Production: PM2 + nginx</b> (this is how the live demo runs)</summary>
 

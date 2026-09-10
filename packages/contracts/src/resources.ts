@@ -31,6 +31,16 @@ export const DnsRecord = z.object({
   provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp', 'all']).default('all'),
   /** Human explanation shown under the row — the design's setup screen shows one per record. */
   purpose: z.string().optional(),
+  /**
+   * Who publishes it. `observe` is a record the transport writes itself —
+   * Cloudflare's onboarding adds every one of its records — so it is checked
+   * but never offered for copying.
+   */
+  origin: z.enum(['copy', 'observe']).default('copy'),
+  /** How the resolved value is compared. */
+  match: z.enum(['exact', 'include', 'prefix']).default('exact'),
+  /** What actually resolved, so a failed row can show the difference. */
+  found: z.string().nullable().optional(),
   /** When the resolver last looked. Null means never checked, not "failed". */
   last_checked_at: IsoDate.nullable().optional(),
 })
@@ -71,6 +81,8 @@ export const Domain = z.object({
   tls: z.enum(['opportunistic', 'enforced']).optional(),
   /** Null until the first successful verification, then the last one that passed. */
   last_verified_at: IsoDate.nullable().optional(),
+  /** The transport the records were derived from. Null = the workspace default. */
+  provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp']).nullable().optional(),
 })
 
 export const CreateDomainRequest = z.object({

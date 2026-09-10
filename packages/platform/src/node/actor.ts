@@ -1,4 +1,6 @@
-import type { DatabaseSync } from 'node:sqlite'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { ActorContext, ActorNamespace, ActorStorage, ActorStub } from '../types.ts'
 
 /**
@@ -19,11 +21,19 @@ class NodeActorStorage implements ActorStorage {
   #db: DatabaseSync
   #actor: string
   #onAlarmSet: (at: number) => void
+  #openSql: () => DatabaseSync
+  #sqlDb: DatabaseSync | null = null
 
-  constructor(db: DatabaseSync, actor: string, onAlarmSet: (at: number) => void) {
+  constructor(
+    db: DatabaseSync,
+    actor: string,
+    onAlarmSet: (at: number) => void,
+    openSql: () => DatabaseSync,
+  ) {
     this.#db = db
     this.#actor = actor
     this.#onAlarmSet = onAlarmSet
+    this.#openSql = openSql
   }
 
   async get<T = unknown>(keyOrKeys: string | string[]): Promise<any> {
@@ -120,9 +130,20 @@ class NodeActorStorage implements ActorStorage {
     this.#db.prepare('DELETE FROM actor_alarms WHERE actor = ?').run(this.#actor)
   }
 
-  /** Actors that use SQL (MailboxDO's FTS index) get a private table namespace. */
+  /**
+   * Actors that use SQL get their own database file, not a shared one.
+   *
+   * This used to hand back the application's database. `MailboxActor.#init`
+   * begins `CREATE TABLE IF NOT EXISTS messages (…)` — and `messages` already
+   * existed as the outbound send log, so the create silently did nothing, the
+   * following `CREATE INDEX … ON messages(thread_id)` failed with "no such
+   * column", and inbound mail threw on every message on the Node runtime. One
+   * database per actor is what the name on Workers actually means: a Durable
+   * Object's SQLite is private to that object.
+   */
   get sql() {
-    const db = this.#db
+    this.#sqlDb ??= this.#openSql()
+    const db = this.#sqlDb
     return {
       exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]) {
         const stmt = db.prepare(query)
@@ -147,16 +168,27 @@ export interface ActorClass<T> {
  * One registry per deployment; `namespace()` hands out typed accessors that
  * mirror `env.SOME_DO.get(...)` on Workers.
  */
+export interface NodeActorRegistryOptions {
+  /**
+   * Where per-actor SQLite files live. Omitted — as in tests — each actor gets
+   * an in-memory database instead, which is isolated but not durable.
+   */
+  sqlDir?: string
+}
+
 export class NodeActorRegistry {
   #db: DatabaseSync
   #env: unknown
+  #sqlDir: string | undefined
   #instances = new Map<string, { instance: any; storage: NodeActorStorage }>()
   #classes = new Map<string, ActorClass<any>>()
   #timer?: NodeJS.Timeout
 
-  constructor(db: DatabaseSync, env: unknown) {
+  constructor(db: DatabaseSync, env: unknown, options: NodeActorRegistryOptions = {}) {
     this.#db = db
     this.#env = env
+    this.#sqlDir = options.sqlDir
+    if (this.#sqlDir) mkdirSync(this.#sqlDir, { recursive: true })
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS actor_storage (
         actor TEXT NOT NULL,
@@ -188,7 +220,12 @@ export class NodeActorRegistry {
     if (!held) {
       const cls = this.#classes.get(kind)
       if (!cls) throw new Error(`actor class not registered: ${kind}`)
-      const storage = new NodeActorStorage(this.#db, key, () => this.#schedule())
+      const storage = new NodeActorStorage(
+        this.#db,
+        key,
+        () => this.#schedule(),
+        () => this.#openActorSql(key),
+      )
       // Every actor's work is serialised through this chain, which is what
       // gives us the Durable Object property of one-turn-at-a-time per key.
       let gate: Promise<unknown> = Promise.resolve()
@@ -234,6 +271,16 @@ export class NodeActorRegistry {
   stop() {
     if (this.#timer) clearInterval(this.#timer)
     this.#timer = undefined
+  }
+
+  /** One file per actor id, or one in-memory database when there is no dir. */
+  #openActorSql(key: string): DatabaseSync {
+    if (!this.#sqlDir) return new DatabaseSync(':memory:')
+    const file = `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.db`
+    const db = new DatabaseSync(join(this.#sqlDir, file))
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA busy_timeout = 5000')
+    return db
   }
 
   #schedule() {

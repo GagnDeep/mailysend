@@ -11,6 +11,7 @@ import {
   rootDomain,
 } from '@mailysend/core'
 import type { Ctx } from '../context.ts'
+import { normalizeSubject, snippetOf, writeMailMessage } from '../services/mail.ts'
 import { type Envelope, INLINE_LIMIT, type SendJob } from './envelope.ts'
 
 /**
@@ -263,6 +264,22 @@ export async function acceptEmail(
     sizeBytes: serialized.length,
   })
 
+  // File the message in the conversation model before it goes anywhere. The
+  // Message-ID is derived from the id we just minted (`mime.ts` stamps exactly
+  // this string), so the thread linkage is known at accept time and a reply
+  // that comes back tomorrow lands on a row that already exists.
+  //
+  // Broadcast and automation traffic is deliberately excluded: a hundred
+  // thousand one-message conversations is not an inbox, and those messages
+  // already have a home in the broadcast view.
+  if (!opts.broadcastId && !opts.automationId) {
+    await indexOutbound(ctx, { emailId, envelope, status, to, cc, bcc, createdAt }).catch((err) => {
+      // The mail index is a read model. Failing to write it must never fail a
+      // send that has already been accepted and enqueued.
+      console.warn('[accept] could not index the outbound message', err)
+    })
+  }
+
   if (scheduledAtIso) {
     // Scheduled mail is handed to a shard actor rather than a delayed queue
     // message, because a delayed message cannot be cancelled and `DELETE
@@ -384,4 +401,92 @@ function stableStringify(value: unknown): string {
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : 1))
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`
+}
+
+/**
+ * The outbound half of the conversation model.
+ *
+ * Threading is by header only here: if the caller supplied `In-Reply-To` or
+ * `References` — which the reply path always does — the message joins the
+ * conversation it answers. Otherwise it starts one, filed under `sent`.
+ */
+async function indexOutbound(
+  ctx: Ctx,
+  args: {
+    emailId: string
+    envelope: Envelope
+    status: string
+    to: { address: string }[]
+    cc: { address: string }[]
+    bcc: { address: string }[]
+    createdAt: string
+  },
+): Promise<void> {
+  const { emailId, envelope, createdAt } = args
+  const request = envelope.request
+  const headers = request.headers ?? {}
+  const inReplyTo = headerOf(headers, 'in-reply-to')
+  const references = (headerOf(headers, 'references') ?? '').split(/\s+/).filter(Boolean)
+
+  const { resolveThreadBySql } = await import('../services/mail.ts')
+  const resolved = await resolveThreadBySql(ctx.sql, ctx.workspace.id, { inReplyTo, references })
+  const threadId = resolved.threadId ?? newId('thread')
+
+  const fromDomain = parseAddress(request.from)?.address.split('@')[1] ?? envelope.domain.name
+  const snippet = snippetOf(request.text, request.html ?? request.react)
+  const participants = [
+    request.from,
+    ...args.to.map((a) => a.address),
+    ...args.cc.map((a) => a.address),
+  ]
+
+  await writeMailMessage(
+    ctx.sql,
+    {
+      id: `mm_${emailId}`,
+      workspaceId: ctx.workspace.id,
+      threadId,
+      direction: 'out',
+      environment: envelope.environment,
+      sourceId: emailId,
+      // Exactly what `buildMime` will stamp. Deterministic on purpose: it is
+      // what makes accept-time threading possible at all.
+      messageIdHeader: `<${emailId}@${fromDomain}>`,
+      inReplyTo,
+      references,
+      fromAddress: parseAddress(request.from)?.address ?? request.from,
+      fromName: parseAddress(request.from)?.name ?? null,
+      to: args.to.map((a) => a.address),
+      cc: args.cc.map((a) => a.address),
+      bcc: args.bcc.map((a) => a.address),
+      replyTo: request.reply_to?.[0] ?? null,
+      subject: request.subject,
+      snippet,
+      matchedBy: resolved.matchedBy,
+      status: args.status,
+      at: createdAt,
+      unread: false,
+    },
+    {
+      id: threadId,
+      workspaceId: ctx.workspace.id,
+      environment: envelope.environment,
+      subject: request.subject,
+      subjectNormalized: normalizeSubject(request.subject),
+      participants,
+      folder: 'sent',
+      lastMessageAt: createdAt,
+      lastDirection: 'out',
+      snippet,
+      hasAttachments: Boolean(request.attachments?.length),
+    },
+  )
+}
+
+/** Header names are case-insensitive; callers send every casing there is. */
+const headerOf = (headers: Record<string, string>, name: string): string | null => {
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === name) return value
+  }
+  return null
 }

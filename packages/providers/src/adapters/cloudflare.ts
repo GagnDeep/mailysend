@@ -1,7 +1,8 @@
 import { formatAddress } from '@mailysend/core'
-import { buildMime, mimeSize } from '../mime.ts'
+import { buildSignedMime, mimeSize } from '../mime.ts'
 import type {
   DnsRequirement,
+  IdentityState,
   OutboundMessage,
   Provider,
   ProviderLimits,
@@ -67,7 +68,7 @@ export class CloudflareProvider implements Provider {
   }
 
   async send(message: OutboundMessage): Promise<SendResult> {
-    const raw = buildMime(message)
+    const raw = await buildSignedMime(message)
     const size = mimeSize(raw)
     if (size > this.limits.maxMessageBytes) {
       throw new SendError(
@@ -163,41 +164,55 @@ export class CloudflareProvider implements Provider {
     }
   }
 
-  dnsRecords(
-    domain: string,
-    opts: { selector: string; returnPath: string; dkimPublicKey?: string },
-  ): DnsRequirement[] {
-    const records: DnsRequirement[] = [
+  /**
+   * What Cloudflare publishes, not what we would have chosen.
+   *
+   * These are `observe` records: onboarding a domain in Cloudflare's dashboard
+   * writes every one of them automatically, so there is nothing here to copy.
+   * The previous list was worse than useless — it asked for a `cf-bounce`
+   * CNAME where Cloudflare uses MX, and for DKIM at our own selector holding a
+   * key Cloudflare does not sign with, so following it published a record that
+   * promised a signature that never arrived.
+   */
+  dnsRecords(domain: string, _opts: { selector: string; returnPath: string }): DnsRequirement[] {
+    return [
       {
         record: 'TXT',
         name: domain,
         value: 'v=spf1 include:_spf.mx.cloudflare.net ~all',
-        purpose: 'Authorises Cloudflare to send as this domain (SPF).',
+        purpose: 'Authorises Cloudflare to send as this domain (SPF). Cloudflare adds this itself.',
+        origin: 'observe',
+        match: 'include',
+      },
+      {
+        // Cloudflare mints its own key under its own selector, so the value is
+        // not knowable here; that something of the right shape resolves is the
+        // whole of what can be checked.
+        record: 'TXT',
+        name: `cf-bounce._domainkey.${domain}`,
+        value: 'v=DKIM1',
+        purpose: 'DKIM key, minted and published by Cloudflare when you onboard the domain.',
+        origin: 'observe',
+        match: 'prefix',
+      },
+      {
+        record: 'MX',
+        name: `cf-bounce.${domain}`,
+        value: 'mx.cloudflare.net',
+        priority: 10,
+        purpose: 'Bounce collection, published by Cloudflare. Without it, DSNs are lost.',
+        origin: 'observe',
+        match: 'prefix',
       },
       {
         record: 'TXT',
         name: `_dmarc.${domain}`,
         value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
         purpose: 'Turns on DMARC reporting. Start at p=none, tighten once reports are clean.',
-      },
-      {
-        // Cloudflare collects bounces on its own subdomain rather than the
-        // envelope domain, which is why this record exists here and not for SES.
-        record: 'CNAME',
-        name: `${opts.returnPath}.${domain}`,
-        value: 'bounce.mx.cloudflare.net',
-        purpose: 'Return path for bounce collection. Without it, DSNs are lost.',
+        origin: 'observe',
+        match: 'prefix',
       },
     ]
-    if (opts.dkimPublicKey) {
-      records.push({
-        record: 'TXT',
-        name: `${opts.selector}._domainkey.${domain}`,
-        value: `v=DKIM1; k=rsa; p=${opts.dkimPublicKey}`,
-        purpose: 'Signs outgoing mail so receivers can verify it was not altered (DKIM).',
-      })
-    }
-    return records
   }
 
   async verify(): Promise<{ status: 'ok' | 'unknown' | 'failed'; detail?: string }> {
@@ -224,6 +239,42 @@ export class CloudflareProvider implements Provider {
       }
     }
     return { status: 'failed', detail: 'no binding and no API credentials' }
+  }
+
+  /**
+   * Cloudflare onboards a domain itself, and does it better than we could.
+   *
+   * **Compute → Email Service → Email Sending → Onboard Domain** writes the MX
+   * bounce records, the SPF include, DKIM at `cf-bounce._domainkey` and DMARC,
+   * automatically, for a domain already on the account. There is no documented
+   * public REST endpoint for that flow, and printing our own list beside it is
+   * actively harmful: our list names a different DKIM selector holding a key
+   * Cloudflare does not sign with, and a `cf-bounce` CNAME where Cloudflare
+   * uses MX. So this returns *no records at all* and hands the customer over.
+   *
+   * Verification is then pure observation — resolving what Cloudflare wrote —
+   * which needs no API token whatsoever.
+   */
+  readonly identity = {
+    ensure: async (): Promise<IdentityState> => ({
+      status: 'pending' as const,
+      records: [],
+      detail:
+        'Cloudflare writes every DNS record itself when you onboard the domain in its dashboard, so there is nothing here to copy. The domain must already be on the same Cloudflare account.',
+      external: {
+        // The `:account` placeholder is resolved by the dashboard against
+        // whichever account the customer is signed into, so we need no account
+        // id and no token to build this link.
+        url: 'https://dash.cloudflare.com/?to=/:account/email-service',
+        label: 'Onboard this domain in Cloudflare',
+      },
+    }),
+    status: async (): Promise<IdentityState> => ({
+      status: 'unknown' as const,
+      records: [],
+      detail:
+        'Cloudflare does not expose the onboarding state over its API, so this is answered by resolving the records it writes rather than by asking it.',
+    }),
   }
 }
 

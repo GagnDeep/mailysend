@@ -342,6 +342,7 @@ function DomainStep({
   const [domainId, setDomainId] = useState<string | null>(null)
   const [records, setRecords] = useState<DnsRecord[]>([])
   const [status, setStatus] = useState<string>('not_started')
+  const [copied, setCopied] = useState<string | null>(null)
 
   const add = async (event: FormEvent) => {
     event.preventDefault()
@@ -392,16 +393,46 @@ function DomainStep({
           <p className="m-0 mb-3.5 text-[14.5px] text-muted">
             Add these records at your DNS provider, then check again.
           </p>
-          <AuthPre tone="paper" className="mb-4">
-            {records.map((record) => (
-              <div key={`${record.record}-${record.name}`}>
-                {record.record.padEnd(6)}
-                {record.name}
-                {'  '}
-                <span className="text-muted-2">{record.value.slice(0, 48)}</span>
-              </div>
-            ))}
-          </AuthPre>
+          <div className="mb-4 flex flex-col gap-2">
+            {records.map((record) => {
+              const managed = (record as DnsRecord & { origin?: string }).origin === 'observe'
+              return (
+                <div
+                  key={`${record.record}-${record.name}-${record.value}`}
+                  className="rounded-code border border-line bg-paper p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-[12px] uppercase tracking-[0.08em] text-muted-2">
+                      {record.record} · {record.name}
+                    </span>
+                    {managed ? (
+                      <span className="font-mono text-[11px] text-muted-2">published for you</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="font-mono text-[11px] text-accent"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(record.value)
+                          setCopied(`${record.record}:${record.name}`)
+                        }}
+                      >
+                        {copied === `${record.record}:${record.name}` ? 'copied' : 'copy value'}
+                      </button>
+                    )}
+                  </div>
+                  {/*
+                    The whole value, wrapped. It used to be cut at 48 characters
+                    with no copy button beside it, which for a 2048-bit DKIM key
+                    meant the one record that matters most could not be copied
+                    at all — not from here, and not from anywhere.
+                  */}
+                  <code className="mt-1.5 block break-all font-mono text-[12px] leading-[1.5] text-ink">
+                    {record.value}
+                  </code>
+                </div>
+              )
+            })}
+          </div>
           <Button
             type="button"
             onClick={verify}

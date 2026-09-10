@@ -41,6 +41,13 @@ async function route(request: Request, env: Env, _ctx: ExecutionContextLike): Pr
   if (pathname.startsWith('/u/')) return handleUnsubscribe(request, env, pathname.slice(3))
 
   // --- api -----------------------------------------------------------------
+  // The live socket is matched before the router: an upgrade is not a response
+  // Hono can produce, and the 101 has to come back from the actor that keeps
+  // the socket.
+  if (pathname === '/v1/live') {
+    const { handleLiveSocket } = await import('./server/live.ts')
+    return handleLiveSocket(request, env)
+  }
   if (pathname === '/v1' || pathname.startsWith('/v1/')) return api.fetch(request, env)
 
   // --- first run, and the dashboard guard ----------------------------------

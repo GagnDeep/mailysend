@@ -51,6 +51,15 @@ export const qk = {
   suppressions: (env: Environment, filters: Record<string, unknown> = {}) =>
     [env, 'suppressions', filters] as const,
 
+  mailThreads: (env: Environment, filters: Record<string, unknown> = {}) =>
+    [env, 'mail', 'threads', filters] as const,
+  mailThread: (env: Environment, id: string) => [env, 'mail', 'thread', id] as const,
+  mailCounts: (env: Environment) => [env, 'mail', 'counts'] as const,
+  mailLabels: (env: Environment) => [env, 'mail', 'labels'] as const,
+  mailDrafts: (env: Environment) => [env, 'mail', 'drafts'] as const,
+  mailHeaders: (env: Environment, id: string) => [env, 'mail', 'headers', id] as const,
+  mailRaw: (env: Environment, id: string) => [env, 'mail', 'raw', id] as const,
+
   threads: (env: Environment, filters: Record<string, unknown> = {}) =>
     [env, 'threads', filters] as const,
   thread: (env: Environment, id: string) => [env, 'thread', id] as const,
@@ -65,6 +74,11 @@ export const qk = {
   seedTest: (env: Environment, id: string) => [env, 'seed-test', id] as const,
 
   settings: (env: Environment) => [env, 'settings'] as const,
+  // Transports are workspace-wide rather than per-environment: the same
+  // credentials carry live and test mail.
+  providers: () => ['providers'] as const,
+  mailboxes: (env: Environment) => [env, 'mailboxes'] as const,
+  providerCatalog: () => ['provider-catalog'] as const,
   members: () => ['members'] as const,
   invites: () => ['invites'] as const,
   preferenceCentre: (env: Environment) => [env, 'preference-centre'] as const,

@@ -27,6 +27,7 @@ import { Route as AppAnalyticsRouteImport } from './routes/app/analytics'
 import { Route as AppApiKeysRouteImport } from './routes/app/api-keys'
 import { Route as AppInboundRouteImport } from './routes/app/inbound'
 import { Route as AppLogsRouteImport } from './routes/app/logs'
+import { Route as AppMailRouteImport } from './routes/app/mail'
 import { Route as AppPlacementRouteImport } from './routes/app/placement'
 import { Route as AppPreferencesRouteImport } from './routes/app/preferences'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
@@ -140,6 +141,11 @@ const AppInboundRoute = AppInboundRouteImport.update({
 const AppLogsRoute = AppLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMailRoute = AppMailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPlacementRoute = AppPlacementRouteImport.update({
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/app/api-keys': typeof AppApiKeysRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
+  '/app/mail': typeof AppMailRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -326,6 +333,7 @@ export interface FileRoutesByTo {
   '/app/api-keys': typeof AppApiKeysRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
+  '/app/mail': typeof AppMailRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -371,6 +379,7 @@ export interface FileRoutesById {
   '/app/api-keys': typeof AppApiKeysRoute
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
+  '/app/mail': typeof AppMailRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -417,6 +426,7 @@ export interface FileRouteTypes {
     | '/app/api-keys'
     | '/app/inbound'
     | '/app/logs'
+    | '/app/mail'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -460,6 +470,7 @@ export interface FileRouteTypes {
     | '/app/api-keys'
     | '/app/inbound'
     | '/app/logs'
+    | '/app/mail'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -504,6 +515,7 @@ export interface FileRouteTypes {
     | '/app/api-keys'
     | '/app/inbound'
     | '/app/logs'
+    | '/app/mail'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -676,6 +688,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/app/logs'
       preLoaderRoute: typeof AppLogsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/mail': {
+      id: '/app/mail'
+      path: '/mail'
+      fullPath: '/app/mail'
+      preLoaderRoute: typeof AppMailRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/placement': {
@@ -854,6 +873,7 @@ interface AppRouteChildren {
   AppApiKeysRoute: typeof AppApiKeysRoute
   AppInboundRoute: typeof AppInboundRoute
   AppLogsRoute: typeof AppLogsRoute
+  AppMailRoute: typeof AppMailRoute
   AppPlacementRoute: typeof AppPlacementRoute
   AppPreferencesRoute: typeof AppPreferencesRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -883,6 +903,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppApiKeysRoute: AppApiKeysRoute,
   AppInboundRoute: AppInboundRoute,
   AppLogsRoute: AppLogsRoute,
+  AppMailRoute: AppMailRoute,
   AppPlacementRoute: AppPlacementRoute,
   AppPreferencesRoute: AppPreferencesRoute,
   AppSettingsRoute: AppSettingsRoute,

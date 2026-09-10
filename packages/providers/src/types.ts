@@ -141,6 +141,45 @@ export interface Provider {
    * check, and a preflight that always passes is worse than none.
    */
   verify?(): Promise<{ status: 'ok' | 'unknown' | 'failed'; detail?: string }>
+  /**
+   * Creating the sending identity, where the provider will do it for us.
+   *
+   * Ask the provider; do not invent. `dnsRecords` is what *we* would compute
+   * from first principles, and for two of the four transports it is wrong:
+   * Cloudflare writes its own records when a domain is onboarded in its
+   * dashboard, and Resend issues its own DKIM key. A transport that implements
+   * this returns the records *it* says it needs — possibly none at all, with an
+   * `external` hand-off into its own flow instead.
+   */
+  identity?: ProviderIdentity
+}
+
+export interface ProviderIdentity {
+  /**
+   * Registers the domain with the provider and reports what it wants published.
+   *
+   * `records: []` with an `external` link is a legitimate answer: it means the
+   * provider publishes them itself and the customer has nothing to copy.
+   */
+  ensure(
+    domain: string,
+    opts: { selector: string; returnPath: string; dkimPublicKey?: string; dkimPrivateKey?: string },
+  ): Promise<IdentityState>
+  /** Where the provider thinks the domain has got to, asked fresh. */
+  status(domain: string): Promise<IdentityState>
+}
+
+export interface IdentityState {
+  status: 'verified' | 'pending' | 'failed' | 'unknown'
+  /** What the provider says must be published. Empty means it does that itself. */
+  records: DnsRequirement[]
+  detail?: string
+  /**
+   * A hand-off into the provider's own flow, where that flow is better than
+   * ours. Cloudflare's onboarding writes every record automatically; sending a
+   * customer there is more honest than printing a list they must not use.
+   */
+  external?: { url: string; label: string }
 }
 
 export interface DnsRequirement {
@@ -149,4 +188,16 @@ export interface DnsRequirement {
   value: string
   priority?: number
   purpose: string
+  /**
+   * Who publishes it. `copy` is the customer's job; `observe` is a record the
+   * transport writes itself and we only look for. Defaults to `copy`.
+   */
+  origin?: 'copy' | 'observe'
+  /**
+   * How a resolved value is compared. `exact` by default; `include` for SPF,
+   * where merging our include into an existing record is correct; `prefix` for
+   * a value only the provider knows, such as a DKIM key it mints, where the
+   * most that can be checked is that something of the right shape is there.
+   */
+  match?: 'exact' | 'include' | 'prefix'
 }

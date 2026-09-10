@@ -108,10 +108,19 @@ export async function actorFromSession(request: Request, sql: Sql): Promise<Acto
   if (!row) return null
   if (Date.parse(row.expires_at) < Date.now()) return null
 
+  // The environment switch, honoured at last.
+  //
+  // The dashboard has always sent `ms-environment` and the server has always
+  // ignored it, so flipping to Test changed the query keys and nothing else:
+  // every screen kept showing live data under a label that said otherwise. A
+  // session is scoped to a person, not to an environment, so reading either one
+  // is within its authority — an API key still cannot, because its environment
+  // is fixed by the key prefix and that is the whole point of two key families.
+  const requested = request.headers.get('ms-environment')
   return {
     workspaceId: row.workspace_id ?? DEFAULT_WORKSPACE,
     userId: row.user_id,
-    environment: 'live',
+    environment: requested === 'test' ? 'test' : 'live',
     scopes: ['*'],
     role: (row.role as Actor['role']) ?? 'owner',
   }

@@ -87,7 +87,7 @@ export function createNodePlatform(options: NodePlatformOptions) {
   // value threaded through three constructors.
   const env: Record<string, unknown> = {}
   const queues = new NodeQueueBroker(sql.db, env)
-  const actors = new NodeActorRegistry(sql.db, env)
+  const actors = new NodeActorRegistry(sql.db, env, { sqlDir: join(dataDir, 'actors') })
 
   for (const n of options.kvNamespaces ?? []) getKv(n)
   for (const b of options.blobBuckets ?? []) getBlob(b)

@@ -1,8 +1,9 @@
 import { formatAddress } from '@mailysend/core'
-import { buildMime, mimeSize } from '../mime.ts'
+import { buildSignedMime, mimeSize } from '../mime.ts'
 import { signRequest } from '../sigv4.ts'
 import type {
   DnsRequirement,
+  IdentityState,
   OutboundMessage,
   Provider,
   ProviderLimits,
@@ -64,7 +65,7 @@ export class SesProvider implements Provider {
   }
 
   async send(message: OutboundMessage): Promise<SendResult> {
-    const raw = buildMime(message)
+    const raw = await buildSignedMime(message)
     const size = mimeSize(raw)
     if (size > this.limits.maxMessageBytes) {
       throw new SendError(
@@ -131,12 +132,14 @@ export class SesProvider implements Provider {
         name: domain,
         value: 'v=spf1 include:amazonses.com ~all',
         purpose: 'Authorises SES to send as this domain (SPF).',
+        match: 'include',
       },
       {
         record: 'TXT',
         name: `_dmarc.${domain}`,
         value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`,
         purpose: 'Turns on DMARC reporting.',
+        match: 'prefix',
       },
       {
         // SES puts the bounce domain on a MAIL FROM subdomain rather than
@@ -153,6 +156,7 @@ export class SesProvider implements Provider {
         name: `${opts.returnPath}.${domain}`,
         value: 'v=spf1 include:amazonses.com ~all',
         purpose: 'SPF for the MAIL FROM domain.',
+        match: 'include',
       },
     ]
     if (opts.dkimPublicKey) {
@@ -194,6 +198,129 @@ export class SesProvider implements Provider {
       return { status: 'failed' as const, detail: String(err) }
     }
   }
+
+  /**
+   * SES will create the identity for us, and with BYODKIM it will do it around
+   * *our* key.
+   *
+   * That is the point of taking this path rather than letting SES mint its own
+   * three CNAMEs: `domains.ts` already generates an RSA keypair per domain and
+   * publishes the public half at `<selector>._domainkey`, and Phase 4 made the
+   * send path actually sign with the private half. Handing SES the same private
+   * key is what makes the published record, the selector and the signature on
+   * the wire finally describe one key instead of three unrelated ones.
+   */
+  readonly identity = {
+    ensure: async (
+      domain: string,
+      opts: { selector: string; returnPath: string; dkimPrivateKey?: string },
+    ): Promise<IdentityState> => {
+      const existing = await this.#getIdentity(domain)
+      if (!existing) {
+        const created = await this.#call('POST', '/v2/email/identities', {
+          EmailIdentity: domain,
+          ...(opts.dkimPrivateKey
+            ? {
+                DkimSigningAttributes: {
+                  DomainSigningSelector: opts.selector,
+                  // SES wants the PKCS#8 body without armour, which is exactly
+                  // how `generateDkimKeypair` stores it.
+                  DomainSigningPrivateKey: opts.dkimPrivateKey.replace(/-----[^-]+-----|\s+/g, ''),
+                },
+              }
+            : {}),
+        })
+        if (!created.ok) {
+          return {
+            status: 'failed',
+            records: this.dnsRecords(domain, opts),
+            detail: `SES refused the identity: HTTP ${created.status}. ${created.body}`,
+          }
+        }
+      }
+
+      // The MAIL FROM domain is what makes bounces align with the customer's
+      // domain rather than with amazonses.com, and it is a separate call.
+      await this.#call('PUT', `/v2/email/identities/${encodeURIComponent(domain)}/mail-from`, {
+        MailFromDomain: `${opts.returnPath}.${domain}`,
+        // If the MAIL FROM records are not published yet, fall back to SES's
+        // own domain rather than rejecting every send in the meantime.
+        BehaviorOnMxFailure: 'USE_DEFAULT_VALUE',
+      })
+
+      return this.#state(domain, opts)
+    },
+    status: async (domain: string): Promise<IdentityState> =>
+      this.#state(domain, { selector: 'ms1', returnPath: 'cf-bounce' }),
+  }
+
+  async #state(
+    domain: string,
+    opts: { selector: string; returnPath: string; dkimPublicKey?: string },
+  ): Promise<IdentityState> {
+    const identity = await this.#getIdentity(domain)
+    const records = this.dnsRecords(domain, opts)
+    if (!identity) {
+      return { status: 'pending', records, detail: 'Not registered with SES yet.' }
+    }
+    const dkim = identity.DkimAttributes?.Status
+    return {
+      status: identity.VerifiedForSendingStatus
+        ? 'verified'
+        : dkim === 'FAILED'
+          ? 'failed'
+          : 'pending',
+      records,
+      detail: `SES reports DKIM as ${dkim ?? 'unknown'} and the identity as ${
+        identity.VerifiedForSendingStatus ? 'verified' : 'not yet verified'
+      }.`,
+    }
+  }
+
+  async #getIdentity(domain: string): Promise<SesIdentity | null> {
+    const res = await this.#call(
+      'GET',
+      `/v2/email/identities/${encodeURIComponent(domain)}`,
+      undefined,
+    )
+    if (!res.ok) return null
+    try {
+      return JSON.parse(res.body) as SesIdentity
+    } catch {
+      return null
+    }
+  }
+
+  async #call(
+    method: string,
+    path: string,
+    payload?: unknown,
+  ): Promise<{ ok: boolean; status: number; body: string }> {
+    const url = `${this.#endpoint}${path}`
+    const body = payload === undefined ? '' : JSON.stringify(payload)
+    try {
+      const headers = await signRequest(
+        {
+          url,
+          method,
+          headers: body ? { 'content-type': 'application/json' } : {},
+          body,
+        },
+        { ...this.#config, service: 'ses' },
+      )
+      const res = await fetch(url, { method, headers, ...(body ? { body } : {}) })
+      return { ok: res.ok, status: res.status, body: await res.text() }
+    } catch (err) {
+      return { ok: false, status: 0, body: String(err) }
+    }
+  }
+}
+
+interface SesIdentity {
+  IdentityType?: string
+  VerifiedForSendingStatus?: boolean
+  DkimAttributes?: { Status?: string; SigningEnabled?: boolean; Tokens?: string[] }
+  MailFromAttributes?: { MailFromDomain?: string; MailFromDomainStatus?: string }
 }
 
 const base64 = (input: string): string => {

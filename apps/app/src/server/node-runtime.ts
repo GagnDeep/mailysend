@@ -80,6 +80,18 @@ const env: Env = {
     : {}),
   ...(process.env.EVENT_DETAIL ? { EVENT_DETAIL: process.env.EVENT_DETAIL as 'on' | 'off' } : {}),
   ...(process.env.MS_OWNER_EMAIL ? { MS_OWNER_EMAIL: process.env.MS_OWNER_EMAIL } : {}),
+  ...(process.env.MS_OIDC_ISSUER ? { MS_OIDC_ISSUER: process.env.MS_OIDC_ISSUER } : {}),
+  ...(process.env.MS_OIDC_CLIENT_ID ? { MS_OIDC_CLIENT_ID: process.env.MS_OIDC_CLIENT_ID } : {}),
+  ...(process.env.MS_OIDC_CLIENT_SECRET
+    ? { MS_OIDC_CLIENT_SECRET: process.env.MS_OIDC_CLIENT_SECRET }
+    : {}),
+  ...(process.env.MS_OIDC_ALLOWED_DOMAINS
+    ? { MS_OIDC_ALLOWED_DOMAINS: process.env.MS_OIDC_ALLOWED_DOMAINS }
+    : {}),
+  ...(process.env.MS_OIDC_AUTO_PROVISION
+    ? { MS_OIDC_AUTO_PROVISION: process.env.MS_OIDC_AUTO_PROVISION }
+    : {}),
+  ...(process.env.MS_OIDC_LABEL ? { MS_OIDC_LABEL: process.env.MS_OIDC_LABEL } : {}),
   ...(process.env.MS_ACCESS_TEAM ? { MS_ACCESS_TEAM: process.env.MS_ACCESS_TEAM } : {}),
   ...(process.env.MS_ACCESS_AUD ? { MS_ACCESS_AUD: process.env.MS_ACCESS_AUD } : {}),
 

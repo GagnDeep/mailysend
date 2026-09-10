@@ -458,6 +458,83 @@ export const WorkspaceSettings = z.object({
 })
 export type WorkspaceSettingsRecord = z.infer<typeof WorkspaceSettings>
 
+export const DomainIdentity = z.object({
+  object: z.literal('domain_identity'),
+  provider: z.string(),
+  status: z.enum(['verified', 'pending', 'failed', 'unknown']),
+  detail: z.string().nullable(),
+  /** A hand-off into the transport's own flow, where that flow is the real one. */
+  external: z.object({ url: z.string(), label: z.string() }).nullable(),
+  records: z.array(z.unknown()).optional(),
+})
+export type DomainIdentityRecord = z.infer<typeof DomainIdentity>
+
+export const InboundMailbox = z.object({
+  object: z.literal('inbound_mailbox'),
+  id: z.string(),
+  address: z.string(),
+  name: z.string().nullable(),
+  forward_webhook_id: z.string().nullable(),
+  agent_enabled: z.boolean(),
+  created_at: z.string(),
+})
+export type InboundMailboxRecord = z.infer<typeof InboundMailbox>
+
+// ---------------------------------------------------------------------------
+// Transports
+// ---------------------------------------------------------------------------
+
+export const ProviderName = z.enum(['cloudflare', 'ses', 'resend', 'smtp'])
+export type ProviderNameValue = z.infer<typeof ProviderName>
+
+export const ProviderCatalogEntry = z.object({
+  object: z.literal('provider_catalog_entry'),
+  provider: ProviderName,
+  label: z.string(),
+  fields: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      secret: z.boolean(),
+      required: z.boolean(),
+      help: z.string().optional(),
+    }),
+  ),
+  config: z.array(z.object({ key: z.string(), label: z.string(), help: z.string().optional() })),
+  maxMessageBytes: z.number(),
+  reportsEvents: z.boolean(),
+  managesIdentity: z.boolean(),
+  caveats: z.array(z.string()),
+  docs: z.string(),
+  available_from_environment: z.boolean(),
+})
+export type ProviderCatalogRecord = z.infer<typeof ProviderCatalogEntry>
+
+export const ProviderConfig = z.object({
+  object: z.literal('provider'),
+  id: z.string(),
+  provider: ProviderName,
+  enabled: z.boolean(),
+  priority: z.number(),
+  weight: z.number(),
+  /** Field *names* only. There is no read path for a stored secret. */
+  credentials_set: z.array(z.string()),
+  config: z.record(z.string(), z.unknown()),
+  updated_at: z.string(),
+})
+export type ProviderConfigRecord = z.infer<typeof ProviderConfig>
+
+export const ProviderTest = z.object({
+  object: z.literal('provider_test'),
+  provider: ProviderName,
+  /** Three answers, and `unknown` is a real one. */
+  status: z.enum(['ok', 'unknown', 'failed']),
+  detail: z.string().nullable(),
+  reports_events: z.boolean().optional(),
+  max_message_bytes: z.number().optional(),
+})
+export type ProviderTestRecord = z.infer<typeof ProviderTest>
+
 // ---------------------------------------------------------------------------
 // Seed-list placement testing
 // ---------------------------------------------------------------------------
@@ -557,6 +634,163 @@ export const TemplateVersion = z.object({
 export type TemplateVersionRecord = z.infer<typeof TemplateVersion>
 
 // ---------------------------------------------------------------------------
+// Mail — one conversation model over both directions
+// ---------------------------------------------------------------------------
+
+export const MailAttachment = z.object({
+  object: z.literal('mail_attachment'),
+  id: z.string(),
+  filename: z.string(),
+  content_type: z.string(),
+  size: z.number().int(),
+  content_id: z.string().nullable(),
+  inline: z.boolean(),
+  /** Fetched by the parent and handed to the frame as a `blob:` URL. */
+  url: z.string(),
+})
+export type MailAttachmentRecord = z.infer<typeof MailAttachment>
+
+export const MailThread = z.object({
+  object: z.literal('mail_thread'),
+  id: z.string(),
+  mailbox_id: z.string().nullable(),
+  environment: z.string(),
+  subject: z.string(),
+  participants: z.array(z.string()),
+  message_count: z.number().int(),
+  unread_count: z.number().int(),
+  unread: z.boolean(),
+  has_attachments: z.boolean(),
+  starred: z.boolean(),
+  folder: z.enum(['inbox', 'sent', 'archive', 'spam', 'trash']),
+  labels: z.array(z.string()),
+  snoozed_until: z.string().nullable(),
+  last_message_at: z.string(),
+  last_direction: z.enum(['in', 'out']),
+  snippet: z.string().nullable(),
+  created_at: z.string(),
+})
+export type MailThreadRecord = z.infer<typeof MailThread>
+
+export const MailMessage = z.object({
+  object: z.literal('mail_message'),
+  id: z.string(),
+  thread_id: z.string(),
+  direction: z.enum(['in', 'out']),
+  mailbox_id: z.string().nullable(),
+  source_id: z.string().nullable(),
+  message_id: z.string().nullable(),
+  in_reply_to: z.string().nullable(),
+  references: z.array(z.string()),
+  from: z.string(),
+  from_name: z.string().nullable(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  reply_to: z.string().nullable(),
+  subject: z.string(),
+  snippet: z.string().nullable(),
+  has_attachments: z.boolean(),
+  unread: z.boolean(),
+  size_bytes: z.number().int().nullable(),
+  /** Null on outbound and on the test-mode loopback: nothing authenticated them. */
+  spf: z.string().nullable(),
+  dkim: z.string().nullable(),
+  dmarc: z.string().nullable(),
+  spam_score: z.number().nullable(),
+  parse_status: z.string().nullable(),
+  /** Which threading signal won — `reply_token` beats every RFC header. */
+  matched_by: z.string().nullable(),
+  status: z.string().nullable(),
+  at: z.string(),
+  email_id: z.string().nullable(),
+  html: z.string().nullable().optional(),
+  text: z.string().nullable().optional(),
+  body_available: z.boolean().optional(),
+  has_raw: z.boolean().optional(),
+  attachments: z.array(MailAttachment).optional(),
+})
+export type MailMessageRecord = z.infer<typeof MailMessage>
+
+/** `GET /v1/mail/threads/:id` — the thread with its messages already inlined. */
+export const MailThreadDetail = MailThread.extend({ messages: z.array(MailMessage) })
+export type MailThreadDetailRecord = z.infer<typeof MailThreadDetail>
+
+export const MailCounts = z.object({
+  object: z.literal('mail_counts'),
+  environment: z.string(),
+  folders: z.record(z.string(), z.object({ threads: z.number(), unread: z.number() })),
+})
+export type MailCountsRecord = z.infer<typeof MailCounts>
+
+export const MailLabel = z.object({
+  object: z.literal('mail_label'),
+  id: z.string(),
+  name: z.string().optional(),
+  colour: z.string().optional(),
+  created_at: z.string().optional(),
+  deleted: z.boolean().optional(),
+})
+export type MailLabelRecord = z.infer<typeof MailLabel>
+
+export const MailDraft = z.object({
+  object: z.literal('mail_draft'),
+  id: z.string(),
+  thread_id: z.string().nullable().optional(),
+  mode: z.string().nullable().optional(),
+  from: z.string().nullable().optional(),
+  to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
+  subject: z.string().nullable().optional(),
+  html: z.string().nullable().optional(),
+  text: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+  deleted: z.boolean().optional(),
+})
+export type MailDraftRecord = z.infer<typeof MailDraft>
+
+export const MailHeader = z.object({ name: z.string(), value: z.string() })
+
+export const MailUpload = z.object({
+  object: z.literal('mail_upload'),
+  id: z.string(),
+  key: z.string(),
+  filename: z.string(),
+  content_type: z.string(),
+  size: z.number().int(),
+})
+export type MailUploadRecord = z.infer<typeof MailUpload>
+
+export const MailSendResult = z.object({
+  object: z.literal('mail_send'),
+  id: z.string(),
+  thread_id: z.string().nullable(),
+  environment: z.string(),
+  suppressed: z.array(z.string()).optional(),
+  created_at: z.string(),
+})
+
+export const MailBulkResult = z.object({
+  object: z.literal('mail_bulk'),
+  updated: z.number().int(),
+})
+
+/**
+ * The thread list carries the parsed query back so the search bar can show what
+ * the server actually understood — an operator we silently dropped is how a
+ * reader ends up trusting a filtered list that was never filtered.
+ */
+export const MailThreadList = z.object({
+  object: z.literal('list'),
+  data: z.array(MailThread),
+  has_more: z.boolean(),
+  next_cursor: z.string().nullable().optional(),
+  query: z.array(z.string()).optional(),
+})
+export type MailThreadListRecord = z.infer<typeof MailThreadList>
+
+// ---------------------------------------------------------------------------
 // The client
 // ---------------------------------------------------------------------------
 
@@ -606,12 +840,41 @@ export const createApiClient = (scope: RequestScope) => {
     // --- domains -----------------------------------------------------------
     listDomains: (params: ListParams = {}) => get('/domains', list(Domain), params),
     getDomain: (id: string) => get(`/domains/${id}`, Domain),
-    createDomain: (body: { name: string; region?: string; custom_return_path?: string }) =>
-      post('/domains', Domain, body),
+    createDomain: (body: {
+      name: string
+      region?: string
+      custom_return_path?: string
+      provider?: string
+    }) => post('/domains', Domain, body),
     verifyDomain: (id: string) => post(`/domains/${id}/verify`, Domain),
     updateDomain: (id: string, body: Record<string, unknown>) =>
       patch(`/domains/${id}`, Domain, body),
     deleteDomain: (id: string) => del(`/domains/${id}`, deleted),
+    /** Asks the bound transport to create the identity, and takes its records over ours. */
+    ensureDomainIdentity: (id: string) => post(`/domains/${id}/identity`, DomainIdentity, {}),
+    /** Optional accelerator: writes the records through a Cloudflare token, where one exists. */
+    automateDomainDns: (id: string) =>
+      post(
+        `/domains/${id}/dns`,
+        z.object({
+          object: z.literal('domain_dns_automation'),
+          zone_id: z.string(),
+          written: z.array(z.string()),
+          refused: z.array(z.object({ name: z.string(), detail: z.string() })),
+          detail: z.string(),
+        }),
+        {},
+      ),
+    /** A plain URL rather than a fetch: the browser downloads it directly. */
+    domainZoneFileUrl: (id: string) => `${baseUrl()}/v1/domains/${id}/zone-file`,
+
+    // --- receiving ---------------------------------------------------------
+    listMailboxes: () => get('/inbound/mailboxes', list(InboundMailbox)),
+    createMailbox: (body: { address: string; name?: string; agent_enabled?: boolean }) =>
+      post('/inbound/mailboxes', InboundMailbox, body),
+    updateMailbox: (id: string, body: Record<string, unknown>) =>
+      patch(`/inbound/mailboxes/${id}`, InboundMailbox, body),
+    deleteMailbox: (id: string) => del(`/inbound/mailboxes/${id}`, deleted),
 
     // --- api keys ----------------------------------------------------------
     listApiKeys: (params: ListParams = {}) => get('/api-keys', list(ApiKey), params),
@@ -711,6 +974,72 @@ export const createApiClient = (scope: RequestScope) => {
     markThreadRead: (id: string, unread: boolean) =>
       patch(`/inbound/threads/${id}`, InboundThread, { unread }),
 
+    // --- mail --------------------------------------------------------------
+    // One surface over both directions. `/v1/inbound/*` still exists as a shim
+    // over the same tables, but nothing in the dashboard calls it any more.
+    listMailThreads: (params: Record<string, unknown> = {}) =>
+      get('/mail/threads', MailThreadList, params),
+    mailCounts: () => get('/mail/counts', MailCounts),
+    getMailThread: (id: string) => get(`/mail/threads/${id}`, MailThreadDetail),
+    listMailMessages: (id: string) => get(`/mail/threads/${id}/messages`, list(MailMessage)),
+    patchMailThread: (id: string, body: Record<string, unknown>) =>
+      patch(`/mail/threads/${id}`, MailThread, body),
+    bulkMailThreads: (body: Record<string, unknown>) =>
+      post('/mail/threads/bulk', MailBulkResult, body),
+    deleteMailThread: (id: string) =>
+      del(
+        `/mail/threads/${id}`,
+        z.object({ object: z.string(), id: z.string(), deleted: z.literal(true) }),
+      ),
+    getMailMessage: (id: string) => get(`/mail/messages/${id}`, MailMessage),
+    listMailHeaders: (id: string) => get(`/mail/messages/${id}/headers`, list(MailHeader)),
+    /** Not a JSON call: the raw `.eml` is bytes, and the reader shows them verbatim. */
+    getMailRaw: async (id: string): Promise<string> => {
+      const response = await fetch(`${baseUrl()}/v1/mail/messages/${id}/raw`, {
+        credentials: 'include',
+        headers: { [ENV_HEADER]: scope.environment },
+      })
+      if (!response.ok) throw new ApiClientError(response.status, null, 'No stored original.')
+      return response.text()
+    },
+    /** Fetched with credentials in the parent so the opaque-origin frame needs none. */
+    getMailAttachmentBlob: async (id: string): Promise<Blob> => {
+      const response = await fetch(`${baseUrl()}/v1/mail/attachments/${id}`, {
+        credentials: 'include',
+        headers: { [ENV_HEADER]: scope.environment },
+      })
+      if (!response.ok) throw new ApiClientError(response.status, null, 'Attachment unavailable.')
+      return response.blob()
+    },
+    uploadMailAttachment: async (file: File): Promise<MailUploadRecord> => {
+      const form = new FormData()
+      form.set('file', file)
+      const response = await fetch(`${baseUrl()}/v1/mail/attachments`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { [ENV_HEADER]: scope.environment },
+        body: form,
+      })
+      if (!response.ok) {
+        const parsed = ErrorBody.safeParse(await response.json().catch(() => null))
+        throw new ApiClientError(
+          response.status,
+          parsed.success ? parsed.data : null,
+          'Upload failed.',
+        )
+      }
+      return MailUpload.parse(await response.json())
+    },
+    sendMail: (body: Record<string, unknown>) => post('/mail/send', MailSendResult, body),
+    listMailLabels: () => get('/mail/labels', list(MailLabel)),
+    createMailLabel: (body: { name: string; colour?: string }) =>
+      post('/mail/labels', MailLabel, body),
+    deleteMailLabel: (id: string) => del(`/mail/labels/${id}`, MailLabel),
+    listMailDrafts: () => get('/mail/drafts', list(MailDraft)),
+    saveMailDraft: (id: string, body: Record<string, unknown>) =>
+      put(`/mail/drafts/${id}`, MailDraft, body),
+    deleteMailDraft: (id: string) => del(`/mail/drafts/${id}`, MailDraft),
+
     // --- analytics ---------------------------------------------------------
     // `/dashboard`, not `/overview`: the screens need the series, the two
     // breakdowns, engagement, placement and the totals for one range, and
@@ -727,6 +1056,21 @@ export const createApiClient = (scope: RequestScope) => {
     getSeedTest: (id: string) => get(`/analytics/placement-tests/${id}`, SeedTest),
     createSeedTest: (body: Record<string, unknown>) =>
       post('/analytics/placement-tests', SeedTest, body),
+
+    // --- transports --------------------------------------------------------
+    listProviders: () =>
+      get(
+        '/providers',
+        listResponse(ProviderConfig).extend({
+          environment_fallback: z.array(ProviderName).default([]),
+        }),
+      ),
+    providerCatalog: () => get('/providers/catalog', list(ProviderCatalogEntry)),
+    saveProvider: (name: string, body: Record<string, unknown>) =>
+      put(`/providers/${name}`, ProviderConfig, body),
+    testProvider: (name: string) => post(`/providers/${name}/test`, ProviderTest, {}),
+    deleteProvider: (name: string) =>
+      del(`/providers/${name}`, z.object({ object: z.string(), deleted: z.literal(true) })),
 
     // --- settings, team, preference centre ---------------------------------
     getSettings: () => get('/workspace/settings', WorkspaceSettings),

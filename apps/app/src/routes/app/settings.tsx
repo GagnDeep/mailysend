@@ -3,8 +3,6 @@ import {
   Callout,
   Input,
   Label,
-  RadioGroup,
-  RadioGroupItem,
   Select,
   SelectContent,
   SelectItem,
@@ -29,7 +27,12 @@ import { PageHeader, PageSection } from '~/components/app/page.tsx'
 import { useApi, useAppScope, useEnvironment } from '~/components/app/scope.tsx'
 import { SecurityPanel } from '~/components/app/security-panel.tsx'
 import { DetailSkeleton, ErrorState } from '~/components/app/states.tsx'
-import type { WorkspaceSettingsRecord } from '~/lib/api-client.ts'
+import type {
+  ProviderCatalogRecord,
+  ProviderConfigRecord,
+  ProviderTestRecord,
+  WorkspaceSettingsRecord,
+} from '~/lib/api-client.ts'
 import { qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
 
@@ -129,7 +132,7 @@ function SettingsTabs({ settings }: { settings: WorkspaceSettingsRecord }) {
       <TabsList className="rounded-tile border border-line bg-card" aria-label="Settings sections">
         <TabsTrigger value="workspace">Workspace</TabsTrigger>
         <TabsTrigger value="sending">Sending defaults</TabsTrigger>
-        <TabsTrigger value="provider">Provider</TabsTrigger>
+        <TabsTrigger value="provider">Transports</TabsTrigger>
         <TabsTrigger value="retention">Log retention</TabsTrigger>
         <TabsTrigger value="security">Access</TabsTrigger>
         <TabsTrigger value="danger">Danger zone</TabsTrigger>
@@ -437,52 +440,70 @@ function DefaultSendingDomainField({ settings }: { settings: WorkspaceSettingsRe
   )
 }
 
+/**
+ * Transports.
+ *
+ * This panel used to be four radio buttons writing a `provider` column that
+ * `buildRouter` never read: `provider_configs` had no write path anywhere, so
+ * whatever you picked here, sending went on using the deployment's environment
+ * variables. It now edits the rows the router actually reads, and it says which
+ * of the two is in force.
+ */
 function ProviderPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
+  const api = useApi()
   const save = useSaveSettings()
-  const [pending, setPending] = useState<Provider | null>(null)
+  const queryClient = useQueryClient()
+
+  const catalog = useQuery({
+    queryKey: qk.providerCatalog(),
+    queryFn: () => api.providerCatalog(),
+    staleTime: 5 * 60_000,
+  })
+  const configured = useQuery({ queryKey: qk.providers(), queryFn: () => api.listProviders() })
+
+  const fallback = configured.data?.environment_fallback ?? []
 
   return (
     <PageSection
-      title="Provider configuration"
-      description="Who actually carries the mail, and who picks it up when they cannot."
+      title="Transports"
+      description="Who actually carries the mail, what each one needs, and what it will not tell you."
     >
-      <Panel>
-        <fieldset className="m-0 border-0 p-0">
-          <legend className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-2">
-            Primary provider
-          </legend>
-          <RadioGroup
-            value={settings.provider}
-            onValueChange={(value) => {
-              if (value !== settings.provider) setPending(value as Provider)
-            }}
-            aria-label="Primary provider"
-          >
-            {PROVIDERS.map((provider) => (
-              <label
-                key={provider.value}
-                htmlFor={`provider-${provider.value}`}
-                className="flex cursor-pointer gap-3 rounded-code border border-line bg-paper p-3.5"
-              >
-                <RadioGroupItem
-                  id={`provider-${provider.value}`}
-                  value={provider.value}
-                  className="mt-0.5 shrink-0"
-                />
-                <span className="min-w-0">
-                  <span className="block text-[14px] font-semibold text-ink">{provider.label}</span>
-                  <span className="mt-1 block max-w-[70ch] text-[13px] leading-[1.6] text-muted">
-                    {provider.cost}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </RadioGroup>
-        </fieldset>
+      {fallback.length > 0 ? (
+        <Callout variant="info" title="Sending from the deployment's environment">
+          Nothing is enabled here, so mail goes out over{' '}
+          {fallback.map((name) => providerLabel(name)).join(', ')} using the variables this instance
+          was deployed with. That is a working setup, not a broken one — configure a transport below
+          only when you want this workspace to differ from the deployment.
+        </Callout>
+      ) : null}
 
+      {catalog.isLoading ? (
+        <DetailSkeleton />
+      ) : catalog.error ? (
+        <ErrorState
+          error={catalog.error}
+          subject="the transport catalog"
+          onRetry={() => void catalog.refetch()}
+        />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {(catalog.data?.data ?? []).map((entry) => (
+            <TransportCard
+              key={entry.provider}
+              entry={entry}
+              config={configured.data?.data.find((row) => row.provider === entry.provider) ?? null}
+              onSaved={() => {
+                void queryClient.invalidateQueries({ queryKey: qk.providers() })
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      <Panel>
         <Field
-          label="Failover provider"
-          hint="Used only when the primary refuses the handoff. A message already assigned to a provider is never re-routed mid-flight, so a failover changes the next send, not the current queue."
+          label="Failover transport"
+          hint="Used only when the primary refuses the handoff. A message already assigned to a transport is never re-routed mid-flight, so a failover changes the next send, not the current queue."
         >
           <Select
             value={settings.failover_provider ?? 'none'}
@@ -490,7 +511,7 @@ function ProviderPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
               save.mutate({ failover_provider: value === 'none' ? null : value })
             }
           >
-            <SelectTrigger className="max-w-[320px]" aria-label="Failover provider">
+            <SelectTrigger className="max-w-[320px]" aria-label="Failover transport">
               <SelectValue placeholder="No failover" />
             </SelectTrigger>
             <SelectContent>
@@ -506,41 +527,193 @@ function ProviderPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
           </Select>
         </Field>
       </Panel>
-
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => {
-          if (!open) setPending(null)
-        }}
-        title="Change the primary provider?"
-        description={
-          pending
-            ? `New sends will be handed to ${providerLabel(pending)} instead of ${providerLabel(
-                settings.provider,
-              )}.`
-            : ''
-        }
-        confirmLabel="Change provider"
-        pending={save.isPending}
-        consequences={
-          <>
-            Mail already in flight keeps the provider it was assigned, so the queue will mix the two
-            until it drains. The new provider needs its own verified sending identity and its own
-            credentials — if those are missing, sends start failing at handoff rather than silently
-            falling back.
-          </>
-        }
-        onConfirm={() => {
-          if (!pending) return
-          save.mutate(
-            { provider: pending },
-            {
-              onSettled: () => setPending(null),
-            },
-          )
-        }}
-      />
     </PageSection>
+  )
+}
+
+const bytes = (value: number): string =>
+  value >= 1024 * 1024
+    ? `${Math.round(value / (1024 * 1024))} MiB`
+    : `${Math.round(value / 1024)} KiB`
+
+function TransportCard({
+  entry,
+  config,
+  onSaved,
+}: {
+  entry: ProviderCatalogRecord
+  config: ProviderConfigRecord | null
+  onSaved: () => void
+}) {
+  const api = useApi()
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [result, setResult] = useState<ProviderTestRecord | null>(null)
+  const fieldId = useId()
+
+  const save = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.saveProvider(entry.provider, body),
+    onSuccess: () => {
+      // The form never holds a secret longer than the request that carries it.
+      setDraft({})
+      setResult(null)
+      onSaved()
+      toast.success(`${entry.label} saved.`)
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const test = useMutation({
+    mutationFn: () => api.testProvider(entry.provider),
+    onSuccess: setResult,
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const remove = useMutation({
+    mutationFn: () => api.deleteProvider(entry.provider),
+    onSuccess: () => {
+      setResult(null)
+      onSaved()
+      toast.success(`${entry.label} removed.`)
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  const isSet = (key: string) => config?.credentials_set.includes(key) ?? false
+
+  return (
+    <div className="flex flex-col gap-4 rounded-tile border border-line-soft bg-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="m-0 text-[14px] font-semibold text-ink">{entry.label}</h3>
+          <p className="mt-1 m-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-2">
+            {bytes(entry.maxMessageBytes)} max
+            {entry.reportsEvents ? ' · reports delivery events' : ' · no delivery events'}
+            {entry.available_from_environment ? ' · available from the environment' : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Label htmlFor={`${fieldId}-enabled`} className="text-[13px] text-muted">
+            Enabled
+          </Label>
+          <Switch
+            id={`${fieldId}-enabled`}
+            checked={config?.enabled ?? false}
+            onCheckedChange={(checked) => save.mutate({ enabled: checked })}
+            disabled={save.isPending}
+          />
+        </div>
+      </div>
+
+      <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+        {entry.caveats.map((caveat) => (
+          <li key={caveat} className="max-w-[80ch] text-[13px] leading-[1.6] text-muted">
+            {caveat}
+          </li>
+        ))}
+      </ul>
+
+      {entry.fields.length > 0 || entry.config.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {entry.fields.map((field) => (
+            <Field
+              key={field.key}
+              label={field.label}
+              htmlFor={`${fieldId}-${field.key}`}
+              hint={
+                field.secret && isSet(field.key)
+                  ? 'Stored. Type a new value to replace it, or clear the box and save to remove it.'
+                  : field.help
+              }
+            >
+              <Input
+                id={`${fieldId}-${field.key}`}
+                type={field.secret ? 'password' : 'text'}
+                autoComplete="off"
+                placeholder={isSet(field.key) ? '•••••••• set' : ''}
+                value={draft[field.key] ?? ''}
+                onChange={(event) =>
+                  setDraft((held) => ({ ...held, [field.key]: event.target.value }))
+                }
+              />
+            </Field>
+          ))}
+          {entry.config.map((field) => (
+            <Field
+              key={field.key}
+              label={field.label}
+              htmlFor={`${fieldId}-cfg-${field.key}`}
+              {...(field.help ? { hint: field.help } : {})}
+            >
+              <Input
+                id={`${fieldId}-cfg-${field.key}`}
+                value={draft[`cfg:${field.key}`] ?? String(config?.config[field.key] ?? '')}
+                onChange={(event) =>
+                  setDraft((held) => ({ ...held, [`cfg:${field.key}`]: event.target.value }))
+                }
+              />
+            </Field>
+          ))}
+        </div>
+      ) : null}
+
+      {result ? (
+        <Callout
+          variant={
+            result.status === 'ok' ? 'success' : result.status === 'failed' ? 'warn' : 'info'
+          }
+          title={
+            result.status === 'ok'
+              ? 'Reachable'
+              : result.status === 'failed'
+                ? 'Not reachable'
+                : 'Cannot be checked from here'
+          }
+        >
+          {result.detail ?? 'No further detail.'}
+        </Callout>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={save.isPending || Object.keys(draft).length === 0}
+          onClick={() => {
+            const credentials: Record<string, string> = {}
+            const configValues: Record<string, string> = {}
+            for (const [key, value] of Object.entries(draft)) {
+              if (key.startsWith('cfg:')) configValues[key.slice(4)] = value
+              else credentials[key] = value
+            }
+            save.mutate({
+              ...(Object.keys(credentials).length > 0 ? { credentials } : {}),
+              ...(Object.keys(configValues).length > 0 ? { config: configValues } : {}),
+            })
+          }}
+        >
+          {save.isPending ? 'Saving…' : 'Save'}
+        </Button>
+        <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+          {test.isPending ? 'Checking…' : 'Test connection'}
+        </Button>
+        {config ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Remove
+          </Button>
+        ) : null}
+        <a
+          className="self-center text-[13px] text-accent underline-offset-2 hover:underline"
+          href={entry.docs}
+        >
+          How this transport is set up
+        </a>
+      </div>
+    </div>
   )
 }
 

@@ -15,8 +15,10 @@ import { emails } from './emails.ts'
 import { inbound } from './inbound.ts'
 import { instance } from './instance.ts'
 import { logs } from './logs.ts'
+import { mail } from './mail.ts'
 import { openApiDocument } from './openapi.ts'
 import { preferences } from './preferences.ts'
+import { providers } from './providers.ts'
 import { segments } from './segments.ts'
 import { setup } from './setup.ts'
 import { suppressions } from './suppressions.ts'
@@ -36,7 +38,7 @@ api.use(
   '*',
   cors({
     origin: '*',
-    allowHeaders: ['authorization', 'content-type', 'idempotency-key'],
+    allowHeaders: ['authorization', 'content-type', 'idempotency-key', 'ms-environment'],
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     maxAge: 86_400,
   }),
@@ -69,6 +71,8 @@ api.route('/webhooks', webhooks)
 api.route('/logs', logs)
 api.route('/analytics', analytics)
 api.route('/inbound', inbound)
+api.route('/mail', mail)
+api.route('/providers', providers)
 api.route('/workspace', workspace)
 api.route('/preference-centre', preferences)
 // Unauthenticated by design — this is how a session comes into existence.

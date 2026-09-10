@@ -10,8 +10,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from '@mailysend/ui'
-import { RefreshCw } from 'lucide-react'
+import { Copy, Download, RefreshCw } from 'lucide-react'
 import { CopyValue } from '~/components/app/copy-value.tsx'
 import { relativeTime } from '~/components/app/format.ts'
 import type { DomainRecord } from '~/lib/api-client.ts'
@@ -35,6 +36,8 @@ interface RecordDiagnostics {
   expected?: string | null
   error?: string | null
   last_checked_at?: string | null
+  /** `observe` is a record the transport publishes itself. */
+  origin?: 'copy' | 'observe'
 }
 
 const diagnose = (record: DnsRecord): RecordDiagnostics => record as DnsRecord & RecordDiagnostics
@@ -58,12 +61,19 @@ export const DnsRecordTable = ({
   domain,
   onVerify,
   verifying,
+  zoneFileHref,
 }: {
   domain: DomainRecord
   onVerify: () => void
   verifying: boolean
+  /** When given, offers the whole set as a BIND zone file. */
+  zoneFileHref?: string
 }) => {
   const records = domain.records ?? []
+  // Records the transport publishes itself are shown, because verification
+  // resolves them — but they must never be presented as something to copy.
+  const copyable = records.filter((record) => diagnose(record).origin !== 'observe')
+  const managed = records.filter((record) => diagnose(record).origin === 'observe')
   const specific = records.some((record) => record.provider !== 'all')
   const lastChecked = records
     .map((record) => diagnose(record).last_checked_at)
@@ -79,11 +89,53 @@ export const DnsRecordTable = ({
             ? `Last checked ${relativeTime(lastChecked)}.`
             : 'These records have not been checked yet.'}
         </p>
-        <Button size="sm" variant="outline" onClick={onVerify} disabled={verifying}>
-          <RefreshCw aria-hidden="true" className={verifying ? 'animate-spin' : undefined} />
-          {verifying ? 'Checking…' : 'Check records'}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {copyable.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Tab-separated, which is what every registrar's bulk import and
+                // every spreadsheet reads without further work.
+                const text = copyable
+                  .map((record) =>
+                    [record.record, record.name, record.value, record.priority ?? ''].join('\t'),
+                  )
+                  .join('\n')
+                void navigator.clipboard.writeText(text).then(
+                  () => toast.success('All records copied.'),
+                  () => toast.error('The clipboard refused. Select the values instead.'),
+                )
+              }}
+            >
+              <Copy aria-hidden="true" />
+              Copy all
+            </Button>
+          ) : null}
+          {zoneFileHref && copyable.length > 0 ? (
+            <Button size="sm" variant="outline" asChild>
+              <a href={zoneFileHref} download={`${domain.name}.zone`}>
+                <Download aria-hidden="true" />
+                Zone file
+              </a>
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={onVerify} disabled={verifying}>
+            <RefreshCw aria-hidden="true" className={verifying ? 'animate-spin' : undefined} />
+            {verifying ? 'Checking…' : 'Check records'}
+          </Button>
+        </div>
       </div>
+
+      {managed.length > 0 ? (
+        <Callout variant="info" title="Some of these are published for you">
+          {managed.length} of these {records.length} records are written by{' '}
+          {PROVIDER_LABEL[managed[0]?.provider ?? ''] ?? managed[0]?.provider} itself when you
+          onboard the domain there. They are listed because we check them, not because you should
+          add them — publishing your own version of a record the provider manages is how a domain
+          ends up with two conflicting answers.
+        </Callout>
+      ) : null}
 
       <div className="overflow-x-auto rounded-tile border border-line-soft bg-card">
         <Table>
@@ -118,7 +170,13 @@ export const DnsRecordTable = ({
                       <MonoChip size="sm">{record.record}</MonoChip>
                     </TableCell>
                     <TableCell className="min-w-[220px]">
-                      <CopyValue value={record.name} label={`${record.record} record name`} />
+                      {detail.origin === 'observe' ? (
+                        <span className="block font-mono text-[12.5px] text-ink">
+                          {record.name}
+                        </span>
+                      ) : (
+                        <CopyValue value={record.name} label={`${record.record} record name`} />
+                      )}
                       {record.purpose ? (
                         <span className="mt-1 block text-[12.5px] leading-snug text-muted-2">
                           {record.purpose}
@@ -126,12 +184,22 @@ export const DnsRecordTable = ({
                       ) : null}
                     </TableCell>
                     <TableCell className="min-w-[280px] max-w-[420px]">
-                      <CopyValue
-                        value={record.value}
-                        label={`${record.record} record value`}
-                        truncate={false}
-                        className="items-start"
-                      />
+                      {detail.origin === 'observe' ? (
+                        <span className="block font-mono text-[12.5px] leading-snug text-muted">
+                          {record.value}
+                          <span className="mt-1 block font-sans text-[12px] text-muted-2">
+                            Published by {PROVIDER_LABEL[record.provider] ?? record.provider} — do
+                            not add this by hand.
+                          </span>
+                        </span>
+                      ) : (
+                        <CopyValue
+                          value={record.value}
+                          label={`${record.record} record value`}
+                          truncate={false}
+                          className="items-start"
+                        />
+                      )}
                     </TableCell>
                     <TableCell className="font-mono text-[12.5px] text-muted">
                       {record.ttl}

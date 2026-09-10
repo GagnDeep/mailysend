@@ -185,10 +185,10 @@ export class MailboxActor extends Actor {
       input.message.from_address,
       input.message.subject,
       input.message.snippet,
-      input.message.message_id_header,
-      input.message.in_reply_to,
+      input.message.message_id_header ?? null,
+      input.message.in_reply_to ?? null,
       input.message.received_at,
-      input.message.matched_by,
+      input.message.matched_by ?? null,
     )
 
     sql.exec(

@@ -8,6 +8,7 @@ import {
 } from '../bootstrap.ts'
 import { tenancyFor } from '../context.ts'
 import { getEnv } from '../env.ts'
+import { oidcConfig } from './auth-oidc.ts'
 import { createRouter } from './base.ts'
 
 /**
@@ -45,6 +46,7 @@ instance.get('/', async () => {
 
   const verifiedDomains = verified?.n ?? 0
   const access = Boolean(env.MS_ACCESS_TEAM && env.MS_ACCESS_AUD)
+  const oidcSet = oidcConfig()
 
   return Response.json({
     object: 'instance',
@@ -61,6 +63,10 @@ instance.get('/', async () => {
       // An emailed code is only a real option once something can be emailed.
       otp: verifiedDomains > 0,
       device: true,
+      // Rendered only when all three of issuer, client id and secret are set,
+      // so the button on the sign-in page is never a button that cannot work.
+      oidc: oidcSet !== null,
+      oidc_label: oidcSet?.label ?? null,
     },
     sending: {
       ready: verifiedDomains > 0,

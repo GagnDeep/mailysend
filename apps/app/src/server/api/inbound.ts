@@ -1,5 +1,5 @@
 import { apiError, SendEmailRequest } from '@mailysend/contracts'
-import { doName, newId, r2Key } from '@mailysend/core'
+import { newId } from '@mailysend/core'
 import { z } from 'zod'
 import { requireRole, requireScope } from '../auth.ts'
 import type { Ctx } from '../context.ts'
@@ -7,17 +7,16 @@ import { acceptEmail } from '../send/accept.ts'
 import { type App, createRouter, json, page, parseLimit, withContext } from './base.ts'
 
 /**
- * `/v1/inbound` — received mail.
+ * `/v1/inbound` — received mail, as the public API has always described it.
  *
- * Threads and the search index live in each mailbox's own actor, because a
- * mailbox is the natural serialisation point for threading and because FTS5
- * inside the actor answers "what did this customer say about refunds?" in one
- * hop. Bodies never go in there: they stay in object storage, which is what
- * keeps a mailbox with a decade of mail in it small enough to search.
+ * This is now a view over the conversation model in `mail_threads` /
+ * `mail_messages` rather than a second implementation. It used to read
+ * `inbound_threads`, a table nothing has ever written, and filter every result
+ * against it — so the endpoint was structurally incapable of returning a row,
+ * and both the dashboard and the SDK saw an inbox that was permanently empty.
  *
- * `inbound_threads` in SQL is the existence record. A thread the customer
- * deleted is gone from there, so listings and search results are filtered
- * against it rather than trusting the actor's index, which is append-only.
+ * The shapes are unchanged, because they are documented and an SDK depends on
+ * them. `/v1/mail` is the richer surface the dashboard uses.
  */
 
 const inbound: App = createRouter()
@@ -33,25 +32,36 @@ interface MailboxRow {
   created_at: string
 }
 
-interface InboundMessageRow {
+interface ThreadRow {
+  id: string
+  mailbox_id: string | null
+  subject: string
+  participants: string
+  message_count: number
+  unread_count: number
+  last_message_at: string
+  created_at: string
+}
+
+interface MessageRow {
   id: string
   thread_id: string
-  mailbox_id: string
+  mailbox_id: string | null
   message_id_header: string | null
   in_reply_to: string | null
   from_address: string
   to_addresses: string
   subject: string
   snippet: string
-  raw_key: string
   body_key: string | null
+  raw_key: string | null
   spf: string | null
   dkim: string | null
   dmarc: string | null
   spam_score: number | null
   parse_status: string
   matched_by: string | null
-  received_at: string
+  at: string
 }
 
 const toMailbox = (row: MailboxRow) => ({
@@ -63,6 +73,35 @@ const toMailbox = (row: MailboxRow) => ({
   agent_enabled: Boolean(row.agent_enabled),
   created_at: row.created_at,
 })
+
+const parseJsonList = (raw: string | null): string[] => {
+  if (!raw) return []
+  try {
+    const value = JSON.parse(raw)
+    return Array.isArray(value) ? (value as string[]) : []
+  } catch {
+    // Participants written before the column was JSON, or by a different tool.
+    return raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  }
+}
+
+const toThread = (row: ThreadRow) => ({
+  object: 'inbound_thread' as const,
+  id: row.id,
+  mailbox_id: row.mailbox_id,
+  subject: row.subject,
+  participants: parseJsonList(row.participants),
+  message_count: row.message_count,
+  unread: row.unread_count > 0,
+  last_message_at: row.last_message_at,
+})
+
+// ---------------------------------------------------------------------------
+// Mailboxes
+// ---------------------------------------------------------------------------
 
 inbound.get('/mailboxes', async (c) => {
   const ctx = c.get('ctx')
@@ -137,6 +176,50 @@ inbound.post('/mailboxes', async (c) => {
   })
 })
 
+inbound.patch('/mailboxes/:id', async (c) => {
+  const ctx = c.get('ctx')
+  requireScope(ctx.actor, 'inbound:write')
+  requireRole(ctx.actor, 'developer')
+  const body = z
+    .object({
+      name: z.string().max(120).nullable().optional(),
+      forward_webhook_id: z.string().max(64).nullable().optional(),
+      agent_enabled: z.boolean().optional(),
+    })
+    .parse(await c.req.json())
+
+  const sets: string[] = []
+  const params: unknown[] = []
+  if (body.name !== undefined) {
+    sets.push('name = ?')
+    params.push(body.name)
+  }
+  if (body.forward_webhook_id !== undefined) {
+    sets.push('forward_webhook_id = ?')
+    params.push(body.forward_webhook_id)
+  }
+  if (body.agent_enabled !== undefined) {
+    sets.push('agent_enabled = ?')
+    params.push(body.agent_enabled ? 1 : 0)
+  }
+  if (sets.length === 0) throw apiError('validation_error', { message: 'Nothing to change.' })
+
+  const res = await ctx.sql
+    .prepare(`UPDATE inbound_mailboxes SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`)
+    .bind(...params, c.req.param('id'), ctx.workspace.id)
+    .run()
+  if (res.meta.changes === 0) throw apiError('not_found')
+
+  const row = await ctx.sql
+    .prepare(
+      `SELECT id, address, name, forward_webhook_id, agent_enabled, created_at
+         FROM inbound_mailboxes WHERE id = ? AND workspace_id = ?`,
+    )
+    .bind(c.req.param('id'), ctx.workspace.id)
+    .first<MailboxRow>()
+  return json(toMailbox(row!))
+})
+
 inbound.delete('/mailboxes/:id', async (c) => {
   const ctx = c.get('ctx')
   requireScope(ctx.actor, 'inbound:write')
@@ -152,107 +235,90 @@ inbound.delete('/mailboxes/:id', async (c) => {
   return json({ object: 'inbound_mailbox', id, deleted: true })
 })
 
+// ---------------------------------------------------------------------------
+// Threads
+// ---------------------------------------------------------------------------
+
 inbound.get('/threads', async (c) => {
   const ctx = c.get('ctx')
   const limit = parseLimit(c.req.query('limit'))
   const before = c.req.query('cursor') ?? c.req.query('before')
   const unreadOnly = c.req.query('unread') === 'true'
-  const mailboxes = await listMailboxes(ctx, c.req.query('mailbox_id'))
+  const mailboxId = c.req.query('mailbox_id')
 
-  const collected: ThreadSummary[] = []
-  for (const mailbox of mailboxes) {
-    const stub = ctx.env.MAILBOX.get(doName('Mailbox', ctx.workspace.id, mailbox.id))
-    const threads = await stub.listThreads({ limit: limit + 1, before, unreadOnly })
-    for (const thread of threads as ActorThread[]) {
-      collected.push({
-        object: 'inbound_thread',
-        id: thread.id,
-        mailbox_id: mailbox.id,
-        subject: thread.subject,
-        participants: parseJsonList(thread.participants),
-        message_count: thread.message_count,
-        unread: Boolean(thread.unread),
-        last_message_at: thread.last_message_at,
-      })
-    }
+  const where = ['workspace_id = ?', 'environment = ?', "last_direction = 'in'"]
+  const params: unknown[] = [ctx.workspace.id, ctx.actor.environment]
+  if (mailboxId) {
+    where.push('mailbox_id = ?')
+    params.push(mailboxId)
+  }
+  if (unreadOnly) where.push('unread_count > 0')
+  if (before) {
+    where.push('last_message_at < ?')
+    params.push(before)
   }
 
-  collected.sort((a, b) => (a.last_message_at < b.last_message_at ? 1 : -1))
-  const live = await filterLiveThreads(ctx, collected)
-  const paged = page(live, limit)
+  const rows = await ctx.sql
+    .prepare(
+      `SELECT id, mailbox_id, subject, participants, message_count, unread_count,
+              last_message_at, created_at
+         FROM mail_threads WHERE ${where.join(' AND ')}
+        ORDER BY last_message_at DESC LIMIT ?`,
+    )
+    .bind(...params, limit + 1)
+    .all<ThreadRow>()
 
+  const paged = page(rows.results.map(toThread), limit)
   return json({
     ...paged,
-    // The actor pages on time, not on the id, so the cursor is a timestamp.
+    // The list pages on time, not on the id, so the cursor is a timestamp.
     next_cursor: paged.has_more ? (paged.data.at(-1)?.last_message_at ?? null) : null,
   })
 })
 
 inbound.get('/threads/:id', async (c) => {
   const ctx = c.get('ctx')
-  const threadId = c.req.param('id')
-  const thread = await ctx.sql
-    .prepare(
-      `SELECT id, mailbox_id, subject, participants, message_count, unread, last_message_at, created_at
-         FROM inbound_threads WHERE id = ? AND workspace_id = ?`,
-    )
-    .bind(threadId, ctx.workspace.id)
-    .first<{
-      id: string
-      mailbox_id: string
-      subject: string
-      participants: string
-      message_count: number
-      unread: number
-      last_message_at: string
-      created_at: string
-    }>()
-  if (!thread) throw apiError('not_found')
+  const thread = await loadThread(ctx, c.req.param('id'))
+  const rows = await listMessages(ctx, thread.id)
+  const messages = await Promise.all(rows.map((row) => withBody(ctx, row)))
+  return json({ ...toThread(thread), messages })
+})
 
-  const rows = await ctx.sql
-    .prepare(
-      `SELECT id, thread_id, mailbox_id, message_id_header, in_reply_to, from_address, to_addresses,
-              subject, snippet, raw_key, body_key, spf, dkim, dmarc, spam_score, parse_status,
-              matched_by, received_at
-         FROM inbound_messages WHERE workspace_id = ? AND thread_id = ?
-        ORDER BY received_at ASC LIMIT 200`,
-    )
-    .bind(ctx.workspace.id, threadId)
-    .all<InboundMessageRow>()
+/** The route the dashboard has always called and that has never existed. */
+inbound.get('/threads/:id/messages', async (c) => {
+  const ctx = c.get('ctx')
+  const thread = await loadThread(ctx, c.req.param('id'))
+  const rows = await listMessages(ctx, thread.id)
+  const data = await Promise.all(rows.map((row) => withBody(ctx, row)))
+  return json({ object: 'list', data, has_more: false, next_cursor: null })
+})
 
-  const messages = await Promise.all(rows.results.map((row) => withBody(ctx, row)))
-
-  ctx.background(
-    ctx.env.MAILBOX.get(doName('Mailbox', ctx.workspace.id, thread.mailbox_id)).markRead(
-      threadId,
-      true,
-    ),
-  )
-
-  return json({
-    object: 'inbound_thread',
-    id: thread.id,
-    mailbox_id: thread.mailbox_id,
-    subject: thread.subject,
-    participants: parseJsonList(thread.participants),
-    message_count: thread.message_count,
-    unread: Boolean(thread.unread),
-    last_message_at: thread.last_message_at,
-    messages,
-  })
+/** Likewise: the read/unread toggle the dashboard has always sent. */
+inbound.patch('/threads/:id', async (c) => {
+  const ctx = c.get('ctx')
+  const body = z.object({ unread: z.boolean() }).parse(await c.req.json())
+  const thread = await loadThread(ctx, c.req.param('id'))
+  await ctx.sql
+    .prepare('UPDATE mail_threads SET unread_count = ? WHERE id = ? AND workspace_id = ?')
+    .bind(body.unread ? 1 : 0, thread.id, ctx.workspace.id)
+    .run()
+  await ctx.sql
+    .prepare('UPDATE mail_messages SET unread = ? WHERE workspace_id = ? AND thread_id = ?')
+    .bind(body.unread ? 1 : 0, ctx.workspace.id, thread.id)
+    .run()
+  return json({ ...toThread({ ...thread, unread_count: body.unread ? 1 : 0 }) })
 })
 
 inbound.get('/messages/:id', async (c) => {
   const ctx = c.get('ctx')
-  const row = await loadMessage(ctx, c.req.param('id'))
-  return json(await withBody(ctx, row))
+  return json(await withBody(ctx, await loadMessage(ctx, c.req.param('id'))))
 })
 
 /** The original MIME, byte for byte. The only thing that settles an argument about a header. */
 inbound.get('/messages/:id/raw', async (c) => {
   const ctx = c.get('ctx')
   const row = await loadMessage(ctx, c.req.param('id'))
-  const object = await ctx.blob.get(row.raw_key)
+  const object = row.raw_key ? await ctx.blob.get(row.raw_key) : null
   if (!object) {
     throw apiError('not_found', { message: 'The raw message is no longer in storage.' })
   }
@@ -277,7 +343,7 @@ inbound.post('/threads/:id/reply', async (c) => {
   requireScope(ctx.actor, 'emails:send')
   const body = z
     .object({
-      from: z.string().min(3).max(320),
+      from: z.string().min(3).max(320).optional(),
       to: z.array(z.string().min(3).max(320)).min(1).max(50).optional(),
       subject: z.string().max(998).optional(),
       html: z.string().max(2_000_000).optional(),
@@ -288,25 +354,12 @@ inbound.post('/threads/:id/reply', async (c) => {
     throw apiError('no_content', { param: 'html' })
   }
 
-  const threadId = c.req.param('id')
-  const rows = await ctx.sql
-    .prepare(
-      `SELECT id, message_id_header, from_address, subject, received_at
-         FROM inbound_messages WHERE workspace_id = ? AND thread_id = ?
-        ORDER BY received_at ASC LIMIT 200`,
-    )
-    .bind(ctx.workspace.id, threadId)
-    .all<{
-      id: string
-      message_id_header: string | null
-      from_address: string
-      subject: string
-      received_at: string
-    }>()
-  if (rows.results.length === 0) throw apiError('not_found')
+  const thread = await loadThread(ctx, c.req.param('id'))
+  const rows = await listMessages(ctx, thread.id)
+  if (rows.length === 0) throw apiError('not_found')
 
-  const last = rows.results.at(-1)!
-  const references = rows.results
+  const last = rows.at(-1)!
+  const references = rows
     .map((row) => row.message_id_header)
     .filter((value): value is string => Boolean(value))
 
@@ -316,10 +369,21 @@ inbound.post('/threads/:id/reply', async (c) => {
   // has been rewritten by an intermediary, which happens constantly.
   if (references.length) headers.References = references.join(' ')
 
+  // The address the message arrived at is the address the reply comes from,
+  // unless the caller says otherwise. Guessing anything else sends a reply
+  // from a mailbox the recipient has never seen.
+  const from = body.from ?? (await defaultFrom(ctx, thread.mailbox_id))
+  if (!from) {
+    throw apiError('validation_error', {
+      message: '`from` is required: this conversation has no mailbox to reply from.',
+      param: 'from',
+    })
+  }
+
   const subject =
     body.subject ?? (/^re:/i.test(last.subject) ? last.subject : `Re: ${last.subject}`)
   const request = SendEmailRequest.parse({
-    from: body.from,
+    from,
     to: body.to ?? [last.from_address],
     subject: subject || '(no subject)',
     html: body.html,
@@ -330,7 +394,7 @@ inbound.post('/threads/:id/reply', async (c) => {
 
   return json({
     object: 'inbound_reply',
-    thread_id: threadId,
+    thread_id: thread.id,
     id: accepted.id,
     in_reply_to: last.message_id_header,
     references,
@@ -343,188 +407,135 @@ inbound.get('/search', async (c) => {
   const query = c.req.query('q')
   if (!query) throw apiError('validation_error', { message: '`q` is required.', param: 'q' })
   const limit = parseLimit(c.req.query('limit'), 20, 50)
-  const mailboxes = await listMailboxes(ctx, c.req.query('mailbox_id'))
 
-  const hits: SearchHit[] = []
-  for (const mailbox of mailboxes) {
-    const stub = ctx.env.MAILBOX.get(doName('Mailbox', ctx.workspace.id, mailbox.id))
-    for (const hit of (await stub.search(query, limit)) as ActorMessage[]) {
-      hits.push({
-        object: 'inbound_message',
-        id: hit.id,
-        thread_id: hit.thread_id,
-        mailbox_id: mailbox.id,
-        from: hit.from_address,
-        subject: hit.subject,
-        snippet: hit.snippet,
-        received_at: hit.received_at,
-      })
-    }
-  }
+  // FTS5 treats several punctuation characters as operators; quoting the whole
+  // query makes user input a literal phrase rather than a syntax error.
+  const safe = `"${query.replace(/"/g, '')}"`
+  const rows = await ctx.sql
+    .prepare(
+      `SELECT m.id, m.thread_id, m.mailbox_id, m.from_address, m.subject, m.snippet, m.at
+         FROM mail_search s
+         JOIN mail_messages m ON m.id = s.message_id AND m.workspace_id = s.workspace_id
+        WHERE s.workspace_id = ? AND s.environment = ? AND mail_search MATCH ?
+        ORDER BY rank LIMIT ?`,
+    )
+    .bind(ctx.workspace.id, ctx.actor.environment, safe, limit + 1)
+    .all<{
+      id: string
+      thread_id: string
+      mailbox_id: string | null
+      from_address: string
+      subject: string
+      snippet: string
+      at: string
+    }>()
 
-  hits.sort((a, b) => (a.received_at < b.received_at ? 1 : -1))
-  const live = await filterLiveThreads(ctx, hits)
+  const hasMore = rows.results.length > limit
   return json({
     object: 'list',
-    data: live.slice(0, limit),
-    has_more: live.length > limit,
+    data: (hasMore ? rows.results.slice(0, limit) : rows.results).map((hit) => ({
+      object: 'inbound_message' as const,
+      id: hit.id,
+      thread_id: hit.thread_id,
+      mailbox_id: hit.mailbox_id,
+      from: hit.from_address,
+      subject: hit.subject,
+      snippet: hit.snippet,
+      received_at: hit.at,
+    })),
+    has_more: hasMore,
     next_cursor: null,
   })
 })
 
-/**
- * Deleting a thread removes the SQL record and the stored bodies.
- *
- * The mailbox actor's index is append-only, so its headers survive until the
- * mailbox is compacted; filtering every read through `inbound_threads` is what
- * makes the deletion true from the outside on the very next request.
- */
 inbound.delete('/threads/:id', async (c) => {
   const ctx = c.get('ctx')
   requireScope(ctx.actor, 'inbound:write')
   requireRole(ctx.actor, 'developer')
-  const threadId = c.req.param('id')
+  const thread = await loadThread(ctx, c.req.param('id'))
 
-  const messages = await ctx.sql
-    .prepare(
-      'SELECT id, raw_key, body_key FROM inbound_messages WHERE workspace_id = ? AND thread_id = ?',
-    )
-    .bind(ctx.workspace.id, threadId)
-    .all<{ id: string; raw_key: string; body_key: string | null }>()
-
-  const res = await ctx.sql
-    .prepare('DELETE FROM inbound_threads WHERE id = ? AND workspace_id = ?')
-    .bind(threadId, ctx.workspace.id)
-    .run()
-  if (res.meta.changes === 0) throw apiError('not_found')
-
+  const messages = await listMessages(ctx, thread.id)
+  const { deleteThreadRows } = await import('../services/mail.ts')
+  await deleteThreadRows(ctx.sql, ctx.workspace.id, thread.id)
   await ctx.sql
     .prepare('DELETE FROM inbound_messages WHERE workspace_id = ? AND thread_id = ?')
-    .bind(ctx.workspace.id, threadId)
+    .bind(ctx.workspace.id, thread.id)
     .run()
 
-  const keys = messages.results.flatMap((row) =>
+  const keys = messages.flatMap((row) =>
     [row.raw_key, row.body_key].filter((k): k is string => Boolean(k)),
   )
   if (keys.length) ctx.background(ctx.blob.delete(keys))
 
   return json({
     object: 'inbound_thread',
-    id: threadId,
+    id: thread.id,
     deleted: true,
-    messages_deleted: messages.results.length,
+    messages_deleted: messages.length,
   })
 })
 
 // ---------------------------------------------------------------------------
 
-interface ThreadSummary {
-  object: 'inbound_thread'
-  id: string
-  mailbox_id: string
-  subject: string
-  participants: string[]
-  message_count: number
-  unread: boolean
-  last_message_at: string
-}
-
-interface SearchHit {
-  object: 'inbound_message'
-  id: string
-  thread_id: string
-  mailbox_id: string
-  from: string
-  subject: string
-  snippet: string
-  received_at: string
-}
-
-interface ActorThread {
-  id: string
-  subject: string
-  participants: string
-  message_count: number
-  unread: number
-  last_message_at: string
-}
-
-interface ActorMessage {
-  id: string
-  thread_id: string
-  from_address: string
-  subject: string
-  snippet: string
-  received_at: string
-}
-
-const parseJsonList = (raw: string | null): string[] => {
-  if (!raw) return []
-  try {
-    return JSON.parse(raw) as string[]
-  } catch {
-    // Participants written before the column was JSON, or by a different tool.
-    return raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-  }
-}
-
-async function listMailboxes(ctx: Ctx, mailboxId?: string): Promise<{ id: string }[]> {
-  const rows = await ctx.sql
-    .prepare(
-      `SELECT id FROM inbound_mailboxes WHERE workspace_id = ?${mailboxId ? ' AND id = ?' : ''}
-        ORDER BY id ASC LIMIT 20`,
-    )
-    .bind(ctx.workspace.id, ...(mailboxId ? [mailboxId] : []))
-    .all<{ id: string }>()
-  if (mailboxId && rows.results.length === 0)
-    throw apiError('not_found', { message: 'No such mailbox.' })
-  return rows.results
-}
-
-/** Drops rows whose thread no longer exists in SQL — see the DELETE handler. */
-async function filterLiveThreads<T extends { id?: string; thread_id?: string }>(
-  ctx: Ctx,
-  rows: T[],
-): Promise<T[]> {
-  const ids = [
-    ...new Set(
-      rows.map((row) => row.thread_id ?? row.id).filter((id): id is string => Boolean(id)),
-    ),
-  ]
-  if (ids.length === 0) return rows
-  const live = await ctx.sql
-    .prepare(
-      `SELECT id FROM inbound_threads WHERE workspace_id = ? AND id IN (${ids.map(() => '?').join(', ')})`,
-    )
-    .bind(ctx.workspace.id, ...ids)
-    .all<{ id: string }>()
-  const kept = new Set(live.results.map((row) => row.id))
-  return rows.filter((row) => kept.has(row.thread_id ?? row.id ?? ''))
-}
-
-async function loadMessage(ctx: Ctx, id: string): Promise<InboundMessageRow> {
+async function loadThread(ctx: Ctx, id: string): Promise<ThreadRow> {
   const row = await ctx.sql
     .prepare(
-      `SELECT id, thread_id, mailbox_id, message_id_header, in_reply_to, from_address, to_addresses,
-              subject, snippet, raw_key, body_key, spf, dkim, dmarc, spam_score, parse_status,
-              matched_by, received_at
-         FROM inbound_messages WHERE id = ? AND workspace_id = ?`,
+      `SELECT id, mailbox_id, subject, participants, message_count, unread_count,
+              last_message_at, created_at
+         FROM mail_threads WHERE id = ? AND workspace_id = ?`,
     )
     .bind(id, ctx.workspace.id)
-    .first<InboundMessageRow>()
+    .first<ThreadRow>()
   if (!row) throw apiError('not_found')
   return row
 }
 
-async function withBody(ctx: Ctx, row: InboundMessageRow) {
-  const key = row.body_key ?? r2Key.inbound(ctx.workspace.id, row.thread_id, `${row.id}.json`)
-  const object = await ctx.blob.get(key).catch(() => null)
+const MESSAGE_COLUMNS = `id, thread_id, mailbox_id, message_id_header, in_reply_to, from_address,
+  to_addresses, subject, snippet, body_key, raw_key, spf, dkim, dmarc, spam_score,
+  parse_status, matched_by, at`
+
+async function listMessages(ctx: Ctx, threadId: string): Promise<MessageRow[]> {
+  const rows = await ctx.sql
+    .prepare(
+      `SELECT ${MESSAGE_COLUMNS} FROM mail_messages
+        WHERE workspace_id = ? AND thread_id = ? ORDER BY at ASC LIMIT 200`,
+    )
+    .bind(ctx.workspace.id, threadId)
+    .all<MessageRow>()
+  return rows.results
+}
+
+async function loadMessage(ctx: Ctx, id: string): Promise<MessageRow> {
+  const row = await ctx.sql
+    .prepare(`SELECT ${MESSAGE_COLUMNS} FROM mail_messages WHERE id = ? AND workspace_id = ?`)
+    .bind(id, ctx.workspace.id)
+    .first<MessageRow>()
+  if (!row) throw apiError('not_found')
+  return row
+}
+
+async function defaultFrom(ctx: Ctx, mailboxId: string | null): Promise<string | null> {
+  if (!mailboxId) return null
+  const row = await ctx.sql
+    .prepare('SELECT address FROM inbound_mailboxes WHERE id = ? AND workspace_id = ?')
+    .bind(mailboxId, ctx.workspace.id)
+    .first<{ address: string }>()
+  return row?.address ?? null
+}
+
+async function withBody(ctx: Ctx, row: MessageRow) {
+  const object = row.body_key ? await ctx.blob.get(row.body_key).catch(() => null) : null
   const parsed = object
     ? ((await object.json()) as { html?: string | null; text?: string | null })
     : null
+
+  const attachments = await ctx.sql
+    .prepare(
+      `SELECT id, filename, content_type, size FROM mail_attachments
+        WHERE workspace_id = ? AND message_id = ? ORDER BY id`,
+    )
+    .bind(ctx.workspace.id, row.id)
+    .all<{ id: string; filename: string; content_type: string; size: number }>()
 
   return {
     object: 'inbound_message' as const,
@@ -546,7 +557,13 @@ async function withBody(ctx: Ctx, row: InboundMessageRow) {
     spam_score: row.spam_score,
     parse_status: row.parse_status,
     matched_by: row.matched_by,
-    received_at: row.received_at,
+    attachments: attachments.results.map((a) => ({
+      filename: a.filename,
+      content_type: a.content_type,
+      size: a.size,
+      url: `/v1/mail/attachments/${a.id}`,
+    })),
+    received_at: row.at,
   }
 }
 
