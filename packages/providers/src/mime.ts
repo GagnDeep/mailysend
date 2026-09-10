@@ -43,6 +43,16 @@ const foldHeader = (name: string, value: string): string => {
   return out.join(`${CRLF} `)
 }
 
+/** Plain base64, unwrapped — for a JSON payload rather than a MIME part. */
+export const base64 = (bytes: Uint8Array): string => {
+  let bin = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(bin)
+}
+
 const base64Chunked = (bytes: Uint8Array): string => {
   let bin = ''
   const CHUNK = 0x8000

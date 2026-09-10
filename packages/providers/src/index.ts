@@ -1,7 +1,9 @@
 export {
   CLOUDFLARE_LIMITS,
+  type CloudflareEmail,
   CloudflareProvider,
   type CloudflareProviderConfig,
+  type SendEmailBinding,
 } from './adapters/cloudflare.ts'
 export { RESEND_LIMITS, ResendProvider, type ResendProviderConfig } from './adapters/resend.ts'
 export { SES_LIMITS, SesProvider, type SesProviderConfig } from './adapters/ses.ts'

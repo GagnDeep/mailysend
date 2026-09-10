@@ -96,14 +96,15 @@ export interface Env {
   WORKSPACE_HUB: ActorNs
 
   // --- outbound -----------------------------------------------------------
-  /** The `send_email` binding. Present only on Workers. */
-  SEND_EMAIL?: {
-    send(message: {
-      from: string
-      to: string[]
-      raw: string
-    }): Promise<{ messageId?: string } | undefined>
-  }
+  /**
+   * The `send_email` binding. Present only on Workers.
+   *
+   * Cloudflare Email Service reads structured fields. This said `raw` — a field
+   * it does not have — so the typechecker agreed with an adapter that could
+   * never send anything. `CloudflareEmail` in the providers package is the
+   * shape the service actually documents; this defers to it.
+   */
+  SEND_EMAIL?: import('@mailysend/providers').SendEmailBinding
   CLOUDFLARE_ACCOUNT_ID?: string
   CLOUDFLARE_API_TOKEN?: string
   SES_ACCESS_KEY_ID?: string

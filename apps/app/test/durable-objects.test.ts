@@ -90,3 +90,76 @@ describe('the exported Durable Objects', () => {
     await expect(instance.getVerification()).resolves.toMatchObject({ status: 'verified' })
   })
 })
+
+/**
+ * The circuit breaker, which could open but never close.
+ *
+ * `recordFailure` counted failures for the life of the actor and cleared them
+ * only on a success. Once five had accumulated — over minutes or over weeks —
+ * the sixth failure re-opened the breaker instantly, and so did the seventh:
+ * the domain was gated forever, thirty seconds at a time, and the success that
+ * would have cleared it was the one thing the breaker no longer allowed.
+ *
+ * A production instance reached exactly that state, and then reported "the
+ * provider circuit breaker is open after repeated failures" for every send,
+ * long after the failures it was reacting to had been fixed.
+ */
+describe('the sending governor', () => {
+  const actorOn = (stored: Map<string, unknown>) =>
+    new worker.SendingDomainDO(
+      {
+        id: { toString: () => 'SendingDomain:ws_default:acme.dev' },
+        storage: {
+          get: async (key: string) => stored.get(key),
+          put: async (key: string | Record<string, unknown>, value?: unknown) => {
+            if (typeof key === 'string') stored.set(key, value)
+            else for (const [k, v] of Object.entries(key)) stored.set(k, v)
+          },
+          delete: async (key: string) => stored.delete(key),
+          list: async () => new Map(),
+          setAlarm: async () => {},
+          deleteAlarm: async () => {},
+        },
+        blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(),
+        waitUntil: () => {},
+      } as never,
+      {} as never,
+    )
+
+  it('lets one attempt through once the open period has passed', async () => {
+    const stored = new Map<string, unknown>()
+    const actor = actorOn(stored)
+
+    for (let i = 0; i < 5; i++) await actor.recordFailure('cloudflare')
+    await expect(actor.reserve(1, 'cloudflare')).resolves.toMatchObject({
+      granted: 0,
+      reason: 'circuit_open',
+    })
+
+    // Thirty seconds later. Half-open: the next attempt is allowed, and the
+    // counter that would have re-tripped it immediately is gone.
+    const breakers = stored.get('breakers') as Record<string, { openedUntil: number }>
+    breakers.cloudflare!.openedUntil = Date.now() - 1
+    stored.set('breakers', breakers)
+
+    await expect(actor.reserve(1, 'cloudflare')).resolves.toMatchObject({ granted: 1 })
+    // And a single later failure does not put it straight back.
+    await actor.recordFailure('cloudflare')
+    await expect(actor.reserve(1, 'cloudflare')).resolves.toMatchObject({ granted: 1 })
+  })
+
+  it('only trips on failures close together', async () => {
+    const stored = new Map<string, unknown>()
+    const actor = actorOn(stored)
+
+    // Four failures, and then a long quiet stretch. A breaker is for a provider
+    // failing now; four failures last week are not evidence of that.
+    for (let i = 0; i < 4; i++) await actor.recordFailure('cloudflare')
+    const breakers = stored.get('breakers') as Record<string, { lastFailureAt: number }>
+    breakers.cloudflare!.lastFailureAt = Date.now() - 60 * 60_000
+    stored.set('breakers', breakers)
+
+    await actor.recordFailure('cloudflare')
+    await expect(actor.reserve(1, 'cloudflare')).resolves.toMatchObject({ granted: 1 })
+  })
+})

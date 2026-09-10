@@ -1,5 +1,5 @@
 import { formatAddress } from '@mailysend/core'
-import { buildSignedMime, mimeSize } from '../mime.ts'
+import { base64, buildSignedMime, mimeSize } from '../mime.ts'
 import type {
   DnsRequirement,
   IdentityState,
@@ -37,12 +37,40 @@ export const CLOUDFLARE_LIMITS: ProviderLimits = {
   dailyQuota: null,
 }
 
-interface SendEmailBinding {
-  send(message: {
-    from: string
-    to: string[]
-    raw: string
-  }): Promise<{ messageId?: string } | undefined>
+/**
+ * Cloudflare Email Service's message shape, on both the binding and REST.
+ *
+ * Structured fields, not a raw MIME string. This adapter passed `{from, to,
+ * raw}` to both, and `raw` is not a field either one reads — so every send
+ * arrived with no `html` and no `text` and was refused with
+ *
+ *   text or html must have content in order for an email to be sent
+ *
+ * which is true, and was never about the message the user wrote. (An older
+ * Email Routing API does take raw MIME, via `new EmailMessage(from, to, raw)`;
+ * that is a different binding for replying to received mail, not this one.)
+ *
+ * The consequence of building the MIME ourselves and having it ignored is that
+ * our DKIM signature went with it. That is correct here rather than a loss:
+ * Cloudflare signs with its own key under its own selector for a domain
+ * onboarded to the service, which is exactly what `dnsRecords()` below tells
+ * the operator to publish.
+ */
+export interface CloudflareEmail {
+  from: string
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  replyTo?: string
+  subject: string
+  html?: string
+  text?: string
+  headers?: Record<string, string>
+  attachments?: { filename: string; content: string; type?: string }[]
+}
+
+export interface SendEmailBinding {
+  send(message: CloudflareEmail): Promise<{ messageId?: string } | undefined>
 }
 
 export interface CloudflareProviderConfig {
@@ -68,6 +96,9 @@ export class CloudflareProvider implements Provider {
   }
 
   async send(message: OutboundMessage): Promise<SendResult> {
+    // Still built, still measured: it is the only honest answer to "how big is
+    // this message" before a provider tells us, and the 5 MiB ceiling has to be
+    // enforced on our side to be enforced at all.
     const raw = await buildSignedMime(message)
     const size = mimeSize(raw)
     if (size > this.limits.maxMessageBytes) {
@@ -89,22 +120,56 @@ export class CloudflareProvider implements Provider {
       )
     }
 
-    return this.#config.binding
-      ? this.#sendViaBinding(message, raw, recipients)
-      : this.#sendViaRest(message, raw, recipients)
+    if (!message.html && !message.text) {
+      // Cloudflare says this too, but only after a network round trip and in a
+      // shape our own classifier had to guess at. It is knowable here.
+      throw new SendError(
+        'permanent',
+        this.name,
+        'the message has neither an HTML nor a plain-text body',
+      )
+    }
+
+    const payload = this.#payload(message)
+    return this.#config.binding ? this.#sendViaBinding(payload) : this.#sendViaRest(payload)
   }
 
-  async #sendViaBinding(
-    message: OutboundMessage,
-    raw: string,
-    recipients: string[],
-  ): Promise<SendResult> {
+  /** `OutboundMessage` in the shape Cloudflare Email Service reads. */
+  #payload(message: OutboundMessage): CloudflareEmail {
+    const list = (addresses?: { address: string }[]) => addresses?.map((a) => a.address) ?? []
+    const to = list(message.to)
+    const cc = list(message.cc)
+    const bcc = list(message.bcc)
+    return {
+      from: formatAddress(message.from),
+      to,
+      ...(cc.length ? { cc } : {}),
+      ...(bcc.length ? { bcc } : {}),
+      ...(message.replyTo?.length ? { replyTo: formatAddress(message.replyTo[0]!) } : {}),
+      subject: message.subject,
+      ...(message.html ? { html: message.html } : {}),
+      ...(message.text ? { text: message.text } : {}),
+      // Threading and our own id travel as headers, since the MIME we would
+      // otherwise have stamped them into is not what gets sent.
+      headers: {
+        ...(message.headers ?? {}),
+        'X-MailySend-Id': message.emailId,
+      },
+      ...(message.attachments?.length
+        ? {
+            attachments: message.attachments.map((attachment) => ({
+              filename: attachment.filename,
+              content: base64(attachment.content),
+              type: attachment.contentType,
+            })),
+          }
+        : {}),
+    }
+  }
+
+  async #sendViaBinding(payload: CloudflareEmail): Promise<SendResult> {
     try {
-      const res = await this.#config.binding!.send({
-        from: formatAddress(message.from),
-        to: recipients,
-        raw,
-      })
+      const res = await this.#config.binding!.send(payload)
       return {
         providerMessageId: (res as { messageId?: string })?.messageId ?? null,
         provider: this.name,
@@ -115,11 +180,7 @@ export class CloudflareProvider implements Provider {
     }
   }
 
-  async #sendViaRest(
-    message: OutboundMessage,
-    raw: string,
-    recipients: string[],
-  ): Promise<SendResult> {
+  async #sendViaRest(payload: CloudflareEmail): Promise<SendResult> {
     const { accountId, apiToken, baseUrl = 'https://api.cloudflare.com/client/v4' } = this.#config
     if (!accountId || !apiToken) {
       throw new SendError(
@@ -134,7 +195,7 @@ export class CloudflareProvider implements Provider {
       response = await fetch(`${baseUrl}/accounts/${accountId}/email/sending/send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: formatAddress(message.from), to: recipients, raw }),
+        body: JSON.stringify(payload),
       })
     } catch (err) {
       // The request never completed. We do not know whether it arrived, so this
@@ -311,6 +372,12 @@ function classify(err: unknown): SendError {
     m.includes('invalid address') ||
     m.includes('malformed') ||
     m.includes('too large') ||
+    // "text or html must have content in order for an email to be sent" — a
+    // message with no body does not grow one by being retried. Falling through
+    // to `transient` meant five attempts, five recorded failures, and a tripped
+    // circuit breaker that then refused every *other* send from the domain.
+    m.includes('must have content') ||
+    m.includes('no recipients') ||
     // A sender or domain the account is not allowed to send from does not
     // become allowed by waiting. Falling through to `transient` meant five
     // retries and a message that failed twenty minutes later with a reason

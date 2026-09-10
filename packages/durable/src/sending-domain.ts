@@ -40,6 +40,9 @@ const DEFAULT_GOVERNOR: DomainGovernorConfig = { perSecond: 14, burst: 60 }
 /** Where a domain with no history starts. Low enough not to trip a new ramp. */
 const INITIAL_CEILING = 5_000
 
+/** How close together five failures have to be to mean the provider is down. */
+const FAILURE_WINDOW_MS = 5 * 60_000
+
 export class SendingDomainActor extends Actor {
   #config: DomainGovernorConfig
 
@@ -76,12 +79,24 @@ export class SendingDomainActor extends Actor {
         'breakers',
         {},
       )
-      if (breaker[provider] && breaker[provider]!.openedUntil > now) {
+      const held = breaker[provider]
+      if (held && held.openedUntil > now) {
         return {
           granted: 0,
-          retryAfterMs: breaker[provider]!.openedUntil - now,
+          retryAfterMs: held.openedUntil - now,
           reason: 'circuit_open' as const,
         }
+      }
+      if (held && held.openedUntil > 0) {
+        // Half-open. The counter used to survive the open period, so the sixth
+        // lifetime failure re-tripped the breaker instantly and the seventh did
+        // it again: a domain that had five failures once was gated forever,
+        // thirty seconds at a time, and the only thing that could clear it was
+        // a success it was no longer allowed to attempt. Letting one attempt
+        // through on a clean counter is what makes this a breaker rather than
+        // a fuse.
+        delete breaker[provider]
+        await this.storage.put('breakers', breaker)
       }
 
       const state = await this.read<{ day: string; sent: number }>('daily', { day: today, sent: 0 })
@@ -153,15 +168,26 @@ export class SendingDomainActor extends Actor {
     })
   }
 
+  /**
+   * Five failures trip the breaker — five failures *close together*.
+   *
+   * Without the window the count was cumulative over the actor's whole life, so
+   * five unrelated failures spread over weeks tripped it exactly as if the
+   * provider had just gone down. What a breaker is for is a provider failing
+   * now, and a failure an hour after the last one is not evidence of that.
+   */
   async recordFailure(provider: string): Promise<void> {
     await this.ctx.blockConcurrencyWhile(async () => {
-      const breakers = await this.read<Record<string, { failures: number; openedUntil: number }>>(
-        'breakers',
-        {},
-      )
-      const held = breakers[provider] ?? { failures: 0, openedUntil: 0 }
+      const breakers = await this.read<
+        Record<string, { failures: number; openedUntil: number; lastFailureAt?: number }>
+      >('breakers', {})
+      const now = Date.now()
+      const previous = breakers[provider]
+      const stale = !previous?.lastFailureAt || now - previous.lastFailureAt > FAILURE_WINDOW_MS
+      const held = stale ? { failures: 0, openedUntil: 0 } : previous
       held.failures++
-      if (held.failures >= 5) held.openedUntil = Date.now() + 30_000
+      held.lastFailureAt = now
+      if (held.failures >= 5) held.openedUntil = now + 30_000
       breakers[provider] = held
       await this.storage.put('breakers', breakers)
     })

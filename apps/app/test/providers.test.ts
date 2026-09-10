@@ -313,3 +313,97 @@ describe('SMTP credentials', () => {
     connect.mockRestore()
   })
 })
+
+/**
+ * The protocol the Cloudflare transport actually speaks.
+ *
+ * It spoke a different one for its whole life: `{from, to, raw}`, a raw RFC
+ * 5322 MIME string, to both the `send_email` binding and the REST endpoint.
+ * Cloudflare Email Service reads structured fields and has no `raw`, so every
+ * single send arrived with no body and came back
+ *
+ *   text or html must have content in order for an email to be sent
+ *
+ * — true, and nothing to do with the message anybody wrote. Nothing caught it
+ * because nothing ever looked at what the adapter handed the provider; the
+ * suite only ever checked which provider got chosen. These tests look.
+ */
+describe('the Cloudflare transport', () => {
+  const message = () => ({
+    emailId: 'em_01TEST',
+    workspaceId: DEFAULT_WORKSPACE,
+    from: { address: 'team@acme.dev', name: 'Acme', domain: 'acme.dev' },
+    to: [{ address: 'someone@example.com', domain: 'example.com' }],
+    subject: 'A real subject',
+    html: '<p>A real body.</p>',
+    text: 'A real body.',
+    headers: { 'In-Reply-To': '<parent@acme.dev>' },
+  })
+
+  it('hands the binding a body, not a MIME blob', async () => {
+    const { CloudflareProvider } = await import('@mailysend/providers')
+    const sent: Record<string, unknown>[] = []
+    const provider = new CloudflareProvider({
+      binding: {
+        send: async (payload) => {
+          sent.push(payload as unknown as Record<string, unknown>)
+          return { messageId: 'cf_1' }
+        },
+      },
+    })
+
+    const result = await provider.send(message() as never)
+    expect(result.providerMessageId).toBe('cf_1')
+
+    const payload = sent[0]!
+    expect(payload.html).toBe('<p>A real body.</p>')
+    expect(payload.text).toBe('A real body.')
+    expect(payload.subject).toBe('A real subject')
+    expect(payload.to).toEqual(['someone@example.com'])
+    expect(payload.from).toContain('team@acme.dev')
+    // Threading survives, since the MIME we no longer send is where it used to
+    // live; and our own id travels so a bounce can be correlated back.
+    expect(payload.headers).toMatchObject({
+      'In-Reply-To': '<parent@acme.dev>',
+      'X-MailySend-Id': 'em_01TEST',
+    })
+    // The field that was the entire bug.
+    expect(payload).not.toHaveProperty('raw')
+  })
+
+  it('posts the same shape to the REST endpoint', async () => {
+    const { CloudflareProvider } = await import('@mailysend/providers')
+    let body: Record<string, unknown> | null = null
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ result: { message_id: 'cf_rest' } }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = new CloudflareProvider({ accountId: 'acct', apiToken: 'tok' })
+    const result = await provider.send(message() as never)
+
+    expect(result.providerMessageId).toBe('cf_rest')
+    expect(body).not.toBeNull()
+    expect(body!.text).toBe('A real body.')
+    expect(body!).not.toHaveProperty('raw')
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/accounts/acct/email/sending/send')
+  })
+
+  it('refuses a message with no body, permanently and before the network', async () => {
+    const { CloudflareProvider, SendError } = await import('@mailysend/providers')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const provider = new CloudflareProvider({ accountId: 'acct', apiToken: 'tok' })
+
+    // A body-less message never becomes sendable by being retried. Letting it
+    // through as transient cost five attempts, five recorded failures, and a
+    // circuit breaker that then refused every other send from the domain.
+    const err = await provider
+      .send({ ...message(), html: undefined, text: undefined } as never)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(SendError)
+    expect((err as InstanceType<typeof SendError>).kind).toBe('permanent')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
