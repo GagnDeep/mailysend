@@ -6,7 +6,6 @@ import {
   newId,
   parseAddress,
   parseAddresses,
-  r2Key,
   signTrackingToken,
 } from '@mailysend/core'
 import { eventId } from '@mailysend/events'
@@ -447,9 +446,20 @@ async function markFailed(env: Env, job: SendJob, err: unknown): Promise<void> {
     ],
   })
 
-  if (job.kind === 'spooled') {
-    // Keep the spool object: the log drawer's "what exactly did we try to
-    // send?" panel reads it, and it expires on its own in seven days.
-    void r2Key
+  // The failure has to reach a human somewhere other than a row in `messages`.
+  // A first send that fails during setup, or a sign-in code that never arrives,
+  // is invisible if the only record is a column on the message nobody knows to
+  // look for — so the most recent one is kept where `/v1/instance` can show it.
+  try {
+    const { writeInstanceSetting, LAST_SEND_ERROR_KEY } = await import('../bootstrap.ts')
+    await writeInstanceSetting(
+      tenancyFor(env).db(''),
+      LAST_SEND_ERROR_KEY,
+      `${occurredAt} ${provider}/${kind}: ${message.slice(0, 400)}`,
+    )
+  } catch (writeErr) {
+    // Best-effort by design: a diagnostic that can fail a send is worse than
+    // no diagnostic.
+    console.warn('[send] could not record the last send error', writeErr)
   }
 }

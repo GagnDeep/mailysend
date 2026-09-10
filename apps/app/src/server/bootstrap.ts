@@ -32,7 +32,7 @@ import type { Env } from './env.ts'
 /** Instance-wide settings live under the empty workspace id. */
 const INSTANCE = ''
 const SECRET_KEY = 'instance_secret'
-const PUBLIC_URL_KEY = 'instance_public_url'
+export const PUBLIC_URL_KEY = 'instance_public_url'
 
 /**
  * Per-isolate memo, keyed by the database it was read from.
@@ -112,6 +112,7 @@ export async function ensureInstance(env: Env): Promise<void> {
     ready = (async () => {
       await migrate(env.DB)
       await ensureWorkspace(env)
+      await adoptExistingOwner(env)
     })()
     readies.set(env.DB, ready)
   }
@@ -152,12 +153,31 @@ async function ensureWorkspace(env: Env): Promise<void> {
   console.log('\n  MailySend is set up. Your first API key — this is the only time it is shown:\n')
   console.log(`      ${token}\n`)
   console.log(
-    env.MS_OWNER_EMAIL
-      ? `  Sign in at /sign-in as ${env.MS_OWNER_EMAIL}. Until a sending domain is verified,\n` +
-          '  your one-time code is printed here instead of emailed.\n'
-      : '  Set MS_OWNER_EMAIL to the address that should own this instance, then\n' +
-          '  sign in at /sign-in — the first code is printed here.\n',
+    '  Open /setup to claim this instance with a passkey. Nobody owns it until\n' +
+      '  somebody does, so do it before you share the URL.\n' +
+      (env.MS_OWNER_EMAIL
+        ? `  Only ${env.MS_OWNER_EMAIL} may claim it (MS_OWNER_EMAIL is set).\n`
+        : '  Set MS_OWNER_EMAIL to restrict who may claim it.\n'),
   )
+}
+
+/**
+ * An instance that already had an owner before the claim flow existed is
+ * claimed, and must not be offered to whoever finds the URL next.
+ *
+ * The alternative — treating "no claim row" as "unclaimed" — would turn an
+ * upgrade into a takeover window on every deployment that predates this
+ * migration. A deployment with no member at all stays unclaimed, which is
+ * exactly the case `/setup` exists for: the many instances nobody ever managed
+ * to sign into.
+ */
+async function adoptExistingOwner(env: Env): Promise<void> {
+  if (await isClaimed(env.DB)) return
+  const member = await env.DB.prepare('SELECT user_id FROM memberships LIMIT 1').first<{
+    user_id: string
+  }>()
+  if (!member) return
+  await claimInstance(env.DB)
 }
 
 /**
@@ -188,13 +208,37 @@ export async function configure(env: Env, request?: Request): Promise<Env> {
   // A deployment first reached on workers.dev and later on a custom domain
   // would otherwise keep minting workers.dev links forever. Local origins are
   // never stored, so a development request cannot poison a real deployment.
-  if (!pinnedPublicUrl(env) && origin && !isLocal(origin) && origin !== publicUrl) {
-    await env.DB.prepare(
-      `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)
-       ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    )
-      .bind(INSTANCE, PUBLIC_URL_KEY, origin, new Date().toISOString())
-      .run()
+  if (
+    !pinnedPublicUrl(env) &&
+    origin &&
+    !isLocal(origin) &&
+    origin !== publicUrl &&
+    // Both guards below only cost a read when the origin actually differs from
+    // what is stored, which happens on a host change and then never again.
+    !isVanityRegression(origin, publicUrl) &&
+    !(await isUrlPinned(env.DB))
+  ) {
+    const now = new Date().toISOString()
+    const statements = [
+      env.DB.prepare(
+        `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)
+         ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).bind(INSTANCE, PUBLIC_URL_KEY, origin, now),
+    ]
+    // Remember where we moved from. A passkey is bound to the hostname it was
+    // created on, so a host change does not degrade sign-in — it breaks it, and
+    // silently. Recording the old origin is what lets the dashboard say *which*
+    // host the existing passkeys belong to instead of showing a login that just
+    // never succeeds.
+    if (publicUrl) {
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)
+           ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        ).bind(INSTANCE, PREVIOUS_URL_KEY, publicUrl, now),
+      )
+    }
+    await env.DB.batch(statements)
     memoFor(env.DB).set(PUBLIC_URL_KEY, origin)
     publicUrl = origin
   }
@@ -206,15 +250,28 @@ export async function configure(env: Env, request?: Request): Promise<Env> {
   // subsequent build — the form stores its answers as secrets, and vars win.
   const mode = env.MS_MODE ?? 'single'
 
+  // What `/` serves. A self-hosted instance is a dashboard, not a shop window,
+  // so the marketing site is not what its operator wants at the root — but
+  // mailysend.com runs the same build in the same mode, which is why this is a
+  // switch with a mode-derived default rather than a hardcoded rule.
+  const landing = env.MS_LANDING ?? (mode === 'single' ? 'app' : 'marketing')
+
   try {
     env.MS_SECRET = secret
     env.MS_PUBLIC_URL = publicUrl
     env.MS_MODE = mode
+    env.MS_LANDING = landing
     return env
   } catch {
     // A frozen env is not something any runtime does today, but a copy is a
     // correct answer and a thrown TypeError is not.
-    return { ...env, MS_SECRET: secret, MS_PUBLIC_URL: publicUrl, MS_MODE: mode }
+    return {
+      ...env,
+      MS_SECRET: secret,
+      MS_PUBLIC_URL: publicUrl,
+      MS_MODE: mode,
+      MS_LANDING: landing,
+    }
   }
 }
 
@@ -234,10 +291,111 @@ const pinned = new WeakMap<Env, string>()
 const isLocal = (origin: string): boolean =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(origin)
 
+/**
+ * Moving *back* to the deploy-time hostname is not a move.
+ *
+ * `*.workers.dev` keeps answering after a custom domain is attached, so a
+ * health check or an old bookmark hitting it would otherwise drag the whole
+ * instance back — re-minting every tracking link on a hostname the operator
+ * has stopped using, and invalidating passkeys a second time. A custom domain
+ * is only ever left deliberately, which is what `PUT /v1/workspace/instance-domain`
+ * is for.
+ */
+const isVanity = (origin: string): boolean => /\.workers\.dev$/.test(new URL(origin).hostname)
+
+const isVanityRegression = (origin: string, current: string): boolean =>
+  Boolean(current) && isVanity(origin) && !isVanity(current)
+
+/** Set by an explicit instance-domain change; stops the learning entirely. */
+export const PUBLIC_URL_PINNED_KEY = 'instance_public_url_pinned'
+
+const isUrlPinned = async (sql: Sql): Promise<boolean> => {
+  const row = await sql
+    .prepare('SELECT value FROM settings WHERE workspace_id = ? AND key = ?')
+    .bind(INSTANCE, PUBLIC_URL_PINNED_KEY)
+    .first<{ value: string | null }>()
+  return row?.value === '1'
+}
+
 const storedPublicUrl = async (env: Env): Promise<string> => {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE workspace_id = ? AND key = ?')
     .bind(INSTANCE, PUBLIC_URL_KEY)
     .first<{ value: string | null }>()
   if (row?.value) memoFor(env.DB).set(PUBLIC_URL_KEY, row.value)
   return row?.value ?? ''
+}
+
+// ---------------------------------------------------------------------------
+// Instance-wide settings
+// ---------------------------------------------------------------------------
+
+/** The settings key that says this deployment has an owner. */
+export const CLAIMED_KEY = 'instance_claimed_at'
+/** Set when the learned public URL moves, so the UI can explain broken passkeys. */
+export const PREVIOUS_URL_KEY = 'instance_previous_public_url'
+/** The last error the send path produced, surfaced on `/v1/instance`. */
+export const LAST_SEND_ERROR_KEY = 'instance_last_send_error'
+
+export async function readInstanceSetting(sql: Sql, key: string): Promise<string | null> {
+  const row = await sql
+    .prepare('SELECT value FROM settings WHERE workspace_id = ? AND key = ?')
+    .bind(INSTANCE, key)
+    .first<{ value: string | null }>()
+  return row?.value ?? null
+}
+
+export async function writeInstanceSetting(sql: Sql, key: string, value: string): Promise<void> {
+  await sql
+    .prepare(
+      `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind(INSTANCE, key, value, new Date().toISOString())
+    .run()
+  memoFor(sql).delete(key)
+}
+
+/**
+ * Claims the instance, exactly once.
+ *
+ * The whole first-run design rests on this being atomic. Two people opening
+ * `/setup` on a fresh deployment at the same moment must not both become the
+ * owner, and a `SELECT` followed by an `INSERT` cannot promise that on D1 —
+ * there is no transaction spanning the two. `INSERT … WHERE NOT EXISTS` is one
+ * statement, so the loser writes zero rows and is told the instance is already
+ * claimed.
+ */
+export async function claimInstance(sql: Sql, at = new Date().toISOString()): Promise<boolean> {
+  const result = await sql
+    .prepare(
+      `INSERT INTO settings (workspace_id, key, value, updated_at)
+       SELECT ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM settings WHERE workspace_id = ? AND key = ?)`,
+    )
+    .bind(INSTANCE, CLAIMED_KEY, at, at, INSTANCE, CLAIMED_KEY)
+    .run()
+  const changes = (result as { meta?: { changes?: number } }).meta?.changes
+  // A driver that does not report `changes` is not a licence to guess: read
+  // back and compare, which is correct either way and costs one indexed lookup
+  // on a path that runs once in the life of a deployment.
+  if (typeof changes === 'number') return changes > 0
+  return (await readInstanceSetting(sql, CLAIMED_KEY)) === at
+}
+
+/**
+ * Has this deployment got an owner?
+ *
+ * Read on every `/` and `/app` request, so the `true` answer is memoised for
+ * the life of the isolate — a claim is a one-way door in every path but the
+ * rollback inside `/v1/setup/claim/verify`, and that one runs before any of
+ * this could have cached it. `false` is never cached, because the whole point
+ * is that it is about to change.
+ */
+const claimed = new WeakSet<Sql>()
+
+export const isClaimed = async (sql: Sql): Promise<boolean> => {
+  if (claimed.has(sql)) return true
+  const value = await readInstanceSetting(sql, CLAIMED_KEY)
+  if (value) claimed.add(sql)
+  return value !== null
 }

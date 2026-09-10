@@ -54,9 +54,9 @@ function PrivacyPage() {
             marketing or documentation pages.
           </li>
           <li>
-            <strong className="text-ink">What you type into a form.</strong> If you sign in or start
-            the hosted setup wizard, we process the email address you give us so we can send you a
-            one-time code and associate your deployment with you.
+            <strong className="text-ink">What you type into a form.</strong> If you sign in or claim
+            a hosted instance at <code>/setup</code>, we process the email address you give us so we
+            can send you a one-time code and associate your deployment with you.
           </li>
         </LegalList>
       </LegalSection>

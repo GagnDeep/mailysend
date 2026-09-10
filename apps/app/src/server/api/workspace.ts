@@ -75,8 +75,14 @@ async function readSettings(ctx: {
     }
   }
 
+  // Stored raw rather than JSON-encoded, because `PUT /sending-domain` writes
+  // an id and not a setting document; the quote strip is what makes both forms
+  // readable if one was ever written the other way.
+  const defaultSendingDomain = stored.get('default_sending_domain')?.replace(/^"|"$/g, '') ?? null
+
   return {
     name: ctx.workspace.name,
+    default_sending_domain: defaultSendingDomain,
     default_from: read('default_from'),
     default_reply_to: read('default_reply_to'),
     open_tracking: read('open_tracking'),
@@ -331,3 +337,147 @@ workspace.delete('/:id', async (c) => {
 })
 
 export { workspace }
+
+// ---------------------------------------------------------------------------
+// Domains: the one you send from, and the one you are reached on
+// ---------------------------------------------------------------------------
+
+/**
+ * `PUT /v1/workspace/sending-domain` — which verified domain is the default.
+ *
+ * Auth mail — sign-in codes, invites — used to go out from
+ * `ORDER BY created_at LIMIT 1`, so the first domain ever added silently became
+ * the identity of every system message and stayed that way after it was
+ * retired. This makes it a choice.
+ */
+workspace.put('/sending-domain', async (c) => {
+  const ctx = c.get('ctx')
+  requireRole(ctx.actor, 'developer')
+  const body = z
+    .object({ domain_id: z.string().min(1).max(64).nullable() })
+    .parse(await c.req.json())
+
+  if (body.domain_id) {
+    const row = await ctx.sql
+      .prepare('SELECT id, status FROM domains WHERE workspace_id = ? AND id = ?')
+      .bind(ctx.workspace.id, body.domain_id)
+      .first<{ id: string; status: string }>()
+    if (!row) throw apiError('not_found')
+    // An unverified default is a default that cannot send, which is a worse
+    // failure than having none: the fallback at least picks something that works.
+    if (row.status !== 'verified') {
+      throw apiError('validation_error', {
+        message: 'Only a verified domain can be the default sending domain.',
+        param: 'domain_id',
+      })
+    }
+  }
+
+  const now = new Date().toISOString()
+  if (body.domain_id) {
+    await ctx.sql
+      .prepare(
+        `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?, 'default_sending_domain', ?, ?)
+         ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .bind(ctx.workspace.id, body.domain_id, now)
+      .run()
+  } else {
+    await ctx.sql
+      .prepare(`DELETE FROM settings WHERE workspace_id = ? AND key = 'default_sending_domain'`)
+      .bind(ctx.workspace.id)
+      .run()
+  }
+
+  return json({ object: 'workspace', default_sending_domain: body.domain_id })
+})
+
+const InstanceDomain = z.object({
+  hostname: z
+    .string()
+    .min(3)
+    .max(253)
+    .regex(
+      /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i,
+      'must be a hostname',
+    ),
+})
+
+/**
+ * `PUT /v1/workspace/instance-domain` — the hostname this instance answers on.
+ *
+ * Everything the product mints is keyed to one value: tracking pixels,
+ * unsubscribe links, canonical tags, the `Secure` cookie decision, and — most
+ * consequentially — the WebAuthn relying-party id. So this is one write, and it
+ * pins `MS_PUBLIC_URL` so the learn-from-the-request behaviour stops second
+ * -guessing it.
+ *
+ * What it deliberately does *not* do is attach the domain to the Worker. That
+ * happens in Cloudflare's control plane, needs the script name and zone this
+ * code has no reliable way to know, and a half-working button that silently
+ * does nothing is exactly the class of thing this release exists to remove. So
+ * the response carries the two steps to take and `GET` probes whether they
+ * worked.
+ *
+ * Existing passkeys will not work on the new hostname — WebAuthn binds them to
+ * the old one. That is stated in the response rather than discovered later, and
+ * `previous_public_url` on `/v1/instance` keeps saying so afterwards.
+ */
+workspace.put('/instance-domain', async (c) => {
+  const ctx = c.get('ctx')
+  requireRole(ctx.actor, 'owner')
+  const body = InstanceDomain.parse(await c.req.json())
+  const hostname = body.hostname.toLowerCase()
+  const target = `https://${hostname}`
+
+  const { PUBLIC_URL_KEY, PUBLIC_URL_PINNED_KEY, PREVIOUS_URL_KEY, writeInstanceSetting } =
+    await import('../bootstrap.ts')
+  const current = ctx.env.MS_PUBLIC_URL
+  const instanceSql = ctx.tenancy.db('')
+
+  if (current && current !== target)
+    await writeInstanceSetting(instanceSql, PREVIOUS_URL_KEY, current)
+  await writeInstanceSetting(instanceSql, PUBLIC_URL_KEY, target)
+  // Explicit beats learned, permanently. Without this the next request that
+  // arrives on the old `*.workers.dev` hostname would move the instance back.
+  await writeInstanceSetting(instanceSql, PUBLIC_URL_PINNED_KEY, '1')
+
+  const credentials = await ctx.sql
+    .prepare('SELECT COUNT(*) AS n FROM webauthn_credentials WHERE workspace_id = ?')
+    .bind(ctx.workspace.id)
+    .first<{ n: number }>()
+
+  return json({
+    object: 'instance_domain',
+    hostname,
+    public_url: target,
+    previous_public_url: current === target ? null : current,
+    passkeys_to_reregister: credentials?.n ?? 0,
+    next_steps: [
+      `In Cloudflare, open Workers & Pages → your Worker → Settings → Domains & Routes, and add ${hostname} as a custom domain.`,
+      `Cloudflare creates the DNS record for you when the zone is on the same account. If it is not, point ${hostname} at the Worker with a CNAME first.`,
+      'Then reload this page on the new hostname and register a passkey there — the ones you have are bound to the old host.',
+    ],
+  })
+})
+
+/** `GET /v1/workspace/instance-domain` — has it actually come up? */
+workspace.get('/instance-domain', async (c) => {
+  const ctx = c.get('ctx')
+  const target = ctx.env.MS_PUBLIC_URL
+  let live = false
+  let detail = 'not checked'
+  try {
+    const probe = await fetch(`${target.replace(/\/$/, '')}/v1/health`, {
+      signal: AbortSignal.timeout(5_000),
+      headers: { accept: 'application/json' },
+    })
+    live = probe.ok
+    detail = probe.ok ? 'responding' : `HTTP ${probe.status}`
+  } catch (err) {
+    // A hostname that does not resolve yet is the expected state right after
+    // this is set, not an error worth a 500.
+    detail = err instanceof Error ? err.message : 'unreachable'
+  }
+  return json({ object: 'instance_domain', public_url: target, live, detail })
+})

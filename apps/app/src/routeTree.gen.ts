@@ -17,6 +17,7 @@ import { Route as DashboardTourRouteImport } from './routes/dashboard-tour'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResourcesRouteImport } from './routes/resources'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as StackRouteImport } from './routes/stack'
@@ -89,6 +90,11 @@ const PricingRoute = PricingRouteImport.update({
 const ResourcesRoute = ResourcesRouteImport.update({
   id: '/resources',
   path: '/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
@@ -310,6 +317,7 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
@@ -354,6 +362,7 @@ export interface FileRoutesById {
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/stack': typeof StackRoute
@@ -399,6 +408,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/pricing'
     | '/resources'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/stack'
@@ -441,6 +451,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/pricing'
     | '/resources'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/stack'
@@ -484,6 +495,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/pricing'
     | '/resources'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/stack'
@@ -528,6 +540,7 @@ export interface RootRouteChildren {
   DocsRoute: typeof DocsRoute
   PricingRoute: typeof PricingRoute
   ResourcesRoute: typeof ResourcesRoute
+  SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   StackRoute: typeof StackRoute
@@ -593,6 +606,13 @@ declare module '@tanstack/react-router' {
       path: '/resources'
       fullPath: '/resources'
       preLoaderRoute: typeof ResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -898,6 +918,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsRoute: DocsRoute,
   PricingRoute: PricingRoute,
   ResourcesRoute: ResourcesRoute,
+  SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   StackRoute: StackRoute,

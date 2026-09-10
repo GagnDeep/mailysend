@@ -18,7 +18,8 @@ import {
   DeployTerminal,
 } from '~/components/marketing/deploy'
 import { PageShell, Section } from '~/components/marketing/page-shell'
-import { breadcrumbSchema, DEPLOY_URL, pageHead } from '~/seo'
+import { breadcrumbSchema, DEPLOY_URL, pageHead, REPO_URL } from '~/seo'
+import { VERSION } from '~/version'
 
 const ANCHORS = [
   { href: '#selfhost', label: 'Self-host guide' },
@@ -77,71 +78,28 @@ interface ChangelogEntry {
   body: ReactNode
 }
 
-const CHANGELOG: ChangelogEntry[] = [
+/**
+ * Releases, not a story about releases.
+ *
+ * This list used to claim eight dated versions up to `v1.8.2` for a repository
+ * at 0.1.0. The version chip now comes from `package.json` at build time and
+ * the history lives where it is actually recorded — the tags on GitHub — so
+ * this page cannot drift from the software again.
+ */
+const RELEASES: ChangelogEntry[] = [
   {
-    date: '2026-09-02',
-    version: 'v1.8.0',
-    title: 'Provider routing & failover',
+    date: '2026-09-10',
+    version: `v${VERSION}`,
+    title: 'First public release',
     body: (
       <>
-        Send any domain through Cloudflare Email Service, Amazon SES or Resend, with automatic
-        failover on 5xx and a percentage split for migrations.{' '}
-        <a href="/docs#providers" className="font-semibold text-accent hover:text-ink">
-          Docs →
-        </a>
-      </>
-    ),
-  },
-  {
-    date: '2026-08-19',
-    version: 'v1.7.0',
-    title: 'Inbox placement analytics',
-    body: (
-      <>
-        Placement per recipient provider, seed-list testing before a broadcast, and parsed DMARC
-        aggregate reports.{' '}
-        <a href="/analytics" className="font-semibold text-accent hover:text-ink">
-          See it →
-        </a>
-      </>
-    ),
-  },
-  {
-    date: '2026-08-04',
-    version: 'v1.6.0',
-    title: 'Automations on Workflows',
-    body: (
-      <>
-        Multi-day drips with branching, durable waits and live counts per node.{' '}
-        <a href="/docs#automations" className="font-semibold text-accent hover:text-ink">
-          Docs →
-        </a>
-      </>
-    ),
-  },
-  {
-    date: '2026-07-21',
-    version: 'v1.5.0',
-    title: 'Generated clients, one spec',
-    body: (
-      <>
-        The OpenAPI document became the published contract every language generates a client from,
-        and the Node package gained the Resend compat shim.{' '}
-        <a href="/docs#sdks" className="font-semibold text-accent hover:text-ink">
-          Docs →
-        </a>
-      </>
-    ),
-  },
-  {
-    date: '2026-07-02',
-    version: 'v1.4.0',
-    title: 'MCP server for agent mailboxes',
-    body: (
-      <>
-        Nine tools over MCP with a mandatory confirmation step before any send.{' '}
-        <a href="/docs#mcp" className="font-semibold text-accent hover:text-ink">
-          Docs →
+        The API, the dashboard, the four transports, the CLI and the one-click deploy.{' '}
+        <a
+          href={`${REPO_URL}/releases`}
+          rel="noreferrer"
+          className="font-semibold text-accent hover:text-ink"
+        >
+          Every tagged release →
         </a>
       </>
     ),
@@ -353,7 +311,7 @@ const SITEMAP = [
   { href: '/dashboard-tour', label: 'Product tour', blurb: 'Six dashboard screens' },
   { href: '/resources', label: 'Resources', blurb: 'Deploy guide, changelog, glossary, status' },
   { href: '/sign-in', label: 'Sign in', blurb: 'Cloudflare Access or a one-time code' },
-  { href: '/sign-up', label: 'Setup wizard', blurb: 'First run after the deploy' },
+  { href: '/setup', label: 'Setup', blurb: 'Claim your instance after the deploy' },
   { href: '/legal/privacy', label: 'Privacy', blurb: 'What we hold, and what we cannot see' },
   { href: '/legal/terms', label: 'Terms', blurb: 'MIT, as-is, and acceptable use' },
   { href: '/legal/dpa', label: 'DPA', blurb: 'Roles, sub-processors, transfers' },
@@ -476,10 +434,10 @@ function ResourcesPage() {
       <Section id="changelog" className="scroll-mt-24 py-16 sm:py-20">
         <div className="flex flex-wrap items-baseline justify-between gap-4">
           <h2 className="ms-display-2 m-0">Changelog</h2>
-          <MonoChip size="lg">v1.8.2 · released weekly</MonoChip>
+          <MonoChip size="lg">v{VERSION}</MonoChip>
         </div>
         <ol className="mt-8 grid list-none gap-4 p-0">
-          {CHANGELOG.map((entry) => (
+          {RELEASES.map((entry) => (
             <li
               key={entry.version}
               className="grid grid-cols-1 gap-x-8 gap-y-2 rounded-tile border border-line bg-card p-5 md:grid-cols-[minmax(0,300px)_1fr]"
@@ -607,7 +565,9 @@ function ResourcesPage() {
           actions={
             <>
               <Button asChild variant="accent" size="lg">
-                <a href="/sign-up">Deploy to Cloudflare</a>
+                <a href={DEPLOY_URL} rel="noreferrer">
+                  Deploy to Cloudflare
+                </a>
               </Button>
               <a
                 href="/docs#quickstart"

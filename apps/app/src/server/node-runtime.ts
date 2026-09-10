@@ -65,6 +65,9 @@ for (const [kind, cls] of [
 
 const env: Env = {
   MS_MODE: (process.env.MS_MODE as 'single' | 'saas') ?? 'single',
+  // Resolved properly by `configure()` from the mode; this is only the shape
+  // the type demands before the first request has been seen.
+  MS_LANDING: (process.env.MS_LANDING as 'app' | 'marketing') ?? 'app',
   // Left empty rather than guessed when unset: `configure()` resolves it from
   // the first request's own origin and stores it, which is right far more often
   // than a hardcoded localhost would be behind a proxy or on workers.dev.

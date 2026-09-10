@@ -35,6 +35,17 @@ export interface Env {
   MS_ACCESS_AUD?: string
   /** Turning this off reconstructs message timelines from the R2 archive. */
   EVENT_DETAIL?: 'on' | 'off'
+  /**
+   * What `/` serves.
+   *
+   * `app` — a self-hosted instance: the root redirects to the dashboard (or to
+   * `/setup` while the instance is unclaimed), and the marketing pages stay
+   * reachable by URL. `marketing` — mailysend.com, which runs this same build
+   * in the same mode and does want the shop window at the root.
+   *
+   * Defaulted by `configure()` from `MS_MODE`; absent until then.
+   */
+  MS_LANDING: 'app' | 'marketing'
 
   // --- storage ------------------------------------------------------------
   DB: Sql

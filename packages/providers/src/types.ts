@@ -130,8 +130,17 @@ export interface Provider {
     domain: string,
     opts: { selector: string; returnPath: string; dkimPublicKey?: string },
   ): DnsRequirement[]
-  /** Cheap liveness check for the dashboard's provider panel. */
-  verify?(): Promise<{ ok: boolean; detail?: string }>
+  /**
+   * Cheap liveness check for the dashboard's provider panel.
+   *
+   * Three answers, not two. `unknown` is the honest one for a transport whose
+   * only evidence is that a binding exists — Cloudflare's `send_email` binding
+   * is present on every Worker that declares it, configured or not, so
+   * reporting `ok` from its presence told an operator their Email Service was
+   * ready when the first send would fail. A check that cannot fail is not a
+   * check, and a preflight that always passes is worse than none.
+   */
+  verify?(): Promise<{ status: 'ok' | 'unknown' | 'failed'; detail?: string }>
 }
 
 export interface DnsRequirement {

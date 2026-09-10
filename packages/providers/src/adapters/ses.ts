@@ -174,7 +174,7 @@ export class SesProvider implements Provider {
         { ...this.#config, service: 'ses' },
       )
       const res = await fetch(url, { headers })
-      if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }
+      if (!res.ok) return { status: 'failed' as const, detail: `HTTP ${res.status}` }
       const account = (await res.json()) as {
         ProductionAccessEnabled?: boolean
         SendingEnabled?: boolean
@@ -183,13 +183,15 @@ export class SesProvider implements Provider {
         // Worth saying plainly: sandbox SES silently only delivers to verified
         // addresses, which otherwise looks like a MailySend bug.
         return {
-          ok: true,
+          status: 'unknown' as const,
           detail: 'SES is in sandbox mode — only verified recipients will receive mail',
         }
       }
-      return { ok: account.SendingEnabled !== false, detail: 'production access enabled' }
+      return account.SendingEnabled === false
+        ? { status: 'failed' as const, detail: 'sending is disabled on this SES account' }
+        : { status: 'ok' as const, detail: 'production access enabled' }
     } catch (err) {
-      return { ok: false, detail: String(err) }
+      return { status: 'failed' as const, detail: String(err) }
     }
   }
 }

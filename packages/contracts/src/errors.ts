@@ -223,6 +223,12 @@ export const ERRORS = {
     name: 'application_error',
     message: 'That capability is not available in this deployment.',
   },
+  instance_claimed: {
+    status: 409,
+    name: 'invalid_request',
+    message:
+      'This instance already has an owner. Sign in with a passkey, a recovery code, or run `npx mailysend claim` to recover access.',
+  },
   setup_incomplete: {
     status: 503,
     name: 'application_error',

@@ -200,18 +200,30 @@ export class CloudflareProvider implements Provider {
     return records
   }
 
-  async verify() {
-    if (this.#config.binding) return { ok: true, detail: 'send_email binding present' }
+  async verify(): Promise<{ status: 'ok' | 'unknown' | 'failed'; detail?: string }> {
     const { accountId, apiToken, baseUrl = 'https://api.cloudflare.com/client/v4' } = this.#config
-    if (!accountId || !apiToken) return { ok: false, detail: 'no binding and no API credentials' }
-    try {
-      const res = await fetch(`${baseUrl}/accounts/${accountId}/email/sending/domains`, {
-        headers: { Authorization: `Bearer ${apiToken}` },
-      })
-      return { ok: res.ok, detail: res.ok ? 'REST reachable' : `HTTP ${res.status}` }
-    } catch (err) {
-      return { ok: false, detail: String(err) }
+    // Credentials first, precisely because they can actually be checked. The
+    // binding is only evidence that `wrangler.jsonc` declares it.
+    if (accountId && apiToken) {
+      try {
+        const res = await fetch(`${baseUrl}/accounts/${accountId}/email/sending/domains`, {
+          headers: { Authorization: `Bearer ${apiToken}` },
+        })
+        return res.ok
+          ? { status: 'ok', detail: 'REST reachable' }
+          : { status: 'failed', detail: `HTTP ${res.status}` }
+      } catch (err) {
+        return { status: 'failed', detail: String(err) }
+      }
     }
+    if (this.#config.binding) {
+      return {
+        status: 'unknown',
+        detail:
+          'send_email binding declared, but nothing here can tell whether the Email Service is configured until the first send.',
+      }
+    }
+    return { status: 'failed', detail: 'no binding and no API credentials' }
   }
 }
 
@@ -247,7 +259,16 @@ function classify(err: unknown): SendError {
     m.includes('not verified') ||
     m.includes('invalid address') ||
     m.includes('malformed') ||
-    m.includes('too large')
+    m.includes('too large') ||
+    // A sender or domain the account is not allowed to send from does not
+    // become allowed by waiting. Falling through to `transient` meant five
+    // retries and a message that failed twenty minutes later with a reason
+    // that was knowable at the first attempt.
+    m.includes('not allowed') ||
+    m.includes('sender') ||
+    m.includes('domain not') ||
+    m.includes('unknown domain') ||
+    m.includes('destination address')
   ) {
     return new SendError('permanent', 'cloudflare', message)
   }

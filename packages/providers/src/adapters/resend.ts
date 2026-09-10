@@ -137,9 +137,11 @@ export class ResendProvider implements Provider {
       const res = await fetch(`${this.#config.baseUrl ?? 'https://api.resend.com'}/domains`, {
         headers: { Authorization: `Bearer ${this.#config.apiKey}` },
       })
-      return { ok: res.ok, detail: res.ok ? 'API key valid' : `HTTP ${res.status}` }
+      return res.ok
+        ? { status: 'ok' as const, detail: 'API key valid' }
+        : { status: 'failed' as const, detail: `HTTP ${res.status}` }
     } catch (err) {
-      return { ok: false, detail: String(err) }
+      return { status: 'failed' as const, detail: String(err) }
     }
   }
 }

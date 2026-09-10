@@ -1,6 +1,7 @@
 import { ApiCallError } from './api.ts'
 import { ArgError, type FlagSpecs, helpFor, parseArgs } from './args.ts'
 import { CliError, type CommandContext, type GlobalOptions } from './command.ts'
+import { claim, claimFlags } from './commands/claim.ts'
 import { domainsFlags, domainsVerify } from './commands/domains.ts'
 import { importResend, importResendFlags } from './commands/import-resend.ts'
 import { login, loginFlags } from './commands/login.ts'
@@ -46,6 +47,13 @@ const ENTRIES: Entry[] = [
     usage: 'mailysend provision',
     flags: provisionFlags,
     run: provision,
+  },
+  {
+    match: ['claim'],
+    summary: 'Take ownership of a deployment, or recover access to one',
+    usage: 'mailysend claim --url https://mail.acme.dev',
+    flags: claimFlags,
+    run: claim,
   },
   {
     match: ['deploy'],

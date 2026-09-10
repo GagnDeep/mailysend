@@ -94,9 +94,15 @@ export const loginCodes = sqliteTable(
     expiresAt: text('expires_at').notNull(),
     consumedAt: text('consumed_at'),
     attempts: integer('attempts').notNull().default(0),
+    /** The requester, so a script cannot spray codes at a thousand addresses. */
+    ip: text('ip'),
     createdAt: createdAt(),
   },
-  (t) => [index('login_codes_email').on(t.email, t.expiresAt)],
+  (t) => [
+    index('login_codes_email').on(t.email, t.expiresAt),
+    index('login_codes_ip').on(t.ip, t.createdAt),
+    index('login_codes_expiry').on(t.expiresAt),
+  ],
 )
 
 export const apiKeys = sqliteTable(
@@ -233,4 +239,133 @@ export const mcpConfirmations = sqliteTable(
     expiresAt: integer('expires_at').notNull(),
   },
   (t) => [index('mcp_confirmations_ws').on(t.workspaceId, t.status, t.expiresAt)],
+)
+
+/**
+ * Passkeys.
+ *
+ * The credential a self-hosted instance is claimed with, and the one it is
+ * signed into afterwards. There is deliberately no password column in use: a
+ * passkey cannot be phished, cannot be reused on another site, and — the
+ * property that matters most here — needs no email delivery, so a fresh
+ * deployment with no verified sending domain can still be claimed.
+ *
+ * `rp_id` is stored per credential rather than derived at verification time.
+ * WebAuthn binds a credential to the hostname it was created on, so an instance
+ * that later moves from `*.workers.dev` to a custom domain has credentials that
+ * *cannot* work on the new host. Recording the origin they were made for turns
+ * that from a silent, unexplainable login failure into a banner that says which
+ * host to go back to, or which recovery code to spend.
+ */
+export const webauthnCredentials = sqliteTable(
+  'webauthn_credentials',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: workspaceId(),
+    userId: text('user_id').notNull(),
+    /** Base64url, as the authenticator returns it. */
+    credentialId: text('credential_id').notNull(),
+    publicKey: text('public_key').notNull(),
+    signCount: integer('sign_count').notNull().default(0),
+    transports: text('transports'),
+    rpId: text('rp_id').notNull(),
+    name: text('name'),
+    createdAt: createdAt(),
+    lastUsedAt: text('last_used_at'),
+  },
+  (t) => [
+    uniqueIndex('webauthn_credentials_cid').on(t.credentialId),
+    index('webauthn_credentials_user').on(t.userId),
+  ],
+)
+
+/**
+ * In-flight WebAuthn challenges.
+ *
+ * Server-side rather than in a cookie, because the challenge is the entire
+ * anti-replay mechanism: a client that chooses its own challenge can replay a
+ * captured assertion forever. Rows are short-lived and reaped by cron.
+ */
+export const webauthnChallenges = sqliteTable(
+  'webauthn_challenges',
+  {
+    id: text('id').primaryKey(),
+    challenge: text('challenge').notNull(),
+    userId: text('user_id'),
+    kind: text('kind', { enum: ['register', 'authenticate'] }).notNull(),
+    rpId: text('rp_id').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('webauthn_challenges_expiry').on(t.expiresAt)],
+)
+
+/**
+ * Recovery codes.
+ *
+ * The answer to "the laptop with the passkey is gone". Ten per user, hashed
+ * like an API key, single-use, and shown exactly once — at claim time, before
+ * the instance will let anyone past the setup screen.
+ */
+export const recoveryCodes = sqliteTable(
+  'recovery_codes',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: workspaceId(),
+    userId: text('user_id').notNull(),
+    codeHash: text('code_hash').notNull(),
+    usedAt: text('used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('recovery_codes_hash').on(t.codeHash),
+    index('recovery_codes_user').on(t.userId),
+  ],
+)
+
+/**
+ * CLI device codes.
+ *
+ * `mailysend login` runs over SSH and in containers, where a localhost callback
+ * cannot be reached. The device code is stored hashed for the same reason a
+ * session token is: the row is not a credential.
+ */
+export const deviceCodes = sqliteTable(
+  'device_codes',
+  {
+    id: text('id').primaryKey(),
+    deviceCodeHash: text('device_code_hash').notNull(),
+    userCode: text('user_code').notNull(),
+    client: text('client'),
+    userId: text('user_id'),
+    workspaceId: text('workspace_id'),
+    approvedAt: text('approved_at'),
+    deniedAt: text('denied_at'),
+    /** The minted API key, held until the CLI polls for it, then cleared. */
+    issuedToken: text('issued_token'),
+    redeemedAt: text('redeemed_at'),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('device_codes_hash').on(t.deviceCodeHash),
+    uniqueIndex('device_codes_user_code').on(t.userCode),
+    index('device_codes_expiry').on(t.expiresAt),
+  ],
+)
+
+/**
+ * One-shot nonces written straight into the database by an operator who can
+ * reach it — through `wrangler d1 execute`, the D1 HTTP API, or the SQLite file
+ * on a Node box. Proving you can write this table proves you control the
+ * deployment, which is a strictly stronger claim than controlling an inbox, and
+ * is the break-glass path back in when every passkey is gone.
+ */
+export const claimNonces = sqliteTable(
+  'claim_nonces',
+  {
+    nonce: text('nonce').primaryKey(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('claim_nonces_created').on(t.createdAt)],
 )

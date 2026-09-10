@@ -33,6 +33,10 @@ module.exports = {
         PORT: 8917,
         HOST: '127.0.0.1',
         MS_MODE: 'single',
+        // This deployment *is* the marketing site, so `/` serves it rather
+        // than redirecting to the dashboard. Every other single-mode instance
+        // wants the default, `app`.
+        MS_LANDING: 'marketing',
         MS_DATA_DIR: `${__dirname}/.data`,
       },
       // The runtime holds SQLite handles and a queue poller; a hard kill mid-

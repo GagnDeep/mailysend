@@ -4,14 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppScope } from './scope.tsx'
 
 /**
- * The signed-out redirect.
+ * The client-side backstop.
  *
- * Without this, a visitor with no session gets the dashboard chrome with an
- * `missing_api_key` alert inside every panel — technically accurate and
- * completely unhelpful, since the answer is "sign in", not "check your API
- * key". Session state is only knowable on the client (the cookie is read by the
- * `/v1/me` call, and these screens are never prerendered), so the check lives
- * in an effect rather than in `beforeLoad`.
+ * The real guard is in `server.ts`: `/app/*` is checked against the session
+ * cookie before a byte is rendered, because this component ran after hydration
+ * and the shell — sidebar, topbar, workspace name — had already streamed to
+ * whoever asked. This is what catches a session that expires while the tab is
+ * open, and what routes an unclaimed instance to `/setup`.
  *
  * Only 401 redirects. A 500 from `/v1/me` means the instance is unwell, and
  * bouncing someone to a sign-in page they can't complete would hide that.
@@ -32,14 +31,37 @@ export const RequireSession = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!unauthenticated || sent.current) return
     sent.current = true
-    navigate({
-      to: '/sign-in',
-      search: target.startsWith('/app') ? { next: target } : {},
-      replace: true,
-    })
+    // An instance with no owner has no session to be missing, and sending
+    // someone to a sign-in page that cannot work is the loop this whole change
+    // exists to break. One fetch, only on the failure path.
+    const toSignIn = () =>
+      navigate({
+        to: '/sign-in',
+        search: target.startsWith('/app') ? { next: target } : {},
+        replace: true,
+      })
+
+    void fetch('/v1/instance')
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as { claimed?: boolean }) : null,
+      )
+      .then((body) => {
+        if (body?.claimed === false) {
+          window.location.replace('/setup')
+          return
+        }
+        toSignIn()
+      })
+      .catch(toSignIn)
   }, [unauthenticated, navigate, target])
 
-  if (unauthenticated) return null
+  if (unauthenticated) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-[15px] text-muted">
+        Checking your session…
+      </div>
+    )
+  }
   // `user === undefined` while the first `/v1/me` is in flight is not an error
   // state and gets no spinner of its own: the screens below already render
   // their own skeletons, and a full-page flash on every navigation is worse.

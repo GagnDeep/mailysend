@@ -27,6 +27,7 @@ import { CopyValue } from '~/components/app/copy-value.tsx'
 import { dateTime } from '~/components/app/format.ts'
 import { PageHeader, PageSection } from '~/components/app/page.tsx'
 import { useApi, useAppScope, useEnvironment } from '~/components/app/scope.tsx'
+import { SecurityPanel } from '~/components/app/security-panel.tsx'
 import { DetailSkeleton, ErrorState } from '~/components/app/states.tsx'
 import type { WorkspaceSettingsRecord } from '~/lib/api-client.ts'
 import { qk } from '~/lib/query.ts'
@@ -39,7 +40,7 @@ import { appHead } from '~/seo'
  * "look at the retention setting" is a link and not an instruction.
  */
 
-const SECTIONS = ['workspace', 'sending', 'provider', 'retention', 'danger'] as const
+const SECTIONS = ['workspace', 'sending', 'provider', 'retention', 'security', 'danger'] as const
 type Section = (typeof SECTIONS)[number]
 
 const isSection = (value: unknown): value is Section =>
@@ -130,6 +131,7 @@ function SettingsTabs({ settings }: { settings: WorkspaceSettingsRecord }) {
         <TabsTrigger value="sending">Sending defaults</TabsTrigger>
         <TabsTrigger value="provider">Provider</TabsTrigger>
         <TabsTrigger value="retention">Log retention</TabsTrigger>
+        <TabsTrigger value="security">Access</TabsTrigger>
         <TabsTrigger value="danger">Danger zone</TabsTrigger>
       </TabsList>
 
@@ -144,6 +146,9 @@ function SettingsTabs({ settings }: { settings: WorkspaceSettingsRecord }) {
       </TabsContent>
       <TabsContent value="retention">
         <RetentionPanel settings={settings} />
+      </TabsContent>
+      <TabsContent value="security">
+        <SecurityPanel />
       </TabsContent>
       <TabsContent value="danger">
         <DangerPanel />
@@ -292,6 +297,8 @@ function SendingPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
           />
         </Field>
 
+        <DefaultSendingDomainField settings={settings} />
+
         <Field
           label="Default Reply-To"
           htmlFor={replyId}
@@ -367,6 +374,66 @@ function SendingPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
         </div>
       </Panel>
     </PageSection>
+  )
+}
+
+/**
+ * Which verified domain the instance's own mail leaves from.
+ *
+ * It used to be whichever domain was created first, which is invisible, and in
+ * `saas` mode was not even scoped to the workspace. Sign-in codes are the mail
+ * that matters here: they are sent by the instance, to you, at the moment you
+ * cannot get in.
+ */
+function DefaultSendingDomainField({ settings }: { settings: WorkspaceSettingsRecord }) {
+  const api = useApi()
+  const environment = useEnvironment()
+  const queryClient = useQueryClient()
+  const selectId = useId()
+
+  const domains = useQuery({
+    queryKey: qk.domains(environment),
+    queryFn: () => api.listDomains({ limit: 100 }),
+  })
+  const verified = (domains.data?.data ?? []).filter((domain) => domain.status === 'verified')
+
+  const setDefault = useMutation({
+    mutationFn: (domainId: string | null) => api.setDefaultSendingDomain(domainId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.settings(environment) })
+      toast.success('Default sending domain saved.')
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  return (
+    <Field
+      label="Default sending domain"
+      htmlFor={selectId}
+      hint={
+        verified.length === 0
+          ? 'No verified domain yet. Until there is one, this instance cannot email a sign-in code and says so instead of pretending it sent one.'
+          : 'Sign-in codes and other mail this instance sends itself leave from here. Only verified domains can be chosen.'
+      }
+    >
+      <Select
+        value={settings.default_sending_domain ?? 'auto'}
+        onValueChange={(value) => setDefault.mutate(value === 'auto' ? null : value)}
+        disabled={setDefault.isPending || verified.length === 0}
+      >
+        <SelectTrigger id={selectId} className="max-w-[420px]">
+          <SelectValue placeholder="Oldest verified domain" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">Oldest verified domain</SelectItem>
+          {verified.map((domain) => (
+            <SelectItem key={domain.id} value={domain.id}>
+              {domain.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
   )
 }
 

@@ -443,6 +443,8 @@ export type CurrentUserRecord = z.infer<typeof CurrentUser>
 
 export const WorkspaceSettings = z.object({
   name: z.string(),
+  /** The verified domain sign-in codes and system mail are sent from. */
+  default_sending_domain: z.string().nullable().default(null),
   default_from: z.string().nullable(),
   default_reply_to: z.string().nullable(),
   open_tracking: z.boolean(),
@@ -576,6 +578,9 @@ export const createApiClient = (scope: RequestScope) => {
 
   const patch = <T>(path: string, schema: z.ZodType<T>, body?: unknown) =>
     call(path, schema, { method: 'PATCH', body })
+
+  const put = <T>(path: string, schema: z.ZodType<T>, body?: unknown) =>
+    call(path, schema, { method: 'PUT', body })
 
   const del = <T>(path: string, schema: z.ZodType<T>) => call(path, schema, { method: 'DELETE' })
 
@@ -725,6 +730,12 @@ export const createApiClient = (scope: RequestScope) => {
 
     // --- settings, team, preference centre ---------------------------------
     getSettings: () => get('/workspace/settings', WorkspaceSettings),
+    setDefaultSendingDomain: (domainId: string | null) =>
+      put(
+        '/workspace/sending-domain',
+        z.object({ object: z.string(), default_sending_domain: z.string().nullable() }),
+        { domain_id: domainId },
+      ),
     updateSettings: (body: Record<string, unknown>) =>
       patch('/workspace/settings', WorkspaceSettings, body),
     deleteWorkspace: (id: string) => del(`/workspace/${id}`, deleted),

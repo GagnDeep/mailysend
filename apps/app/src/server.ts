@@ -1,10 +1,12 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
 import { api } from './server/api/index.ts'
-import { configure } from './server/bootstrap.ts'
+import { actorFromSession } from './server/auth.ts'
+import { configure, isClaimed } from './server/bootstrap.ts'
 import { consumeBroadcastPages } from './server/consumers/broadcast.ts'
 import { consumeEventQueue } from './server/consumers/events.ts'
 import { consumeInbound } from './server/consumers/inbound.ts'
 import { consumeWebhooks } from './server/consumers/webhooks.ts'
+import { tenancyFor } from './server/context.ts'
 import { runCron } from './server/cron.ts'
 import { type Env, runWithEnv } from './server/env.ts'
 import { handleInboundEmail } from './server/inbound-handler.ts'
@@ -26,6 +28,9 @@ import { handleClick, handleOpen, handleUnsubscribe } from './server/tracking.ts
 
 const startHandler = createStartHandler(defaultStreamHandler)
 
+const redirect = (location: string): Response =>
+  new Response(null, { status: 302, headers: { location, 'cache-control': 'no-store' } })
+
 async function route(request: Request, env: Env, _ctx: ExecutionContextLike): Promise<Response> {
   const url = new URL(request.url)
   const { pathname } = url
@@ -37,6 +42,29 @@ async function route(request: Request, env: Env, _ctx: ExecutionContextLike): Pr
 
   // --- api -----------------------------------------------------------------
   if (pathname === '/v1' || pathname.startsWith('/v1/')) return api.fetch(request, env)
+
+  // --- first run, and the dashboard guard ----------------------------------
+  //
+  // Both of these were client-side and therefore too late. `/app` is `ssr:
+  // true`, so the entire dashboard shell — sidebar, topbar, workspace name —
+  // streamed to anonymous visitors and only bounced them after hydration; a
+  // reader with JavaScript off never bounced at all. And a self-hosted instance
+  // served the marketing site at its own root, which is somebody else's shop
+  // window sitting where the operator expected their dashboard.
+  if (pathname === '/app' || pathname.startsWith('/app/')) {
+    const sql = tenancyFor(env).db('')
+    if (!(await isClaimed(sql))) return redirect('/setup')
+    if (!(await actorFromSession(request, sql))) {
+      return redirect(`/sign-in?next=${encodeURIComponent(pathname + url.search)}`)
+    }
+  }
+
+  if (pathname === '/' && env.MS_LANDING === 'app') {
+    // The marketing pages stay reachable by URL — `/docs` is the reason anybody
+    // self-hosts this in the first place — but they are not what the root of
+    // your own instance should be.
+    return redirect((await isClaimed(tenancyFor(env).db(''))) ? '/app' : '/setup')
+  }
 
   // Sign-out is a plain form POST rather than a `fetch` to `/v1`, because the
   // moment somebody most wants out is the moment the client bundle has broken.

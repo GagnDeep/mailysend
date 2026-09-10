@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mailysend/contracts": "workspace:*",
-    "@mailysend/platform": "workspace:*"
+    "@mailysend/platform": "workspace:*",
+    "@simplewebauthn/server": "^14.0.1"
   }
 }

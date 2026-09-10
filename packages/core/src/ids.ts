@@ -65,6 +65,11 @@ export const ID_PREFIXES = {
   incident: 'inc',
   placementTest: 'plt',
   inbound: 'inb',
+  loginCode: 'lgc',
+  credential: 'wac',
+  challenge: 'chl',
+  recoveryCode: 'rcv',
+  deviceCode: 'dvc',
 } as const
 
 export type IdKind = keyof typeof ID_PREFIXES

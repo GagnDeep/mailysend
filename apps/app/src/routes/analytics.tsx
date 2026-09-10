@@ -19,7 +19,7 @@ import { DIFFERENTIATORS, OWNERSHIP_BADGE, RESEND_FRAMING } from '~/components/m
 import { PageShell, Section } from '~/components/marketing/page-shell'
 import type { Confidence } from '~/components/marketing/placement'
 import { PlacementRow, SourceTag } from '~/components/marketing/placement'
-import { breadcrumbSchema, pageHead } from '~/seo'
+import { breadcrumbSchema, DEPLOY_URL, pageHead } from '~/seo'
 
 export const Route = createFileRoute('/analytics')({
   head: () =>
@@ -356,7 +356,9 @@ function AnalyticsPage() {
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <Button asChild>
-              <a href="/sign-up">Deploy free</a>
+              <a href={DEPLOY_URL} rel="noreferrer">
+                Deploy free
+              </a>
             </Button>
             <Button asChild variant="outline" className="border-line hover:border-ink">
               <a href="/compare#migrate">Migration guide</a>

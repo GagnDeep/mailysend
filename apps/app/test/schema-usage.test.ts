@@ -21,10 +21,18 @@ const ROOT = new URL('../../..', import.meta.url).pathname
 const SERVER = join(ROOT, 'apps/app/src/server')
 
 const db = new DatabaseSync(':memory:')
-const migration = readFileSync(join(ROOT, 'packages/db/migrations/0000_init.sql'), 'utf8')
-for (const statement of migration.split('--> statement-breakpoint')) {
-  const trimmed = statement.trim()
-  if (trimmed) db.exec(trimmed)
+// Every migration, in order — not just the first. Pinning this to `0000_init`
+// meant the day a table arrived in `0001` the statements using it were reported
+// as "no such table" by the very test whose job is to prove they are fine.
+const MIGRATIONS = join(ROOT, 'packages/db/migrations')
+for (const file of readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('.sql'))
+  .sort()) {
+  const migration = readFileSync(join(MIGRATIONS, file), 'utf8')
+  for (const statement of migration.split('--> statement-breakpoint')) {
+    const trimmed = statement.trim()
+    if (trimmed) db.exec(trimmed)
+  }
 }
 
 function walk(dir: string): string[] {

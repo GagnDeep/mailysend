@@ -14,7 +14,7 @@ form with eighteen fields is a form nobody finishes.
 | Variable | If you leave it unset |
 |---|---|
 | `MS_SECRET` | A 32-byte secret is generated on first boot and stored in the `settings` table, so it survives restarts and redeploys. Set it explicitly to keep the signing key out of the database and to be able to rotate it. Must be at least 32 characters if you do set it. |
-| `MS_PUBLIC_URL` | Learned from the first request's own origin and stored. A deployment first reached on `workers.dev` and later on a custom domain adopts the custom domain; a `localhost` origin is never stored, so development cannot poison a real deployment. |
+| `MS_PUBLIC_URL` | Learned from the first request's own origin and stored. A deployment first reached on `workers.dev` and later on a custom domain adopts the custom domain; a `localhost` origin is never stored, so development cannot poison a real deployment, and a `workers.dev` request can no longer drag an instance back off its custom domain. **Passkeys are bound to this hostname** — see "First run" below. |
 | `MS_DATA_KEY` | Falls back to `MS_SECRET`. Set it separately if you want to rotate one without the other. |
 | `MS_TRACKING_URL` | Falls back to `MS_PUBLIC_URL`. Set it if tracking links should point at a separate host. |
 
@@ -24,13 +24,91 @@ form with eighteen fields is a form nobody finishes.
 |---|---|---|
 | `MS_MODE` | `single` | `single` for a self-hosted instance, `saas` for the hosted product |
 | `MS_DEFAULT_PROVIDER` | `cloudflare` | The transport used when a workspace has configured none |
-| `MS_OWNER_EMAIL` | — | The address that owns the dashboard. Its first one-time code is printed to the process log while no sending domain is verified |
+| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup` |
+| `MS_LANDING` | `app` when `MS_MODE=single`, else `marketing` | What `/` serves: `app` redirects to the dashboard (or `/setup` while unclaimed), `marketing` serves the public site |
 | `EVENT_DETAIL` | `on` | `off` stops writing a row per event and reconstructs timelines from the R2 archive |
 | `MS_LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `MS_ACCESS_TEAM` | — | Cloudflare Access team domain, e.g. `acme.cloudflareaccess.com` |
 | `MS_ACCESS_AUD` | — | The Access application's AUD tag. Both are required for Access sign-in |
 | `PORT` | `8917` | Node deployments only |
 | `MS_DATA_DIR` | `./.data` | Node deployments only: SQLite, blobs and the queue spool |
+
+## First run
+
+A fresh deployment has no verified sending domain, no identity provider and
+nobody to email, so its first session cannot come from any of those. It comes
+from claiming the instance.
+
+**`/setup`** is where that happens. The first visitor registers a passkey and
+becomes the owner; the claim is one conditional insert, so two simultaneous
+claimants produce exactly one owner. Ten single-use recovery codes are shown
+once. The two steps after it — add a sending domain, mint a key and send a test
+— are both skippable.
+
+`GET /v1/instance` is unauthenticated and is what every pre-auth screen renders
+from, so a door is only offered when it is open:
+
+```jsonc
+{ "object": "instance", "claimed": true, "mode": "single", "version": "0.1.0",
+  "public_url": "https://mail.example.com", "landing": "app",
+  "auth":    { "passkey": true, "access": false, "otp": true, "device": true },
+  "sending": { "ready": true, "verified_domains": 1, "last_error": null } }
+```
+
+It carries no secrets and no per-address facts. `auth.access` is
+`Boolean(MS_ACCESS_TEAM && MS_ACCESS_AUD)`; `auth.otp` is whether any domain is
+verified — a global fact, so it leaks nothing about anybody's address. Until it
+is true, `POST /v1/auth/otp` answers `202 {"status":"unavailable"}` rather than
+claiming to have sent mail.
+
+### Ways in, and the way back in
+
+| Path | Needs | Notes |
+|---|---|---|
+| Passkey | a claimed instance | Discoverable, so no email is typed |
+| Recovery code | one of the ten | Single-use; regenerate from Settings |
+| Cloudflare Access | `MS_ACCESS_TEAM` + `MS_ACCESS_AUD` | Assertion verified against your team's keys: signature, `iss`, `aud`, `exp` |
+| Emailed code | a verified sending domain | Sent from the domain flagged default, not the oldest one |
+| `npx mailysend claim` | write access to the instance's D1 | Break-glass; works before *and* after the claim |
+| `npx mailysend login` | a browser already signed in | Device code approved at **Settings → Access** |
+
+`mailysend claim` proves control of the deployment rather than of an inbox: it
+writes a one-time nonce into the instance's own database — through the D1 HTTP
+API when `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are set, otherwise
+by printing the exact `wrangler d1 execute` command — and then proves it knows
+that value. Only somebody who can write that database can produce it, which is
+why it is safe to leave available permanently.
+
+### Passkeys and the instance hostname
+
+A passkey is bound to a hostname. Because `MS_PUBLIC_URL` is *learned*, an
+instance that starts on `*.workers.dev` and later answers on `mail.example.com`
+changes the WebAuthn relying party, and every passkey registered on the old host
+stops working there.
+
+So each credential stores the hostname it was registered for. The dashboard
+lists which are still usable, the sign-in page names the previous host when it
+sees a mismatch, and the fix is a recovery code plus a re-registration. Moving
+deliberately — **Settings → Access** — pins the new value, records the
+old one, and tells you the same thing in advance.
+
+If you serve one instance on more than one hostname, set `MS_PUBLIC_URL`
+explicitly before anybody registers a passkey.
+
+### Upgrading an existing deployment
+
+Redeploy; the migration runs itself on the first request, and existing API keys,
+sessions, domains and messages are untouched. Three things change:
+
+- An instance that already has a member is marked claimed on the first boot
+  after the upgrade, so `/setup` cannot be used to take it over. One with no
+  member at all is unclaimed — which is the case `/setup` exists for.
+- `/` redirects to `/app` (or `/setup`). Set `MS_LANDING=marketing` if your
+  deployment is meant to serve the public site at its root.
+- `/sign-up` is gone and redirects to `/setup`.
+
+Then add a passkey and generate recovery codes from Settings; until you do, your
+only doors are the ones you already had.
 
 ## Sending credentials
 
@@ -137,6 +215,13 @@ Worker. And `-c` pointing into `.output-cf/server/`: Vite generates the wrangler
 config it deploys from, next to the bundle. `apps/app/wrangler.jsonc` is the
 *input* to that generation — deploying it directly points `main` at TypeScript
 source.
+
+`sitemap.xml` is written at build time and needs a host, so it is emitted only
+when the build has one: `MS_PUBLIC_URL`, or `MS_LANDING=marketing` (which is
+what `mailysend.com` builds with, and the only build allowed to publish
+`mailysend.com` as its canonical host). A self-hosted build with neither ships
+no sitemap rather than one pointing crawlers at somebody else's site — the
+runtime `MS_LANDING` is a separate decision and can still be `app`.
 
 The root `build` script is an alias for `build:cf`, so the build command works
 whether Cloudflare guesses `pnpm build` or you set it explicitly.

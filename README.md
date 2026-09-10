@@ -64,7 +64,7 @@ if you would rather be explicit.
 | 🤖 **Agents** | A nine-tool MCP server so an assistant can read and draft mail — with mandatory human confirmation before anything sends |
 | 🎨 **Templates** | Handlebars, MJML, a restricted JSX AST compiler, versioning with diff and rollback |
 | 🔗 **Webhooks** | HMAC-signed, retried on a queue then a durable tail, every attempt's response stored, replayable |
-| 🔐 **Auth** | Cloudflare Access for the dashboard, hashed API keys for the API, RBAC, invites, audit log — and no password store anywhere |
+| 🔐 **Auth** | Passkeys and single-use recovery codes for the dashboard, Cloudflare Access when you have it, a CLI device flow, hashed API keys for the API, RBAC, invites, audit log — and no password store anywhere |
 | 🚀 **SEO built in** | 14 prerendered marketing pages, JSON-LD, OG images, `sitemap.xml`, `robots.txt`, `llms.txt` |
 
 ---
@@ -220,9 +220,13 @@ provisions less than its documentation implies.
 already filled in, because there is nothing you need to know before the first boot: on
 its first request the instance applies its own migrations, creates the workspace,
 generates and stores a 32-byte signing secret, learns its own public URL from the request
-it is answering, and prints one bootstrap API key to the log. Set `MS_OWNER_EMAIL` if you
-want the dashboard sign-in link to go somewhere; everything else can wait until you are
-inside.
+it is answering, and prints one bootstrap API key to the log.
+
+When it finishes, open the deployment's URL. It lands on **`/setup`**, where you claim the
+instance with a passkey — no email, no DNS and no identity provider needed, because a
+freshly deployed Worker has none of those. Set `MS_OWNER_EMAIL` beforehand if the URL will
+be public before you get to it: it does not create an owner, it restricts who may claim.
+Everything else can wait until you are inside.
 
 **The build creates what the button does not.** `wrangler deploy` validates every binding
 before it uploads, so a missing queue or namespace is a failed deploy rather than a
@@ -279,9 +283,10 @@ PORT=8917 node apps/app/node-server.mjs
 That is the whole command — there is no required environment variable on this path
 either. First boot migrates the database, creates the workspace, generates and stores the
 signing secret, and prints one API key. The key is printed exactly once, because only its
-SHA-256 hash is ever stored.
+SHA-256 hash is ever stored. Then open `http://localhost:8917/`, which sends you to
+`/setup` to claim the instance with a passkey.
 
-Set `MS_OWNER_EMAIL=you@your-domain.com` to name the dashboard owner, and `MS_SECRET` to
+Set `MS_OWNER_EMAIL=you@your-domain.com` to restrict who may claim it, and `MS_SECRET` to
 a 32-byte hex string if you would rather keep the signing key out of the database and be
 able to rotate it. Both are optional. The full list is in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
@@ -352,19 +357,82 @@ but it is never the identity of a message.
 
 ### Getting into the dashboard
 
-The API takes a key; the dashboard takes a session, and there are two ways to get one.
+The API takes a key; the dashboard takes a session. A brand-new deployment has no verified
+sending domain, no identity provider and nobody to email, so the first session cannot come
+from any of those. It comes from **claiming the instance**.
 
-**Cloudflare Access** is the intended path: set `MS_ACCESS_TEAM` and `MS_ACCESS_AUD` and
-the sign-in page trades the Access assertion for a session. The assertion is verified
-against your team's published keys — signature, `aud`, `exp` — never merely decoded.
+**1 — Claim it at `/setup`.** The first person to open it registers a passkey and becomes
+the owner. The claim is a single conditional insert, so two people opening `/setup` at the
+same moment produce exactly one owner — the other is told the instance is already claimed.
+Then it offers, both skippable, adding a sending domain and minting your first API key
+with a live test send.
 
-**A one-time code** is the bootstrap, emailed through this deployment's own send path.
-That is a chicken-and-egg problem on a brand-new instance, which has no verified sending
-domain and so cannot email anybody — so while no domain is verified, the code for
-`MS_OWNER_EMAIL`, and only that address, is printed to the process log instead.
+**2 — Save the recovery codes.** Ten of them, shown once, single-use. They are the way back
+in if the passkey is gone, and the reason removing your last passkey is allowed at all.
+
+**3 — Sign in afterwards with the passkey alone.** No email typed: the credential is
+discoverable, so the browser offers it and `/sign-in` trades the assertion for a session.
+
+Three other doors exist, and the sign-in page renders each one **only when it is actually
+open** — an offered door that answers 501 is worse than no door:
+
+| Door | When it appears | What it needs |
+|---|---|---|
+| **Recovery code** | always | one of the ten codes |
+| **Cloudflare Access** | `MS_ACCESS_TEAM` and `MS_ACCESS_AUD` are set | the assertion is verified against your team's published keys — signature, `iss`, `aud`, `exp` — never merely decoded |
+| **Emailed one-time code** | a sending domain is verified | it is sent through this deployment's own send path, from the domain you marked default |
+
+Until a domain is verified, `POST /v1/auth/otp` answers `202 {"status":"unavailable"}` and
+the page says so, instead of pointing you at an inbox that will never receive anything.
+
+**Locked out?** `npx mailysend claim --url https://your-instance` is the break-glass path,
+and it keeps working after the instance is claimed. It proves control of the deployment
+rather than of an inbox: it writes a one-time nonce into the instance's own database —
+through the Cloudflare D1 API when `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are
+in your environment, otherwise by printing the exact `wrangler d1 execute` command for you
+to run — and then proves it knows that nonce. Only somebody who can write that database
+can produce it. You get a session and a fresh API key.
+
+**On the CLI**, `npx mailysend login` uses a device code: it prints an eight-character code
+and a URL, you approve it at **Settings → Access** in a browser that is already signed
+in, and the CLI receives a full-access key named after the client — revocable from the same
+screen as any other key.
+
+**Moving to your own domain** is done from **Settings → Access**. This matters more
+than it looks: a passkey is bound to a hostname, so changing the host invalidates every
+passkey registered on the old one. The instance stores the hostname each credential was
+registered for, shows you which are still usable, and tells you plainly that you need a
+recovery code and a re-registration on the new host. `mailysend claim` remains the
+guaranteed way in, which is what makes offering the move as a button safe at all.
 
 There is no password store. A self-hosted email platform that invents one is adding the
 single credential most likely to be reused and leaked.
+
+<details>
+<summary><b>Upgrading a deployment that predates the claim flow</b></summary>
+
+Pull and redeploy; the new migration runs itself on the first request. Nothing else is
+required, and nothing you already have is invalidated — existing API keys, sessions,
+domains and messages are untouched.
+
+What changes:
+
+- **An instance with an owner already stays claimed.** The first boot after the upgrade
+  marks any deployment that already has a member as claimed, so `/setup` will not offer
+  your instance to a passer-by. If yours somehow has no member — the common case for a
+  deploy nobody ever managed to sign into — it is unclaimed, and `/setup` is how you
+  finally get in.
+- **`/` now redirects** to `/app` (or `/setup`) on a self-hosted instance. If your
+  deployment is meant to serve the public marketing site at its root, set
+  `MS_LANDING=marketing`.
+- **`/sign-up` is gone**, replaced by `/setup`. The old path redirects.
+- **Add a passkey** from Settings once you are in, and generate recovery codes. Until you
+  do, your only doors are the ones you already had.
+- **Pin your hostname** if you serve the instance on more than one — `MS_PUBLIC_URL`, or
+  Settings → Access — before registering passkeys, since a later host change
+  invalidates them.
+
+</details>
 
 ---
 
@@ -491,7 +559,8 @@ for the long form.
 | `MS_MODE` | `single` | `single` (self-hosted) or `saas` |
 | `MS_DATA_KEY` | `MS_SECRET` | Encrypts stored provider credentials |
 | `MS_DEFAULT_PROVIDER` | `cloudflare` | Fallback transport when nothing is configured |
-| `MS_OWNER_EMAIL` | — | The dashboard owner. Their first sign-in code is logged while no sending domain is verified |
+| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup` |
+| `MS_LANDING` | `app` in single mode | What `/` serves. `app` redirects to your dashboard (or `/setup` while unclaimed); `marketing` serves the public site, which is what `mailysend.com` runs |
 | `MS_ACCESS_TEAM` | — | Cloudflare Access team domain, e.g. `acme.cloudflareaccess.com` |
 | `MS_ACCESS_AUD` | — | The Access application's AUD tag. Both are required for Access sign-in |
 | `EVENT_DETAIL` | `on` | `off` stops writing per-event rows and reconstructs timelines from R2 |

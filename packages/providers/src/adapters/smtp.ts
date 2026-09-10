@@ -144,9 +144,15 @@ export class SmtpProvider implements Provider {
           : {}),
       })
       await session.quit()
-      return { ok: true, detail: `connected to ${this.#config.host}:${this.#config.port}` }
+      return {
+        status: 'ok' as const,
+        detail: `connected to ${this.#config.host}:${this.#config.port}`,
+      }
     } catch (err) {
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) }
+      return {
+        status: 'failed' as const,
+        detail: err instanceof Error ? err.message : String(err),
+      }
     }
   }
 }

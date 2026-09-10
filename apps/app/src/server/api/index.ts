@@ -1,6 +1,7 @@
 import { apiError } from '@mailysend/contracts'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { VERSION } from '../../version.ts'
 import { analytics } from './analytics.ts'
 import { apiKeys } from './api-keys.ts'
 import { audiences } from './audiences.ts'
@@ -12,10 +13,12 @@ import { contacts } from './contacts.ts'
 import { domains } from './domains.ts'
 import { emails } from './emails.ts'
 import { inbound } from './inbound.ts'
+import { instance } from './instance.ts'
 import { logs } from './logs.ts'
 import { openApiDocument } from './openapi.ts'
 import { preferences } from './preferences.ts'
 import { segments } from './segments.ts'
+import { setup } from './setup.ts'
 import { suppressions } from './suppressions.ts'
 import { templates } from './templates.ts'
 import { webhooks } from './webhooks.ts'
@@ -70,6 +73,12 @@ api.route('/workspace', workspace)
 api.route('/preference-centre', preferences)
 // Unauthenticated by design — this is how a session comes into existence.
 api.route('/auth', auth)
+// Also unauthenticated, and also by design: `/v1/instance` is what the sign-in
+// page reads *before* anyone can be authenticated, and `/v1/setup` is how a
+// deployment gets its first human. Both refuse to do anything once the instance
+// has an owner, which is the property that makes them safe to leave open.
+api.route('/instance', instance)
+api.route('/setup', setup)
 
 /**
  * `GET /v1/me` — who the caller is, and what they can switch between.
@@ -114,6 +123,11 @@ api.get('/me', withContext(), async (c) => {
     email: user.email,
     name: user.name,
     avatar_url: user.avatar_url,
+    // The client had no way to see any of this and was guessing — which is how
+    // a hardcoded `v1.8.2` survived on four screens. One source, served here.
+    mode: ctx.env.MS_MODE,
+    version: VERSION,
+    features: ctx.features,
     workspaces: results.map((w) => ({
       object: 'workspace' as const,
       id: w.id,
@@ -140,6 +154,7 @@ api.get('/health', async (c) => {
     {
       status: database === 'ok' ? 'operational' : 'degraded',
       mode: env.MS_MODE,
+      version: VERSION,
       database,
       time: new Date().toISOString(),
     },

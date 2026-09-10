@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
@@ -25,6 +26,33 @@ import { defineConfig } from 'vite'
  * process. A real `MS_SECRET` in the environment still wins.
  */
 if (!process.env.MS_SECRET) process.env.MS_SECRET = `${randomUUID()}${randomUUID()}`
+
+/**
+ * The one version number.
+ *
+ * Four screens used to carry a hand-written one — the sign-in panel claimed
+ * `v1.8.2` against a repository at 0.1.0 — so it is compiled in from
+ * package.json instead, and `/v1/health`, `/v1/instance` and the UI all read
+ * the same constant.
+ */
+const VERSION = createRequire(import.meta.url)('./package.json').version as string
+
+/**
+ * Prerendering renders every public page through the real server, and the real
+ * server redirects `/` to the dashboard on a self-hosted instance. Without this
+ * the build would prerender a 302 — or, with `failOnError`, not build at all.
+ * The static output is the marketing site; which of it a deployment actually
+ * serves at `/` is a runtime decision.
+ *
+ * `IS_MARKETING_BUILD` is captured before the default is applied, because one
+ * thing does depend on the difference: only the marketing deployment may
+ * publish `mailysend.com` as its sitemap host.
+ */
+const IS_MARKETING_BUILD = process.env.MS_LANDING === 'marketing'
+if (!process.env.MS_LANDING) process.env.MS_LANDING = 'marketing'
+
+const sitemapHost =
+  process.env.MS_PUBLIC_URL ?? (IS_MARKETING_BUILD ? 'https://mailysend.com' : undefined)
 
 const target = process.env.MS_TARGET === 'cloudflare' ? 'cloudflare' : 'node'
 const isDev = process.env.NODE_ENV !== 'production'
@@ -61,6 +89,7 @@ const PRERENDER_ROUTES = [
   '/resources',
   '/sign-in',
   '/sign-up',
+  '/setup',
   '/legal/privacy',
   '/legal/terms',
   '/legal/dpa',
@@ -68,6 +97,7 @@ const PRERENDER_ROUTES = [
 
 export default defineConfig({
   cacheDir,
+  define: { __MS_VERSION__: JSON.stringify(VERSION) },
   resolve: {
     alias: { '~': fileURLToPath(new URL('./src', import.meta.url)) },
   },
@@ -121,7 +151,14 @@ export default defineConfig({
           changefreq: 'weekly',
         },
       })),
-      sitemap: { enabled: true, host: process.env.MS_PUBLIC_URL ?? 'https://mailysend.com' },
+      // A self-hosted build must never publish `mailysend.com` as its own
+      // canonical host: the sitemap it ships would point every crawler at
+      // somebody else's site. So the literal belongs to the marketing build
+      // alone; another build uses its own configured URL, and a build that has
+      // neither ships no sitemap rather than a wrong one — a sitemap with the
+      // wrong host is worse than none, and the generator refuses a host-less
+      // one anyway.
+      sitemap: sitemapHost ? { enabled: true, host: sitemapHost } : { enabled: false },
     }),
     react(),
     tailwindcss(),

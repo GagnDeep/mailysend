@@ -26,7 +26,15 @@ export async function runCron(cron: string, env: Env): Promise<void> {
   }
 }
 
-/** Idempotency rows and expired suppressions. Cheap, indexed, bounded. */
+/**
+ * Everything with an expiry. Cheap, indexed, bounded.
+ *
+ * The auth tables are here for a reason beyond tidiness: a spent WebAuthn
+ * challenge, an expired login code and a stale device code are all credentials
+ * that have stopped being useful but have not stopped existing, and a table
+ * that only ever grows eventually makes the lookup that guards a sign-in slow.
+ * Each of these has an index on the column being compared.
+ */
 async function sweepExpired(env: Env): Promise<void> {
   const sql = tenancyFor(env).db(DEFAULT_WORKSPACE)
   const now = new Date().toISOString()
@@ -35,6 +43,20 @@ async function sweepExpired(env: Env): Promise<void> {
     sql
       .prepare('DELETE FROM suppressions WHERE expires_at IS NOT NULL AND expires_at < ?')
       .bind(now),
+    sql.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+    sql.prepare('DELETE FROM webauthn_challenges WHERE expires_at < ?').bind(now),
+    sql.prepare('DELETE FROM device_codes WHERE expires_at < ?').bind(now),
+    // Login codes outlive their expiry by an hour on purpose: the per-address
+    // and per-IP rate limits count rows in the last hour, and deleting them the
+    // moment they expire would reset the limit ten minutes after each request.
+    sql
+      .prepare('DELETE FROM login_codes WHERE expires_at < ?')
+      .bind(new Date(Date.now() - 60 * 60_000).toISOString()),
+    // A claim nonce is a bypass of the entire authentication system for as long
+    // as it sits in the table. Ten minutes, and the endpoint checks the age too.
+    sql
+      .prepare('DELETE FROM claim_nonces WHERE created_at < ?')
+      .bind(new Date(Date.now() - 10 * 60_000).toISOString()),
   ])
 }
 

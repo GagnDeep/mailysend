@@ -71,8 +71,11 @@ export const login = async (ctx: CommandContext) => {
       body: JSON.stringify({ client: 'mailysend-cli' }),
     })
     if (!start.ok) {
-      throw new CliError(`${baseUrl} does not offer device login (${start.status}).`, {
-        hint: 'Create a key in the dashboard and run `mailysend login --token ms_live_…`.',
+      throw new CliError(`${baseUrl} did not start a device login (${start.status}).`, {
+        hint:
+          start.status === 404
+            ? 'That deployment predates the device flow. Upgrade it, or run `mailysend login --token ms_live_…`.'
+            : `If nobody has claimed that instance yet, run: mailysend claim --url ${baseUrl}`,
       })
     }
     const device = (await start.json()) as DeviceCode

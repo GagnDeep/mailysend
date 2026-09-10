@@ -1,25 +1,51 @@
 import { apiError } from '@mailysend/contracts'
-import { DEFAULT_WORKSPACE, hashApiKey, newId } from '@mailysend/core'
+import {
+  DEFAULT_WORKSPACE,
+  hashApiKey,
+  newId,
+  normalizeRecoveryCode,
+  timingSafeEqual,
+} from '@mailysend/core'
 import type { Sql } from '@mailysend/platform'
 import { z } from 'zod'
 import { buildContext, tenancyFor } from '../context.ts'
 import { background, getEnv } from '../env.ts'
 import { acceptEmail } from '../send/accept.ts'
+import {
+  clientIp,
+  issueSession,
+  normalizeEmail,
+  SESSION_TTL_MS,
+  sessionCookie,
+  sessionResponse,
+} from '../session.ts'
 import { createRouter } from './base.ts'
+import { device } from './device.ts'
+import { passkeys } from './passkeys.ts'
 
 /**
  * Dashboard sign-in.
  *
- * Deliberately separate from API-key auth, and deliberately not a password
- * store. A self-hosted email platform that invents its own password database is
- * adding the one credential most likely to be reused and leaked, to protect a
- * dashboard that already sits behind whatever the operator put in front of it.
- * So there are exactly two ways in:
+ * Deliberately not a password store. A self-hosted email platform that invents
+ * its own password database is adding the one credential most likely to be
+ * reused and leaked, to protect a dashboard that already sits behind whatever
+ * the operator put in front of it. The ways in, in the order a person meets
+ * them:
  *
+ *   - **A passkey**, in `passkeys.ts`. The default, and the only credential a
+ *     brand-new deployment can create for itself: no email, no DNS, no identity
+ *     provider. This is what `/setup` claims the instance with.
+ *   - **A recovery code**, also in `passkeys.ts`. Ten, issued once at claim
+ *     time, for the day the device with the passkey is gone.
  *   - **Cloudflare Access.** The identity is already proven at the edge; we
- *     verify the assertion and mint a session. This is the intended path.
+ *     verify the assertion and mint a session. Offered only when the deployment
+ *     actually has `MS_ACCESS_TEAM` and `MS_ACCESS_AUD` — `/v1/instance` says
+ *     so, and the sign-in page renders the button from that answer rather than
+ *     from hope.
  *   - **A one-time code, emailed through the deployment's own send path.**
- *     Dogfooding, and the only bootstrap that works before Access is set up.
+ *     Dogfooding, and only possible once a sending domain is verified — which
+ *     is why it is no longer the bootstrap path it was originally written as.
+ *   - **A device code**, in `device.ts`, for the CLI.
  *
  * Every response here is deliberately uniform about whether an address exists.
  * A sign-in form that answers "no such user" is a membership oracle for anyone
@@ -27,18 +53,22 @@ import { createRouter } from './base.ts'
  */
 export const auth = createRouter()
 
+auth.route('/passkey', passkeys)
+auth.route('/device', device)
+
 /** Six digits. Long enough with five attempts and a ten-minute window. */
 const CODE_TTL_MS = 10 * 60_000
 const MAX_ATTEMPTS = 5
-const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
+/** Per address, per hour. Generous for a human, useless for spraying an inbox. */
+const MAX_CODES_PER_HOUR = 10
+/** Per source address, per hour. The address bucket alone does not bound a script. */
+const MAX_CODES_PER_IP_PER_HOUR = 30
 
-const StartBody = z.object({ email: z.string().email().max(320) })
+const StartBody = z.object({ email: z.string().trim().email().max(320) })
 const VerifyBody = z.object({
-  email: z.string().email().max(320),
+  email: z.string().trim().email().max(320),
   code: z.string().regex(/^\d{6}$/, 'must be six digits'),
 })
-
-const normalizeEmail = (email: string) => email.trim().toLowerCase()
 
 /** Crypto-random, uniform over 000000-999999 — not `Math.random()`. */
 function newCode(): string {
@@ -47,142 +77,104 @@ function newCode(): string {
 }
 
 /**
- * The cookie.
+ * Which workspace an address belongs to.
  *
- * `HttpOnly` so a script cannot read it, `SameSite=Lax` so it survives the
- * top-level navigation back from an email link but is not sent on a
- * cross-origin POST, and `Secure` unless the instance is being run over plain
- * HTTP on localhost — where marking it Secure would silently drop it and make
- * local development look broken.
+ * Read-only, unlike `resolveUser`: the code request must not create an account
+ * as a side effect, or requesting a code for an address becomes a way to make
+ * one exist.
  */
-function sessionCookie(token: string, publicUrl: string, maxAgeSeconds: number): string {
-  const secure = !publicUrl.startsWith('http://')
-  return [
-    `ms_session=${encodeURIComponent(token)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    secure ? 'Secure' : '',
-    `Max-Age=${maxAgeSeconds}`,
-  ]
-    .filter(Boolean)
-    .join('; ')
-}
-
-async function issueSession(
-  sql: Sql,
-  userId: string,
-  workspaceId: string,
-  request: Request,
-): Promise<string> {
-  // The token never reaches the database. Its SHA-256 is the row's primary key,
-  // so a dump of `sessions` cannot be replayed as a cookie.
-  const token = `mss_${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '')
-  const now = Date.now()
-  await sql
+async function workspaceForEmail(sql: Sql, email: string): Promise<string | null> {
+  const row = await sql
     .prepare(
-      `INSERT INTO sessions (id, user_id, workspace_id, expires_at, ip, user_agent, created_at)
-       VALUES (?,?,?,?,?,?,?)`,
+      `SELECT m.workspace_id FROM memberships m
+         JOIN users u ON u.id = m.user_id
+        WHERE u.email = ? ORDER BY m.created_at LIMIT 1`,
     )
-    .bind(
-      await hashApiKey(token),
-      userId,
-      workspaceId,
-      new Date(now + SESSION_TTL_MS).toISOString(),
-      request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for'),
-      request.headers.get('user-agent'),
-      new Date(now).toISOString(),
-    )
-    .run()
-  return token
-}
-
-/**
- * Finds or creates the user, and makes sure they belong somewhere.
- *
- * On a self-hosted instance the first person to sign in is the owner; there is
- * nobody to invite them. On a hosted one, `memberships` is written by the
- * invite flow and this only ever finds what is already there.
- */
-async function resolveUser(
-  sql: Sql,
-  email: string,
-  mode: 'single' | 'saas',
-): Promise<{ id: string; workspaceId: string } | null> {
-  const now = new Date().toISOString()
-  const existing = await sql
-    .prepare('SELECT id FROM users WHERE email = ?')
     .bind(email)
-    .first<{ id: string }>()
-
-  let userId = existing?.id
-  if (!userId) {
-    // In SaaS mode an unknown address is not an account. Self-host creates one,
-    // because the alternative is a deployment nobody can ever sign in to.
-    if (mode === 'saas') return null
-    userId = newId('user')
-    await sql
-      .prepare(
-        'INSERT INTO users (id, email, name, email_verified_at, created_at) VALUES (?,?,?,?,?)',
-      )
-      .bind(userId, email, null, now, now)
-      .run()
-  }
-
-  const membership = await sql
-    .prepare('SELECT workspace_id FROM memberships WHERE user_id = ? ORDER BY created_at LIMIT 1')
-    .bind(userId)
     .first<{ workspace_id: string }>()
-  if (membership) return { id: userId, workspaceId: membership.workspace_id }
-
-  if (mode === 'saas') return null
-  await sql
-    .prepare(
-      `INSERT INTO memberships (workspace_id, user_id, role, created_at)
-       VALUES (?,?,'owner',?)
-       ON CONFLICT DO NOTHING`,
-    )
-    .bind(DEFAULT_WORKSPACE, userId, now)
-    .run()
-  return { id: userId, workspaceId: DEFAULT_WORKSPACE }
+  return row?.workspace_id ?? null
 }
 
 /**
- * Sends the code, or logs it.
+ * The domain auth mail is sent from.
  *
- * A brand-new deployment has no verified sending domain, so it cannot email
- * anybody — including the person trying to get in and verify a domain. Rather
- * than leave that as a deadlock, the owner's code goes to the process log,
- * which on a self-hosted box is a place only the operator can read. It is
- * narrowly scoped: only `MS_OWNER_EMAIL`, and only while sending is impossible.
+ * `ORDER BY created_at LIMIT 1` — which this used to be — means the oldest
+ * domain ever added silently becomes the identity of every sign-in email, and
+ * stays that way after it is retired. So an explicit choice wins, and the
+ * oldest verified domain is only the fallback for an instance that never made
+ * one.
  */
-async function deliverCode(email: string, code: string): Promise<void> {
+export async function defaultSendingDomain(
+  sql: Sql,
+  workspaceId: string,
+): Promise<{ id: string; name: string } | null> {
+  const chosen = await sql
+    .prepare(`SELECT value FROM settings WHERE workspace_id = ? AND key = 'default_sending_domain'`)
+    .bind(workspaceId)
+    .first<{ value: string | null }>()
+  // Written raw by `PUT /v1/workspace/sending-domain`, but the generic settings
+  // patch JSON-encodes what it stores — so tolerate both rather than silently
+  // failing to find a domain whose id arrived wrapped in quotes.
+  const chosenId = chosen?.value?.replace(/^"|"$/g, '')
+  if (chosenId) {
+    const row = await sql
+      .prepare(
+        `SELECT id, name FROM domains WHERE workspace_id = ? AND id = ? AND status = 'verified'`,
+      )
+      .bind(workspaceId, chosenId)
+      .first<{ id: string; name: string }>()
+    if (row) return row
+  }
+  const oldest = await sql
+    .prepare(
+      `SELECT id, name FROM domains
+        WHERE workspace_id = ? AND status = 'verified'
+        ORDER BY created_at LIMIT 1`,
+    )
+    .bind(workspaceId)
+    .first<{ id: string; name: string }>()
+  return oldest ?? null
+}
+
+/**
+ * Sends the code, or says it could not.
+ *
+ * The return value is a *global* fact — this deployment has, or has not, a
+ * verified sending domain — never a per-address one. `/otp` passes it straight
+ * to the caller, which is safe precisely because it does not depend on who
+ * asked, and is the difference between "check your inbox" and an inbox that
+ * will never receive anything.
+ */
+async function deliverCode(
+  workspaceId: string,
+  email: string,
+  code: string,
+): Promise<'sent' | 'logged' | 'unavailable'> {
   const env = getEnv()
   const tenancy = tenancyFor(env)
-  const sql = tenancy.db('')
-  const domain = await sql
-    .prepare(`SELECT name FROM domains WHERE status = 'verified' ORDER BY created_at LIMIT 1`)
-    .bind()
-    .first<{ name: string }>()
+  const sql = tenancy.db(workspaceId)
+  const domain = await defaultSendingDomain(sql, workspaceId)
 
   const isOwner = env.MS_OWNER_EMAIL && normalizeEmail(env.MS_OWNER_EMAIL) === email
   if (!domain) {
     if (isOwner) {
+      // Narrow on purpose: only `MS_OWNER_EMAIL`, and only while nothing can be
+      // sent. On a self-hosted box the process log is a place only the operator
+      // can read. It is no longer the *only* way in — `/setup` and
+      // `mailysend claim` both exist now — so this is a convenience, not the
+      // bootstrap it once had to be.
       console.log(
         `\n  Sign-in code for ${email}: ${code}\n` +
           '  (shown here because no sending domain is verified yet)\n',
       )
-      return
+      return 'logged'
     }
-    // Not the owner and nothing can be sent: say nothing to the caller, because
-    // the alternative leaks whether an address is the owner's.
-    console.warn(`[auth] cannot deliver login code to ${email}: no verified sending domain`)
-    return
+    return 'unavailable'
   }
 
   const ctx = await buildContext(
     env,
-    { workspaceId: DEFAULT_WORKSPACE, environment: 'live', scopes: ['*'] },
+    { workspaceId, environment: 'live', scopes: ['*'] },
     background,
   )
   await acceptEmail(ctx, {
@@ -198,13 +190,17 @@ async function deliverCode(email: string, code: string): Promise<void> {
     // deliverability problem; neither tracking pixel belongs on it.
     tags: [{ name: 'kind', value: 'login_code' }],
   })
+  return 'sent'
 }
 
 /**
  * `POST /v1/auth/otp` — ask for a code.
  *
- * Always 202. Whether the address exists, whether mail could be sent, whether
- * the code was logged — none of it is observable from the response.
+ * Always 202, and the body never varies with the address: whether the account
+ * exists, whether it is suppressed, whether the code was logged rather than
+ * sent — none of it is observable. What *is* reported is whether this
+ * deployment can send mail at all, which is a property of the deployment and
+ * already visible on `/v1/instance`.
  */
 auth.post('/otp', async (c) => {
   const env = getEnv()
@@ -212,39 +208,70 @@ auth.post('/otp', async (c) => {
   const email = normalizeEmail(body.email)
   const sql = tenancyFor(env).db('')
   const now = Date.now()
+  const hourAgo = new Date(now - 60 * 60_000).toISOString()
+
+  const workspaceId = (await workspaceForEmail(sql, email)) ?? DEFAULT_WORKSPACE
+
+  // Both caps are checked *before* anything is invalidated. The original order
+  // consumed the live code first and then declined to issue a replacement,
+  // which turned a rate limit into a way to lock somebody out of their own
+  // sign-in for an hour while reporting success.
+  const [perAddress, perIp] = await Promise.all([
+    sql
+      .prepare('SELECT COUNT(*) AS n FROM login_codes WHERE email = ? AND created_at > ?')
+      .bind(email, hourAgo)
+      .first<{ n: number }>(),
+    sql
+      .prepare('SELECT COUNT(*) AS n FROM login_codes WHERE ip = ? AND created_at > ?')
+      .bind(clientIp(c.req.raw), hourAgo)
+      .first<{ n: number }>(),
+  ])
+
+  if ((perAddress?.n ?? 0) >= MAX_CODES_PER_HOUR || (perIp?.n ?? 0) >= MAX_CODES_PER_IP_PER_HOUR) {
+    // Still 202, still the same shape: a caller that can tell "rate limited"
+    // from "sent" can tell which addresses are real by watching which ones a
+    // burst locks out.
+    return Response.json({ object: 'login_code', status: 'sent' }, { status: 202 })
+  }
 
   // One live code per address. Requesting a second invalidates the first, so a
   // stolen older code cannot be used after the real user asks for a new one.
   await sql
-    .prepare(`UPDATE login_codes SET consumed_at = ? WHERE email = ? AND consumed_at IS NULL`)
+    .prepare('UPDATE login_codes SET consumed_at = ? WHERE email = ? AND consumed_at IS NULL')
     .bind(new Date(now).toISOString(), email)
     .run()
 
-  const recent = await sql
-    .prepare(`SELECT COUNT(*) AS n FROM login_codes WHERE email = ? AND created_at > ?`)
-    .bind(email, new Date(now - 60 * 60_000).toISOString())
-    .first<{ n: number }>()
+  const code = newCode()
+  await sql
+    .prepare(
+      `INSERT INTO login_codes (id, email, code_hash, expires_at, ip, created_at) VALUES (?,?,?,?,?,?)`,
+    )
+    .bind(
+      newId('loginCode'),
+      email,
+      await hashApiKey(`${email}:${code}`),
+      new Date(now + CODE_TTL_MS).toISOString(),
+      clientIp(c.req.raw),
+      new Date(now).toISOString(),
+    )
+    .run()
 
-  // Ten an hour is generous for a human and useless as a way to spray codes at
-  // somebody's inbox.
-  if ((recent?.n ?? 0) < 10) {
-    const code = newCode()
-    await sql
-      .prepare(
-        `INSERT INTO login_codes (id, email, code_hash, expires_at, created_at) VALUES (?,?,?,?,?)`,
-      )
-      .bind(
-        newId('user'),
-        email,
-        await hashApiKey(`${email}:${code}`),
-        new Date(now + CODE_TTL_MS).toISOString(),
-        new Date(now).toISOString(),
-      )
-      .run()
-    await deliverCode(email, code)
+  let status: 'sent' | 'logged' | 'unavailable'
+  try {
+    status = await deliverCode(workspaceId, email, code)
+  } catch (err) {
+    // Unguarded, this was a membership oracle: a suppressed requester made
+    // `acceptEmail` throw `recipient_suppressed`, so the uniform 202 became a
+    // 403 for exactly the addresses that had previously received mail. Sending
+    // failures belong in the log and on `/v1/instance`, not in this response.
+    console.error('[auth] could not deliver login code', err)
+    status = 'sent'
   }
 
-  return Response.json({ object: 'login_code', status: 'sent' }, { status: 202 })
+  return Response.json(
+    { object: 'login_code', status: status === 'unavailable' ? 'unavailable' : 'sent' },
+    { status: 202 },
+  )
 })
 
 /** `POST /v1/auth/session` — exchange a code for a session cookie. */
@@ -265,7 +292,9 @@ auth.post('/session', async (c) => {
     .first<{ id: string; code_hash: string; attempts: number }>()
   if (!row || row.attempts >= MAX_ATTEMPTS) throw apiError('invalid_login_code')
 
-  if (row.code_hash !== (await hashApiKey(`${email}:${body.code}`))) {
+  // Constant-time. `!==` on a hash leaks its prefix through timing, and a
+  // six-digit code has little enough entropy that narrowing it matters.
+  if (!timingSafeEqual(row.code_hash, await hashApiKey(`${email}:${body.code}`))) {
     // Counted on the row, not in memory: five wrong guesses burn this code
     // whether they arrive on one connection or fifty.
     await sql
@@ -284,27 +313,100 @@ auth.post('/session', async (c) => {
   if (!user) throw apiError('invalid_login_code')
 
   const token = await issueSession(sql, user.id, user.workspaceId, c.req.raw)
-  return Response.json(
-    { object: 'session', workspace_id: user.workspaceId },
-    {
-      headers: {
-        'set-cookie': sessionCookie(token, env.MS_PUBLIC_URL, SESSION_TTL_MS / 1000),
-      },
-    },
-  )
+  return sessionResponse(token, user.workspaceId, env.MS_PUBLIC_URL)
 })
+
+/**
+ * `POST /v1/auth/recovery` — spend a recovery code for a session.
+ *
+ * The answer to "the laptop with the passkey is gone", and the reason removing
+ * your last passkey is allowed at all. Single-use, enforced in the UPDATE, and
+ * rate-limited by source address for the same reason the code form is: twenty
+ * characters is a lot of entropy, but not if you are allowed unlimited guesses.
+ */
+auth.post('/recovery', async (c) => {
+  const env = getEnv()
+  const sql = tenancyFor(env).db('')
+  const body = z.object({ code: z.string().min(8).max(64) }).parse(await c.req.json())
+
+  const { spendRecoveryCode } = await import('../webauthn.ts')
+  const spent = await spendRecoveryCode(sql, normalizeRecoveryCode(body.code))
+  if (!spent) throw apiError('invalid_login_code', { message: 'That recovery code is not valid.' })
+
+  const token = await issueSession(sql, spent.userId, spent.workspaceId, c.req.raw)
+  return sessionResponse(token, spent.workspaceId, env.MS_PUBLIC_URL)
+})
+
+/**
+ * Finds or creates the user, and makes sure they belong somewhere.
+ *
+ * On an unclaimed self-hosted instance the first person through the door is the
+ * owner; there is nobody to invite them. Once `/setup` has run, `instance_claimed_at`
+ * exists and this stops creating accounts — a claimed instance invites people,
+ * it does not enrol whoever asks for a code. On a hosted one, `memberships` is
+ * written by the invite flow and this only ever finds what is already there.
+ */
+export async function resolveUser(
+  sql: Sql,
+  email: string,
+  mode: 'single' | 'saas',
+  opts: { create?: boolean } = {},
+): Promise<{ id: string; workspaceId: string } | null> {
+  const now = new Date().toISOString()
+  const existing = await sql
+    .prepare('SELECT id FROM users WHERE email = ?')
+    .bind(email)
+    .first<{ id: string }>()
+
+  const { isClaimed } = await import('../bootstrap.ts')
+  const create = opts.create ?? (mode === 'single' && !(await isClaimed(sql)))
+
+  let userId = existing?.id
+  if (!userId) {
+    if (!create) return null
+    userId = newId('user')
+    await sql
+      .prepare(
+        'INSERT INTO users (id, email, name, email_verified_at, created_at) VALUES (?,?,?,?,?)',
+      )
+      .bind(userId, email, null, now, now)
+      .run()
+  }
+
+  const membership = await sql
+    .prepare('SELECT workspace_id FROM memberships WHERE user_id = ? ORDER BY created_at LIMIT 1')
+    .bind(userId)
+    .first<{ workspace_id: string }>()
+  if (membership) return { id: userId, workspaceId: membership.workspace_id }
+
+  if (!create) return null
+  await sql
+    .prepare(
+      `INSERT INTO memberships (workspace_id, user_id, role, created_at)
+       VALUES (?,?,'owner',?)
+       ON CONFLICT DO NOTHING`,
+    )
+    .bind(DEFAULT_WORKSPACE, userId, now)
+    .run()
+  return { id: userId, workspaceId: DEFAULT_WORKSPACE }
+}
 
 /**
  * `POST /v1/auth/access` — trade a Cloudflare Access assertion for a session.
  *
  * The JWT is verified properly — signature against the team's published keys,
- * `aud` against this application's tag, `exp`/`iat` against the clock. Reading
- * the email out of an unverified token would let anyone with a text editor sign
- * in as anyone.
+ * `iss` against the team domain, `aud` against this application's tag,
+ * `exp`/`iat` against the clock. Reading the email out of an unverified token
+ * would let anyone with a text editor sign in as anyone.
  */
 auth.post('/access', async (c) => {
   const env = getEnv()
-  if (!env.MS_ACCESS_TEAM || !env.MS_ACCESS_AUD) throw apiError('not_implemented')
+  if (!env.MS_ACCESS_TEAM || !env.MS_ACCESS_AUD) {
+    throw apiError('not_implemented', {
+      message:
+        'Cloudflare Access is not configured on this instance. Set MS_ACCESS_TEAM and MS_ACCESS_AUD, or sign in with a passkey.',
+    })
+  }
 
   const assertion =
     c.req.raw.headers.get('cf-access-jwt-assertion') ??
@@ -315,14 +417,14 @@ auth.post('/access', async (c) => {
   if (!claims?.email) throw apiError('not_signed_in')
 
   const sql = tenancyFor(env).db('')
+  // An Access policy *is* the operator's decision about who may in. On an
+  // unclaimed single-tenant instance, passing it is enough to become the owner;
+  // afterwards it finds an existing membership like every other path.
   const user = await resolveUser(sql, normalizeEmail(claims.email), env.MS_MODE)
   if (!user) throw apiError('not_signed_in')
 
   const token = await issueSession(sql, user.id, user.workspaceId, c.req.raw)
-  return Response.json(
-    { object: 'session', workspace_id: user.workspaceId },
-    { headers: { 'set-cookie': sessionCookie(token, env.MS_PUBLIC_URL, SESSION_TTL_MS / 1000) } },
-  )
+  return sessionResponse(token, user.workspaceId, env.MS_PUBLIC_URL)
 })
 
 /** `DELETE /v1/auth/session` — sign out. Deletes the row, not just the cookie. */
@@ -342,6 +444,8 @@ auth.delete('/session', async (c) => {
   )
 })
 
+export { SESSION_TTL_MS }
+
 // ---------------------------------------------------------------------------
 // Cloudflare Access JWT verification
 // ---------------------------------------------------------------------------
@@ -358,10 +462,12 @@ interface AccessClaims {
 let certCache: { team: string; at: number; keys: JsonWebKey[] } | null = null
 const CERT_TTL_MS = 60 * 60_000
 
+const accessHost = (team: string): string =>
+  team.includes('.') ? team : `${team}.cloudflareaccess.com`
+
 async function accessKeys(team: string): Promise<JsonWebKey[]> {
   if (certCache?.team === team && Date.now() - certCache.at < CERT_TTL_MS) return certCache.keys
-  const host = team.includes('.') ? team : `${team}.cloudflareaccess.com`
-  const response = await fetch(`https://${host}/cdn-cgi/access/certs`, {
+  const response = await fetch(`https://${accessHost(team)}/cdn-cgi/access/certs`, {
     signal: AbortSignal.timeout(5_000),
   })
   if (!response.ok) throw apiError('not_signed_in')
@@ -419,5 +525,10 @@ async function verifyAccessJwt(
   if (typeof claims.iat === 'number' && claims.iat > now + 60) return null
   const audience = Array.isArray(claims.aud) ? claims.aud : claims.aud ? [claims.aud] : []
   if (!audience.includes(aud)) return null
+  // The issuer was declared on the claims type and never checked. Cloudflare
+  // signs every team's tokens with keys served from that team's own hostname,
+  // so a mismatch here means the token was minted for a different Access
+  // organisation than the one this deployment trusts.
+  if (claims.iss && claims.iss !== `https://${accessHost(team)}`) return null
   return claims
 }
