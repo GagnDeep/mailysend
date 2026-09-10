@@ -743,7 +743,7 @@ function HomePage() {
             <ul className="m-0 mb-[22px] flex list-none flex-col gap-2.5 p-0 text-[14.5px]">
               {[
                 `Ready in ${DEPLOY_DURATION} — most of it DNS propagation`,
-                'No variables to fill in — every field on the form already has a value',
+                'Nothing to fill in — the deploy form has no fields at all',
                 'Migrates itself and prints your first API key on boot',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">

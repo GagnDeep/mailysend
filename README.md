@@ -224,19 +224,21 @@ The button forks the repo, connects it to Workers Builds, then builds and deploy
 build creates the account resources the Worker binds — see below; the button itself
 provisions less than its documentation implies.
 
-**There is nothing on the deploy form to fill in.** Every variable it offers already
-carries a working value, because there is nothing you need to know before the first boot:
-on its first request the instance applies its own migrations, creates the workspace,
-generates and stores a 32-byte signing secret, learns its own public URL from the request
-it is answering, and prints one bootstrap API key and one claim code to the log.
+**The deploy form has no fields on it.** There is nothing you need to know before the
+first boot: on its first request the instance applies its own migrations, creates the
+workspace, generates and stores a 32-byte signing secret, learns its own public URL from
+the request it is answering, and prints one bootstrap API key and one claim code to the
+log.
 
-That form is built from the repo's `.env.example`, and Cloudflare renders it as key names
-only — never the comments — storing every answer as a secret, which it displays masked. A
-key shipped with an empty value therefore appears as a blank, mandatory-looking password
-box with nothing to explain it. So the keys that have no sensible default are not on the
-form at all: `MS_OWNER_EMAIL` and the `MS_OIDC_*` group are set afterwards with
-`wrangler secret put`, and are documented in
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+That form is built from the repo's `.env.example`, and it is worth knowing exactly what
+Cloudflare does with it: it shows key names only — never the comments — it stores every
+answer as a secret, and it does **not** prefill from the values in the file. So a key with
+a perfectly good default renders as a blank, masked, mandatory-looking password box,
+indistinguishable from a credential the deployment cannot start without. That is why the
+file carries no keys at all. Every variable — `MS_MODE`, `MS_LANDING`,
+`MS_DEFAULT_PROVIDER`, `EVENT_DETAIL`, `MS_OWNER_EMAIL` and the `MS_OIDC_*` group — is
+listed with its default in [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and set
+afterwards with `wrangler secret put` or a `vars` entry.
 
 When it finishes, open the deployment's URL. It lands on **`/setup`**, where you claim the
 instance with a passkey — no email, no DNS and no identity provider needed, because a

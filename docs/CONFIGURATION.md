@@ -5,17 +5,27 @@ has a default, and the two that cannot be defaulted are generated and stored by
 the instance on first boot. This is the reference for when you want to override
 something — not a checklist to work through before deploying.
 
-`.env.example` in the repository root is deliberately shorter than this page,
-and every key in it carries a value. The Deploy to Cloudflare flow builds its
-variables form from that file, showing key names only — never the comments — and
-stores each answer as a secret, which it renders masked. So a key shipped with
-an empty value becomes a blank, mandatory-looking password box with nothing to
-explain it. Keys with no sensible default therefore live here instead, and are
-set after deploying:
+`.env.example` in the repository root carries no keys at all, and this page is
+why. The Deploy to Cloudflare flow builds its variables form from that file,
+showing key names only — never the comments — storing each answer as a secret,
+which it renders masked, and it does not prefill from the values in the file.
+So a key with a perfectly good default becomes a blank, mandatory-looking
+password box, indistinguishable from a credential the deployment cannot start
+without. Every variable therefore lives here instead, and is set after
+deploying — as a secret:
 
 ```bash
 npx wrangler secret put MS_OWNER_EMAIL
 ```
+
+or, for the non-secret ones, as a `vars` entry in `wrangler.jsonc`:
+
+```jsonc
+"vars": { "MS_LANDING": "marketing" }
+```
+
+Note the ordering rule if you set both: a `vars` entry of the same name
+overwrites a secret on every deploy.
 
 ## What the instance resolves for itself
 

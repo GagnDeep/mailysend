@@ -371,11 +371,10 @@ function ResourcesPage() {
           <Card className="flex flex-col gap-4 p-6">
             <Eyebrow>FROM THE BROWSER</Eyebrow>
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
-              Press the button and pick your Cloudflare account. The form has nothing for you to
-              fill in — every variable already carries a working value — because there is nothing
-              you have to know yet. D1, KV and R2 are created for you; queues and the analytics
-              datasets need one command afterwards, and the app tells you when it needs it. Your
-              claim code is printed in the deploy log;{' '}
+              Press the button and pick your Cloudflare account. The form has no fields on it at
+              all, because there is nothing you have to know yet. D1, KV and R2 are created for you;
+              queues and the analytics datasets need one command afterwards, and the app tells you
+              when it needs it. Your claim code is printed in the deploy log;{' '}
               <code className="font-mono text-[13px] text-ink">/setup</code> asks for it.
             </p>
             <Button asChild size="lg" className="mt-auto self-start">
