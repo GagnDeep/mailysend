@@ -2,6 +2,7 @@ import { Callout, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { RetryBackoffVisualizer } from '~/components/guides/retry-backoff-visualizer.tsx'
 import { WebhookSignaturePlayground } from '~/components/guides/webhook-signature-playground.tsx'
+import { FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono, Str } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -27,6 +28,25 @@ const HEADERS: Array<[string, string]> = [
     'MailySend-Delivery-Id',
     'The identity of this attempt. Different on every retry and on every replay. This is what you quote in a support conversation.',
   ],
+  ['Content-Type', 'Always application/json. The body is the bytes the signature covers.'],
+  [
+    'User-Agent',
+    'MailySend-Webhook/1.0 on a real delivery. A test send from the dashboard identifies itself differently, which is how you tell the two apart in your access log.',
+  ],
+]
+
+/** Attempt, what happens next, and which mechanism owns the wait. */
+const LADDER: Array<[string, string, string]> = [
+  ['1', 'Immediate', 'Queue'],
+  ['2', '+20s', 'Queue'],
+  ['3', '+40s', 'Queue'],
+  ['4', '+80s', 'Queue'],
+  ['5', '+160s', 'Queue'],
+  ['6', '+320s', 'Queue — the last one it owns'],
+  ['7', '+3h', 'Durable actor'],
+  ['8', '+6h', 'Durable actor'],
+  ['9', '+12h', 'Durable actor'],
+  ['10', '+24h', 'Durable actor — then the delivery is abandoned'],
 ]
 
 function Page() {
@@ -48,30 +68,17 @@ function Page() {
         'the-signature': (
           <>
             <Lede>
-              Every delivery is a POST with a JSON body and three headers. Only one of them is
-              cryptographic, but the other two are the difference between a debuggable integration
-              and a guessing game, so it is worth knowing all three before you write any code.
+              Every delivery is a POST with a JSON body and three headers of ours. Only one of them
+              is cryptographic, but the other two are the difference between a debuggable
+              integration and a guessing game, so it is worth knowing all three before you write any
+              code.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Header</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What it is for</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {HEADERS.map(([name, meaning]) => (
-                    <tr key={name} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[12.5px] font-semibold text-ink">
-                        {name}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{meaning}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              Verify <Mono>v1</Mono> against the raw bytes, deduplicate on{' '}
+              <Mono>MailySend-Event-Id</Mono>, and quote <Mono>MailySend-Delivery-Id</Mono> when you
+              need to talk about one particular attempt.
+            </Takeaway>
+            <FactTable columns={['Header', 'What it is for']} rows={HEADERS} />
             <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
               The signature is an HMAC-SHA256, hex-encoded, over a string built from two parts
               joined by a literal dot: the timestamp, then the exact body bytes we sent. Written
@@ -96,10 +103,13 @@ function Page() {
               The default tolerance is <strong className="text-ink">300 seconds</strong>. Outside
               that window the signature is still perfectly valid mathematics; the delivery is
               rejected anyway, because a request that has been sitting in someone's proxy log for an
-              hour has no business being accepted. If your endpoint rejects everything with a
-              tolerance error, check your server's clock before you check anything else — a host
-              drifting by ten minutes fails every delivery and looks exactly like a wrong secret.
+              hour has no business being accepted.
             </p>
+            <Gotcha title="A drifting clock looks exactly like a wrong secret">
+              If your endpoint rejects everything with a tolerance error, check the host's clock
+              before you check anything else. Ten minutes of drift fails every delivery, and the
+              symptom is indistinguishable from a mistyped endpoint secret.
+            </Gotcha>
             <Callout title="COMPARE IN CONSTANT TIME">
               Compare the computed hex to the received hex with a timing-safe function —{' '}
               <Mono>hmac.compare_digest</Mono> in Python, <Mono>crypto.timingSafeEqual</Mono> in
@@ -464,32 +474,50 @@ function Page() {
               lunch loses data. Here is the actual shape, with the actual numbers, so you can answer
               that for yourself.
             </Lede>
+            <Takeaway>
+              Six attempts on the queue over about ten minutes, then four more from a durable actor
+              across a day. Twenty consecutive failures with no success in between disables the
+              endpoint.
+            </Takeaway>
             <RetryBackoffVisualizer />
-            <p className="mt-6 text-[15.5px] leading-[1.7] text-muted">
-              There are two mechanisms because there is no single one that fits. The first six
-              attempts are the queue's own, with the delay doubling from ten seconds and capped at
-              an hour — that ladder exists to absorb a deploy, a container restart, or one momentary
-              502, and it should be invisible to you. A queue cannot hold a message for a day, so
-              anything still failing after those six is handed to a durable actor that owns the long
-              tail: <Mono>+3h</Mono>, <Mono>+6h</Mono>, <Mono>+12h</Mono>, <Mono>+24h</Mono>. An
-              alarm is the wrong tool for a delivery that will succeed on the second attempt, and a
-              queue is the wrong tool for one that needs to wait until tomorrow.
+            <FactTable
+              columns={['Attempt', 'When', 'Who is holding it']}
+              rows={LADDER}
+              caption="The queue's delay is min(10 × 2ⁿ, 3600) seconds, so the hour cap is defensive — six attempts never reach it. The tail is a fixed schedule, and a delivery still failing after +24h is recorded as abandoned."
+            />
+            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
+              <strong className="text-ink">
+                There are two mechanisms because no single one fits.
+              </strong>{' '}
+              The queue ladder exists to absorb a deploy, a container restart, or one momentary 502,
+              and it should be invisible to you. A queue cannot hold a message for a day, so
+              anything still failing is handed to a durable actor that owns the long tail. An alarm
+              is the wrong tool for a delivery that will succeed on the second attempt, and a queue
+              is the wrong tool for one that needs to wait until tomorrow.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">What counts as success.</strong> Any 2xx. Anything else —
-              a 4xx, a 5xx, a TLS failure, a DNS failure, a connection that hangs past the
-              ten-second timeout — is a failure and is retried. A 410 does not mean anything
-              special; if you want an endpoint to stop, delete it rather than answering rudely.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Every attempt is recorded.</strong> The attempt number,
-              the response status, the duration in milliseconds and the first 4 KB of your response
-              body are all stored and shown in the dashboard. That last one is deliberate and it is
-              the fastest debugging tool here: if your handler returns its stack trace in the body,
-              you can read the stack trace next to the failed delivery instead of correlating
-              timestamps across two systems. Four kilobytes because it is there to help you debug,
-              not to be an archive of your application's output.
-            </p>
+            <FactTable
+              columns={['What we record per attempt', 'Detail']}
+              monoFirst={false}
+              rows={[
+                [
+                  'Success',
+                  'Any 2xx, and nothing else. A successful delivery is the only outcome that is not retried.',
+                ],
+                [
+                  'Failure',
+                  'A 4xx, a 5xx, a TLS failure, a DNS failure, or a connection that hangs past the ten-second timeout. A 410 means nothing special — if you want an endpoint to stop, delete it rather than answering rudely.',
+                ],
+                [
+                  'Attempt number and status',
+                  'Stored on the delivery row and shown in the dashboard.',
+                ],
+                ['Duration', 'In milliseconds, per attempt.'],
+                [
+                  'The first 4 KB of your response body',
+                  'Deliberate, and the fastest debugging tool here: if your handler returns its stack trace in the body, you read the stack trace next to the failed delivery instead of correlating timestamps across two systems. Four kilobytes because it is there to help you debug, not to archive your application’s output.',
+                ],
+              ]}
+            />
             <Terminal
               lines={[
                 {

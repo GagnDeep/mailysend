@@ -1,5 +1,6 @@
 import { Callout, StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import { Contrast, Diagram, FactTable, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -37,6 +38,11 @@ function Page() {
               the recipient was not rejected outright, and you are not being blocked at the door —
               but it is a statement about a transfer, not about an inbox.
             </Lede>
+            <Takeaway>
+              A <Mono>250</Mono> means the receiving MTA took the message into its own queue. Inbox,
+              spam and silent discard all happen after that, and all three produce exactly the same
+              delivery event.
+            </Takeaway>
             <Terminal
               caption="SMTP, the last thing you get to see"
               lines={[
@@ -58,27 +64,40 @@ function Page() {
               of your traffic behaved this hour, what other people did with your last campaign. The
               connection is already closed by then. There is no second callback in the protocol.
             </p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {[
+            <Diagram
+              steps={[
+                { kicker: 'SMTP', title: '250 queued as 4Xk9m2', meta: 'the last thing you see' },
+                {
+                  kicker: 'RECEIVER',
+                  title: 'Filtering runs',
+                  tone: 'accent',
+                  meta: 'own schedule, own data, connection already closed',
+                },
+                { kicker: 'THREE OUTCOMES', title: 'Inbox · Spam · Discarded' },
+                {
+                  kicker: 'YOUR STREAM',
+                  title: 'One delivered event',
+                  meta: 'identical in all three cases',
+                },
+              ]}
+            />
+            <FactTable
+              columns={['Outcome', 'What it is', 'What your event stream records']}
+              monoFirst={false}
+              rows={[
                 [
                   'Inbox',
                   'The message is in the primary folder, or in a tab. This is the outcome you wanted and the one you cannot observe.',
+                  'delivered',
                 ],
-                [
-                  'Spam',
-                  'Delivered, filed, and effectively invisible. Your delivery event for this is indistinguishable from the inbox case.',
-                ],
+                ['Spam', 'Delivered, filed, and effectively invisible.', 'delivered'],
                 [
                   'Silently discarded',
-                  'Accepted and then dropped with no DSN. Large receivers do this to mail they are confident about. You get a 250 and nothing arrives anywhere.',
+                  'Accepted and then dropped with no DSN. Large receivers do this to mail they are confident about, so you get a 250 and nothing arrives anywhere.',
+                  'delivered',
                 ],
-              ].map(([label, body]) => (
-                <div key={label} className="rounded-tile border border-line bg-card p-4">
-                  <div className="font-mono text-[13px] font-bold text-accent">{label}</div>
-                  <p className="mt-1.5 m-0 text-[14.5px] leading-[1.6] text-muted">{body}</p>
-                </div>
-              ))}
-            </div>
+              ]}
+            />
             <Callout variant="warn" title="ALL THREE OF THOSE PRODUCE THE SAME DELIVERY EVENT">
               This is not a limitation of this product's instrumentation. It is a property of SMTP.
               Any tool showing you an “inbox rate” computed from a delivery stream is showing you a
@@ -95,6 +114,32 @@ function Page() {
               out, no matter how much event data it collects, because the fact is not present in
               that data at any resolution.
             </Lede>
+            <Takeaway>
+              Placement is only ever known by the receiver, so there are exactly two ways to learn
+              it — seed mailboxes you control, and the provider’s own postmaster feed.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'The two real sources',
+                  tone: 'good',
+                  points: [
+                    'Seed sends: a direct observation of the folder, for accounts you control',
+                    'Postmaster feeds: the receiver’s own verdict across your whole volume to them',
+                    'Both come from the receiving side, because that is where the fact lives',
+                  ],
+                },
+                {
+                  label: 'Your delivery event stream',
+                  tone: 'bad',
+                  points: [
+                    'Tells you the receiving MTA accepted the message',
+                    'Contains no folder, no filtering verdict, no silent discard — at any resolution',
+                    'No amount of event data collected on the sending side can derive one',
+                  ],
+                },
+              ]}
+            />
             <div className="flex flex-col gap-5">
               <StepCard
                 step={1}
@@ -117,49 +162,32 @@ function Page() {
               traffic and are aggregated, delayed, thresholded — Google shows you nothing until your
               volume to Gmail is large enough — and never resolve to an individual message.
             </p>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="p-3 font-mono text-[12px] font-bold">SOURCE</th>
-                    <th className="p-3 font-mono text-[12px] font-bold">
-                      WHAT IT ACTUALLY TELLS YOU
-                    </th>
-                    <th className="p-3 font-mono text-[12px] font-bold">WHAT IT CANNOT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    [
-                      'Seed sends',
-                      'The folder this exact message landed in, for these accounts, on this send.',
-                      'Anything about recipients with real engagement history — which is all of them.',
-                    ],
-                    [
-                      'Google Postmaster Tools',
-                      'Spam-complaint rate, domain and IP reputation, authentication pass rates, delivery errors, across your Gmail volume.',
-                      'Per-message or per-recipient placement. And nothing at all below its volume threshold.',
-                    ],
-                    [
-                      'Microsoft SNDS',
-                      'Complaint and trap-hit data for IPs you send from, plus a filter verdict summary.',
-                      'Anything about Outlook.com consumer placement for a specific campaign.',
-                    ],
-                    [
-                      'Your delivery events',
-                      'That the receiving MTA accepted the message.',
-                      'Folder. Filtering. Whether it was silently discarded. Any of it, ever.',
-                    ],
-                  ].map(([source, tells, cannot]) => (
-                    <tr key={source} className="border-line border-t">
-                      <td className="p-3 align-top font-mono text-[12.5px] text-ink">{source}</td>
-                      <td className="p-3 align-top text-muted">{tells}</td>
-                      <td className="p-3 align-top text-muted">{cannot}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <FactTable
+              columns={['Source', 'What it actually tells you', 'What it cannot']}
+              monoFirst={false}
+              rows={[
+                [
+                  'Seed sends',
+                  'The folder this exact message landed in, for these accounts, on this send.',
+                  'Anything about recipients with real engagement history — which is all of them.',
+                ],
+                [
+                  'Google Postmaster Tools',
+                  'Spam-complaint rate, domain and IP reputation, authentication pass rates, delivery errors, across your Gmail volume.',
+                  'Per-message or per-recipient placement. And nothing at all below its volume threshold.',
+                ],
+                [
+                  'Microsoft SNDS',
+                  'Complaint and trap-hit data for IPs you send from, plus a filter verdict summary.',
+                  'Anything about Outlook.com consumer placement for a specific campaign.',
+                ],
+                [
+                  'Your delivery events',
+                  'That the receiving MTA accepted the message.',
+                  'Folder. Filtering. Whether it was silently discarded. Any of it, ever.',
+                ],
+              ]}
+            />
             <Callout title="SET UP POSTMASTER TOOLS BEFORE YOU NEED IT">
               Both feeds are historical: they show you the last N days, so registering the day a
               problem starts gives you a chart with no context. If any meaningful share of your list
@@ -176,6 +204,10 @@ function Page() {
               into a number people quote as a measurement. That labelling rule is not decoration; it
               is the entire difference between a useful estimate and a lie with a percentage sign.
             </Lede>
+            <Takeaway>
+              Model the gap if you like, but the label has to live on the number itself — an
+              estimate that loses its label becomes a measurement by the time it reaches a slide.
+            </Takeaway>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               An estimate is built from the signals you do have, all of which correlate with
               placement without determining it: authentication results and DMARC alignment, your
@@ -235,6 +267,11 @@ function Page() {
               you are being filtered. Here is the order to investigate in, cheapest and most likely
               first.
             </Lede>
+            <Takeaway>
+              Confirm it is placement rather than measurement, check alignment at the message level,
+              read the receiver’s own verdict, line the drop up against your changelog — then seed,
+              and change exactly one thing.
+            </Takeaway>
             <div className="mt-4 flex flex-col gap-5">
               <StepCard
                 step={1}

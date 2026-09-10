@@ -1597,7 +1597,7 @@ export const GUIDES: GuideMeta[] = [
       {
         question: 'What is sending_access allowed to do?',
         answer:
-          'Send email, and nothing else — no contact reads, no key management, no configuration. It is the right credential for an application server.',
+          'It holds the single scope emails:send, so anything that checks a scope refuses it — key management, configuration, contact writes. Note that contact list and read are not scope-checked today, so a sending key can still read them; the guide says so plainly rather than describing the intent.',
       },
     ],
   },

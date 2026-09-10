@@ -1,5 +1,15 @@
-import { Callout, StepCard, Terminal } from '@mailysend/ui'
+// biome-ignore-all lint/complexity/noUselessFragments: a single-element FactTable cell must stay
+// wrapped. Unwrapped, the row literal trips useJsxKeyInIterable — an error rather than an info,
+// and a false one, since FactTable keys its own cells from the row key and the column name.
+import { StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import {
+  Contrast,
+  Diagram,
+  FactTable,
+  Gotcha,
+  Takeaway,
+} from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -63,64 +73,112 @@ function Page() {
               codebase is written against, and the Node listener’s entire job is to open a socket
               and turn Node streams into <Mono>Request</Mono> and <Mono>Response</Mono>.
             </Lede>
+            <Takeaway>
+              Three platform capabilities resolve differently off Workers — Workflows, Analytics
+              Engine and the <Mono>send_email</Mono> binding — and each one is answered by an
+              adapter rather than switched off.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'CLOUDFLARE_CAPABILITIES',
+                  tone: 'neutral',
+                  points: [
+                    <>
+                      <Mono>workflows: true</Mono> — automations run on the Workflows engine
+                    </>,
+                    <>
+                      <Mono>analyticsEngine: true</Mono>
+                    </>,
+                    <>
+                      <Mono>emailBinding: true</Mono>
+                    </>,
+                    <>
+                      <Mono>longLivedProcess: false</Mono> — 30s CPU per request
+                    </>,
+                  ],
+                },
+                {
+                  label: 'NODE_CAPABILITIES',
+                  tone: 'good',
+                  points: [
+                    <>
+                      <Mono>workflows: false</Mono> — the same step interpreter, driven by the
+                      scheduler
+                    </>,
+                    <>
+                      <Mono>analyticsEngine: false</Mono> — a local table of the same shape
+                    </>,
+                    <>
+                      <Mono>emailBinding: false</Mono> — Cloudflare Email Service over REST
+                    </>,
+                    <>
+                      <Mono>longLivedProcess: true</Mono>, with a self-imposed{' '}
+                      <Mono>maxTaskMs</Mono> of fifteen minutes
+                    </>,
+                  ],
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
+              <strong className="text-ink">The seam is one package, not a runtime branch.</strong>{' '}
               Everything platform-shaped — the database, the queue, the blob store, the key-value
               cache — is reached through <Mono>@mailysend/platform</Mono> rather than imported
-              directly, so the seam is one package rather than a runtime branch in every file. That
-              is what makes “the Node target runs the same code” checkable by reading rather than by
-              trusting. <Mono>node-server.mjs</Mono> is deliberately one file with no dependencies
-              for the same reason, and it does exactly two things worth knowing about: prerendered
-              HTML and hashed assets are served straight from <Mono>.output/client</Mono> without
-              touching the application, and everything else goes to the same <Mono>fetch</Mono> the
-              Workers runtime would have called.
+              directly, which is what makes “the Node target runs the same code” checkable by
+              reading rather than by trusting. <Mono>node-server.mjs</Mono> is deliberately one file
+              with no dependencies for the same reason, and it does exactly two things worth knowing
+              about: prerendered HTML and hashed assets are served straight from{' '}
+              <Mono>.output/client</Mono> without touching the application, and everything else goes
+              to the same <Mono>fetch</Mono> the Workers runtime would have called.
             </p>
             <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
               What the adapters do instead
             </h3>
+            <FactTable
+              columns={['Platform piece', 'On Node', 'The difference that matters']}
+              rows={[
+                [
+                  'Queues',
+                  <>
+                    A SQLite table and a poller — a <Mono>visible_at</Mono> column and a
+                    transactional claim.
+                  </>,
+                  'At-least-once delivery, per-message ack and retry, delayed visibility, batching and a dead-letter path after a bounded number of attempts are all reproduced.',
+                ],
+                [
+                  'Durable Objects',
+                  'In-process actors.',
+                  'The constraint that shapes the whole deployment: one process, in fork mode, forever. See the next section for why that is not a preference.',
+                ],
+                [
+                  'Automations',
+                  'The scheduler, on the same step interpreter.',
+                  'Behaviour matches; durability is weaker, in that a crash mid-step replays from the last write rather than resuming inside it. No 30-second CPU ceiling, so the cap becomes a fifteen-minute watchdog.',
+                ],
+                [
+                  'Analytics Engine',
+                  'A local table with the same shape — one index, blobs, doubles.',
+                  'Per-event analytics are kept rather than stubbed out, and the dashboard queries whichever of the two is present. The three-month retention does not apply; the R2 archive still runs.',
+                ],
+                [
+                  'Cloudflare transport',
+                  <>
+                    The REST endpoint, which needs <Mono>CLOUDFLARE_ACCOUNT_ID</Mono> and{' '}
+                    <Mono>CLOUDFLARE_API_TOKEN</Mono>.
+                  </>,
+                  'The transport is not gone — the binding is.',
+                ],
+              ]}
+              monoFirst={false}
+            />
+            <Gotcha title="There is no ordering guarantee, deliberately">
+              The Node queue matches Cloudflare Queues here rather than improving on it. The event
+              pipeline’s monotonic state ladder does not need ordering, and promising it on Node
+              would let ordering-dependent code creep in that then breaks on Workers.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Queues become a SQLite table and a poller.</strong> The
-              five properties the code above actually depends on are at-least-once delivery, per
-              message ack and retry, delayed visibility, batching, and a dead-letter path after a
-              bounded number of attempts — all reproducible with a <Mono>visible_at</Mono> column
-              and a transactional claim. Note the deliberate absence of an ordering guarantee, which
-              matches Cloudflare Queues: the event pipeline’s monotonic state ladder does not need
-              ordering, and promising it here would let ordering-dependent code creep in that then
-              breaks on Workers.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Durable Objects become in-process actors</strong>, which
-              is the constraint that shapes the whole deployment: one process, in fork mode, forever
-              — see the next section for why that is not a preference.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                Automations run on the scheduler, not on Workflows.
-              </strong>{' '}
-              The driver is selected from the runtime’s own capability rather than from
-              configuration, because promising Workflows on a runtime with no Workflows engine would
-              surface as a confusing failure much later. The step interpreter is the same one, so
-              behaviour matches; the durability story is weaker, in that a crash mid-step replays
-              from the last write rather than resuming inside it. A Node process also has no
-              thirty-second CPU ceiling, so the cap becomes a self-imposed fifteen-minute watchdog —
-              a runaway step is still bounded, just far more generously.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Analytics Engine becomes a local table</strong> with the
-              same shape — one index, blobs, doubles — rather than being stubbed out, so the Node
-              deployment keeps per-event analytics and the dashboard queries whichever of the two is
-              present. The three-month retention that constrains Analytics Engine does not apply
-              here, and the R2 archive still runs: one archive format across both runtimes is worth
-              more than the disk it saves.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The Cloudflare transport is not gone — the binding is.
-              </strong>{' '}
-              Off Workers there is no <Mono>send_email</Mono> binding, so Cloudflare Email Service
-              is reached over its REST endpoint instead, which needs{' '}
-              <Mono>CLOUDFLARE_ACCOUNT_ID</Mono> and <Mono>CLOUDFLARE_API_TOKEN</Mono>. If you would
-              rather not have a Cloudflare account in the picture at all, the other three transports
-              — SES, Resend and generic SMTP — need nothing from this list;{' '}
+              If you would rather not have a Cloudflare account in the picture at all, the other
+              three transports — SES, Resend and generic SMTP — need nothing from that last row;{' '}
               <a
                 href="/guides/choose-a-sending-transport"
                 className="text-accent underline underline-offset-4"
@@ -133,11 +191,11 @@ function Page() {
         ),
         build: (
           <>
-            <Lede>
-              Two commands, and one environment variable that has to be present during the build
-              rather than at run time — which is the source of the most confusing failure on this
-              page.
-            </Lede>
+            <Lede>Two commands.</Lede>
+            <Takeaway>
+              One environment variable has to be present during the build rather than at run time,
+              and that is the source of the most confusing failure on this page.
+            </Takeaway>
             <Terminal
               lines={[
                 { kind: 'command', text: 'pnpm install --frozen-lockfile' },
@@ -145,6 +203,15 @@ function Page() {
                 { kind: 'success', text: 'Prerendered 42 pages' },
                 { kind: 'success', text: 'llms: wrote .output/client/sitemap.xml' },
               ]}
+            />
+            <FactTable
+              columns={['Build', 'MS_TARGET', 'Writes to']}
+              rows={[
+                ['pnpm build:node', 'node', '.output'],
+                ['pnpm build:cf', 'cloudflare', '.output-cf'],
+                ['the dev server', '—', 'a third directory again'],
+              ]}
+              caption="So a running dev server and a production build never contend for the same files."
             />
             <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Prerendering is not decoration.</strong> Every public
@@ -157,7 +224,7 @@ function Page() {
               the build, because the alternative — the setting that let it pass — once produced
               “Prerendered 0 pages”, a zero exit code, and a deploy with no static HTML at all.
             </p>
-            <Callout variant="warn" title="BUILD TIME IS NOT RUN TIME">
+            <Gotcha title="Build time is not run time">
               Prerendering boots the real server to render each page, so the build reads your
               configuration too. Both halves of it now read the <Mono>.env</Mono> at the repository
               root — <Mono>vite.config.ts</Mono> to decide whether a sitemap is written, and{' '}
@@ -165,29 +232,25 @@ function Page() {
               into <Mono>robots.txt</Mono>. Fixing only one of them would produce the mirror-image
               bug: a sitemap generated for one host and advertised for another. Only absent keys are
               filled in, so an explicit shell variable still wins.
-            </Callout>
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">This is the bug that hid the longest.</strong>{' '}
               <Mono>MS_PUBLIC_URL</Mono> lives in the <Mono>.env</Mono> the process manager loads at{' '}
               <em>run</em> time, and nothing put it into the shell during{' '}
               <Mono>pnpm build:node</Mono>. So the sitemap host resolved to <Mono>undefined</Mono>,
               the sitemap was silently disabled, and <Mono>robots.txt</Mono> advertised a URL that
-              returned 404 for the life of the site. The build reading the same file is what makes{' '}
-              <Mono>sitemap.xml</Mono> exist for a self-hoster who sets one variable — and a build
-              that still has no host now ships a <Mono>robots.txt</Mono> with no{' '}
-              <Mono>Sitemap:</Mono> line at all, rather than pointing crawlers at a page that is not
-              there. A sitemap naming somebody else’s host is worse than no sitemap, which is why
-              only a build with <Mono>MS_LANDING=marketing</Mono> may publish{' '}
-              <Mono>mailysend.com</Mono> as its canonical host.
+              returned 404 for the life of the site. A build that still has no host now ships a{' '}
+              <Mono>robots.txt</Mono> with no <Mono>Sitemap:</Mono> line at all, rather than
+              pointing crawlers at a page that is not there — and only a build with{' '}
+              <Mono>MS_LANDING=marketing</Mono> may publish <Mono>mailysend.com</Mono> as its
+              canonical host, because a sitemap naming somebody else’s host is worse than no
+              sitemap.
             </p>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">You do not need a real signing secret to build.</strong>{' '}
               The prerendering server wants one, so the build generates a random build-scoped value
               when <Mono>MS_SECRET</Mono> is unset: nothing prerendered is signed, and the value
-              dies with the process. A real secret in the environment still wins. The Node build
-              writes to <Mono>.output</Mono> and the Cloudflare build to <Mono>.output-cf</Mono>,
-              with the dev cache in a third directory again, so a running dev server and a
-              production build never contend for the same files.
+              dies with the process. A real secret in the environment still wins.
             </p>
           </>
         ),
@@ -196,10 +259,26 @@ function Page() {
             <Lede>
               One process on a loopback port, nginx in front of it, and a process manager to restart
               it. Nothing more exotic is needed, and anything more exotic has a cost you should be
-              choosing deliberately. The live deployment at mailysend.com is exactly this: a
-              checkout at <Mono>/srv/mailysend</Mono>, one PM2 process on{' '}
-              <Mono>127.0.0.1:8917</Mono>, nginx terminating TLS.
+              choosing deliberately.
             </Lede>
+            <Takeaway>
+              The live deployment at mailysend.com is exactly this: a checkout at{' '}
+              <Mono>/srv/mailysend</Mono>, one PM2 process on <Mono>127.0.0.1:8917</Mono>, nginx
+              terminating TLS.
+            </Takeaway>
+            <Diagram
+              steps={[
+                { kicker: 'NGINX', title: 'Terminates TLS', meta: 'mail.yourdomain.com' },
+                { kicker: 'PROXY', title: '127.0.0.1:8917', meta: 'loopback only' },
+                {
+                  kicker: 'NODE',
+                  title: 'node-server.mjs',
+                  tone: 'accent',
+                  meta: 'fork, one instance',
+                },
+                { kicker: 'PM2', title: 'Restarts and drains', meta: 'ecosystem.config.cjs' },
+              ]}
+            />
             <div className="flex flex-col gap-3.5">
               <StepCard step={1} title="Start it" variant="rule">
                 <Terminal
@@ -240,67 +319,71 @@ function Page() {
                 </p>
               </StepCard>
             </div>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Fork mode, exactly one instance.</strong> Cluster mode
-              looks like free throughput and is not. On Node the Durable Objects are in-process
-              actors, and an actor’s entire job is to be a single serialisation point per key — two
-              processes would each hold their own broadcast cursors and their own copy of the daily
-              quota governor, and the governor would then grant twice what it should. That is not a
-              race you would notice in testing; it is a reputation incident on the first large send.
-              Scaling out on Node means putting the actors behind a shared service, not adding
-              workers here.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The rest of the process definition is a set of answers
-              </strong>{' '}
-              to questions you would otherwise find out the hard way:{' '}
-              <Mono>kill_timeout: 12000</Mono> gives the runtime time to finish a batch and close
-              its SQLite handles, <Mono>{"max_memory_restart: '900M'"}</Mono> turns a leak into a
-              restart rather than a dead box, and <Mono>{"min_uptime: '20s'"}</Mono> with{' '}
-              <Mono>max_restarts: 10</Mono> stops a misconfigured instance from restarting forever
-              while looking healthy in <Mono>pm2 list</Mono>.
-            </p>
+            <Gotcha title="Fork mode, exactly one instance">
+              Cluster mode looks like free throughput and is not. On Node the Durable Objects are
+              in-process actors, and an actor’s entire job is to be a single serialisation point per
+              key — two processes would each hold their own broadcast cursors and their own copy of
+              the daily quota governor, and the governor would then grant twice what it should. That
+              is not a race you would notice in testing; it is a reputation incident on the first
+              large send. Scaling out on Node means putting the actors behind a shared service, not
+              adding workers here.
+            </Gotcha>
+            <FactTable
+              columns={['In ecosystem.config.cjs', 'Value', 'The question it answers']}
+              rows={[
+                [
+                  'kill_timeout',
+                  '12000',
+                  'Gives the runtime time to finish a batch and close its SQLite handles.',
+                ],
+                [
+                  'max_memory_restart',
+                  '900M',
+                  'Turns a leak into a restart rather than a dead box.',
+                ],
+                [
+                  'min_uptime / max_restarts',
+                  '20s / 10',
+                  'Stops a misconfigured instance from restarting forever while looking healthy in pm2 list.',
+                ],
+              ]}
+            />
           </>
         ),
         env: (
           <>
-            <Lede>
-              Five variables carry the weight. The column that matters is the middle one: a variable
-              needed at build time and set only at run time is silently ignored, which is a failure
-              with no error message — and was, for the whole life of this site’s sitemap.
-            </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 font-mono text-[12px] font-semibold">variable</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">needed at</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">what it does</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ENV_VARS.map(([name, when, what]) => (
-                    <tr key={name} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[13px] text-ink">{name}</td>
-                      <td className="px-4 py-2 font-mono text-[12.5px] text-muted-2">{when}</td>
-                      <td className="px-4 py-2 text-muted">{what}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Lede>Five variables carry the weight.</Lede>
+            <Takeaway>
+              The column that matters is the middle one: a variable needed at build time and set
+              only at run time is silently ignored, which is a failure with no error message — and
+              was, for the whole life of this site’s sitemap.
+            </Takeaway>
+            <FactTable columns={['variable', 'needed at', 'what it does']} rows={ENV_VARS} />
             <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">Where each one lives</h3>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Two files, and the split is not arbitrary.</strong>{' '}
-              Anything that is not a secret and describes how this box runs the app belongs in the
-              PM2 <Mono>env</Mono> block in <Mono>ecosystem.config.cjs</Mono>, which is committed:{' '}
-              <Mono>NODE_ENV</Mono>, <Mono>PORT</Mono>, <Mono>HOST</Mono>, <Mono>MS_MODE</Mono>,{' '}
-              <Mono>MS_DATA_DIR</Mono> and <Mono>MS_LANDING</Mono>. Anything secret, and anything
-              the build also needs, belongs in <Mono>/srv/mailysend/.env</Mono>, which is not
-              committed and is loaded at run time by <Mono>--env-file-if-exists=.env</Mono> and at
-              build time by the same loader described in the previous section:
-            </p>
+            <FactTable
+              columns={['File', 'Committed?', 'What belongs in it']}
+              rows={[
+                [
+                  'ecosystem.config.cjs',
+                  'Yes',
+                  <>
+                    Anything that is not a secret and describes how this box runs the app:{' '}
+                    <Mono>NODE_ENV</Mono>, <Mono>PORT</Mono>, <Mono>HOST</Mono>,{' '}
+                    <Mono>MS_MODE</Mono>, <Mono>MS_DATA_DIR</Mono> and <Mono>MS_LANDING</Mono>.
+                  </>,
+                ],
+                [
+                  '/srv/mailysend/.env',
+                  'No',
+                  <>
+                    Anything secret, and anything the build also needs. Loaded at run time by{' '}
+                    <Mono>--env-file-if-exists=.env</Mono> and at build time by the loader described
+                    in the previous section.
+                  </>,
+                ],
+              ]}
+              caption="The split is not arbitrary — it is “does the build need this, and would you mind it being in git”."
+            />
             <Code>
               <Com>{'# /srv/mailysend/.env — read by the runtime and by the build'}</Com>
               {'\nMS_PUBLIC_URL=https://'}
@@ -311,23 +394,19 @@ function Page() {
               <Com>{'# only needed before anyone has signed in'}</Com>
             </Code>
             <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
-              That is the practical consequence of the build now reading <Mono>.env</Mono>: setting{' '}
+              That is the practical consequence of the build reading <Mono>.env</Mono>: setting{' '}
               <Mono>MS_PUBLIC_URL</Mono> in one file is what makes <Mono>sitemap.xml</Mono> exist
               for a self-hosted deployment, and it does so without a build environment that has to
               be kept in sync with a runtime one by hand.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                Sending credentials mostly do not belong here at all.
-              </strong>{' '}
-              Configure them in the dashboard under{' '}
-              <strong className="text-ink">Settings → Transports</strong>: they are encrypted with
-              AES-GCM before storage, keyed by <Mono>MS_DATA_KEY</Mono> or, unset,{' '}
+            <Gotcha title="Sending credentials mostly do not belong here at all">
+              Configure them in the dashboard under <strong>Settings → Transports</strong>: they are
+              encrypted with AES-GCM before storage, keyed by <Mono>MS_DATA_KEY</Mono> or, unset,{' '}
               <Mono>MS_SECRET</Mono>, and are never returned by the API — the response says which
               fields are set, never what they are. The environment variables exist for exactly one
               case, a fresh deployment that must send before anybody has signed in. If you lose them
               you re-enter them; there is no path by which the software can show you a secret back.
-            </p>
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Back up the data directory, not the checkout.</strong>{' '}
               <Mono>MS_DATA_DIR</Mono> holds <Mono>mailysend.db</Mono> — contacts, messages, events,
@@ -339,11 +418,11 @@ function Page() {
         ),
         upgrades: (
           <>
-            <Lede>
-              Pull, build, reload. There is no migrate step to remember, and that is deliberate
-              rather than an omission — but the ordering of the other three is still what makes a
-              rollback possible rather than theoretical.
-            </Lede>
+            <Lede>Pull, build, reload. There is no migrate step to remember.</Lede>
+            <Takeaway>
+              That is deliberate rather than an omission — but the ordering of the other three is
+              still what makes a rollback possible rather than theoretical.
+            </Takeaway>
             <Terminal
               lines={[
                 { kind: 'command', text: 'cp -a .data .data.bak' },
@@ -360,15 +439,14 @@ function Page() {
               on its first request, which is why there is one migration set for D1 and{' '}
               <Mono>node:sqlite</Mono> rather than two that can disagree.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Only ever forward, and additive first.</strong> An
-              additive migration is safe to apply while the old code is still running, because the
-              old code does not know about the new column. A destructive one is not, and is also the
-              thing that makes rolling back impossible — so if you need to remove a column, do it as
-              a separate release <em>after</em> the one that stopped using it. The copy of{' '}
+            <Gotcha title="Only ever forward, and additive first">
+              An additive migration is safe to apply while the old code is still running, because
+              the old code does not know about the new column. A destructive one is not, and is also
+              the thing that makes rolling back impossible — so if you need to remove a column, do
+              it as a separate release <em>after</em> the one that stopped using it. The copy of{' '}
               <Mono>.data</Mono> above is the cheap insurance that makes the difference academic;
               take it while the process is stopped if you want it to be exact.
-            </p>
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 <Mono>pm2 reload</Mono> drains rather than kills.
@@ -380,16 +458,26 @@ function Page() {
               is the honest behaviour rather than a queue of requests waiting on a process that may
               not come back.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Then check two things, in this order.</strong>{' '}
-              <Mono>GET /v1/health</Mono> answers <Mono>operational</Mono> with a version number and
-              the result of a real query against the database, or <Mono>degraded</Mono> with the
-              driver’s own error and a <Mono>503</Mono>. <Mono>GET /v1/instance</Mono> then tells
-              you what the deployment believes about itself — claimed or not, which sign-in doors
-              are open, how many domains are verified. Both are unauthenticated and one request
-              each, which makes them cheaper than reading <Mono>logs/mailysend.err.log</Mono> and
-              much cheaper than reproducing the failure.
-            </p>
+            <FactTable
+              columns={['Then check', 'What it answers', 'Cost']}
+              rows={[
+                [
+                  'GET /v1/health',
+                  <>
+                    <Mono>operational</Mono> with a version number and the result of a real query
+                    against the database, or <Mono>degraded</Mono> with the driver’s own error and a{' '}
+                    <Mono>503</Mono>.
+                  </>,
+                  'One unauthenticated request',
+                ],
+                [
+                  'GET /v1/instance',
+                  'What the deployment believes about itself — claimed or not, which sign-in doors are open, how many domains are verified.',
+                  'One unauthenticated request',
+                ],
+              ]}
+              caption="In that order. Both are cheaper than reading logs/mailysend.err.log and much cheaper than reproducing the failure."
+            />
           </>
         ),
       }}

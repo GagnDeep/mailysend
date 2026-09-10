@@ -1,5 +1,6 @@
 import { Callout, StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import { Contrast, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono, Str } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -12,14 +13,25 @@ export const Route = createFileRoute('/guides/batch-and-schedule')({
   component: Page,
 })
 
+/** Every form `parseScheduledAt` accepts, and how the echoed interpretation reads. */
 const SCHEDULE_INPUTS: Array<[string, string, string]> = [
   ['2026-10-02T14:30:00Z', 'iso', 'Exact, unambiguous, and what you should send from code.'],
   ['in 90m', 'relative', 'Offset from the moment the request is accepted.'],
-  ['in 2h30m', 'relative', 'Units compose: s, m, h, d, w.'],
+  [
+    'in 2h30m',
+    'relative',
+    'Units compose, and each has spelled-out forms: s/sec/seconds, m/min/minutes, h/hr/hours, d/day/days, w/week/weeks.',
+  ],
   ['30m', 'relative', 'A bare duration is accepted as relative — enough SDK users send it.'],
   ['tomorrow 9am', 'natural', 'Clock applied in UTC, not in your browser’s zone.'],
+  ['today 14:30', 'natural', '“today” is accepted beside “tomorrow”, and a 24-hour clock parses.'],
   ['tomorrow', 'natural', 'No clock given, so 09:00 UTC. The interpretation is returned to you.'],
   ['now', 'natural', 'Equivalent to omitting scheduled_at entirely.'],
+  [
+    'next Tuesday-ish',
+    'rejected',
+    'Anything the parser cannot read confidently is a validation_error naming scheduled_at, never a guess.',
+  ],
 ]
 
 function Page() {
@@ -43,21 +55,40 @@ function Page() {
             <Lede>
               <Mono>POST /v1/emails/batch</Mono> takes an array of up to a hundred message objects —
               each one exactly the same shape you would send to <Mono>/v1/emails</Mono> on its own —
-              and accepts them as a hundred separate messages. This is the point most people get
-              wrong on the first read, so it is worth stating flatly: a batch of a hundred is a
-              hundred different emails to a hundred different people, not one email with a hundred
-              recipients.
+              and accepts them as a hundred separate messages.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Those two things have different limits, different privacy properties and different
-              failure modes. One message with a hundred recipients is not even possible here — the
-              ceiling is fifty addresses across <Mono>to</Mono>, <Mono>cc</Mono> and{' '}
-              <Mono>bcc</Mono> — and where it <em>is</em> possible it is usually a mistake, because
-              every recipient shares one message id, one open pixel, one unsubscribe token and one
-              delivery outcome. A batch gives each recipient their own id, their own events and
-              their own body, which is what you actually want the moment the content differs by so
-              much as a first name.
-            </p>
+            <Takeaway>
+              A batch of a hundred is a hundred different emails to a hundred different people, not
+              one email with a hundred recipients. The second thing is not even possible here.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'A batch of 100',
+                  tone: 'good',
+                  points: [
+                    'A hundred distinct messages, each with its own body',
+                    <>
+                      Each recipient gets their own <Mono>id</Mono>, their own events and their own
+                      unsubscribe token
+                    </>,
+                    'One bad item does not touch the other ninety-nine',
+                  ],
+                },
+                {
+                  label: 'One message, many recipients',
+                  tone: 'bad',
+                  points: [
+                    <>
+                      Capped at fifty addresses across <Mono>to</Mono>, <Mono>cc</Mono> and{' '}
+                      <Mono>bcc</Mono> — a hundred is refused
+                    </>,
+                    'Everyone shares one message id, one open pixel, one unsubscribe token and one delivery outcome',
+                    'Usually a mistake the moment the content differs by so much as a first name',
+                  ],
+                },
+              ]}
+            />
             <Code>
               {'POST /v1/emails/batch\n[\n  { '}
               <Key>{'"from"'}</Key>
@@ -95,11 +126,12 @@ function Page() {
               <Com>{'// … up to 100 items'}</Com>
             </Code>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The hundred is not a tier and there is no plan that raises it. A batch is one atomic
-              unit of work with one request timeout, and an unbounded array cannot be given a
-              sensible one — the honest choices are a fixed ceiling or a request that sometimes dies
-              half-processed with no way to find out what happened. Above a hundred, split into
-              multiple requests; the endpoint is cheap and the messages are independent anyway.
+              <strong className="text-ink">The hundred is not a tier</strong> and there is no plan
+              that raises it. A batch is one atomic unit of work with one request timeout, and an
+              unbounded array cannot be given a sensible one — the honest choices are a fixed
+              ceiling or a request that sometimes dies half-processed with no way to find out what
+              happened. Above a hundred, split into multiple requests; the endpoint is cheap and the
+              messages are independent anyway.
             </p>
             <Callout title="ONE IDEMPOTENCY KEY COVERS THE WHOLE BATCH">
               Set <Mono>Idempotency-Key</Mono> once for the request and each item derives its own
@@ -114,60 +146,70 @@ function Page() {
           <>
             <Lede>
               The response is <Mono>{'{ "data": [ … ] }'}</Mono>, one entry per item, in the order
-              you sent them. An accepted item carries an <Mono>id</Mono>. A rejected one carries its{' '}
-              <Mono>index</Mono> and a typed <Mono>error</Mono>. Nothing about a bad item at
-              position seven touches the other ninety-nine.
+              you sent them. Nothing about a bad item at position seven touches the other
+              ninety-nine.
             </Lede>
-            <Code>
-              {'{\n  '}
-              <Key>{'"data"'}</Key>
-              {': [\n    { '}
-              <Key>{'"id"'}</Key>
-              {': '}
-              <Str>{'"email_2Nq8x…"'}</Str>
-              {' },\n    { '}
-              <Key>{'"id"'}</Key>
-              {': '}
-              <Str>{'"email_2Nq8y…"'}</Str>
-              {' },\n    { '}
-              <Key>{'"index"'}</Key>
-              {': 2, '}
-              <Key>{'"error"'}</Key>
-              {': { '}
-              <Key>{'"name"'}</Key>
-              {': '}
-              <Str>{'"invalid_to_address"'}</Str>
-              {',\n                      '}
-              <Key>{'"message"'}</Key>
-              {': '}
-              <Str>{'"`bob@@example.com` is not a valid address."'}</Str>
-              {' } },\n    { '}
-              <Key>{'"id"'}</Key>
-              {': '}
-              <Str>{'"email_2Nq8z…"'}</Str>
-              {' }\n  ]\n}'}
-            </Code>
+            <Takeaway>
+              An accepted item carries an <Mono>id</Mono>. A rejected one carries its{' '}
+              <Mono>index</Mono> and a typed <Mono>error</Mono>. Your success number is the count of
+              entries carrying an id — not the HTTP status.
+            </Takeaway>
+            <Terminal
+              caption="POST /v1/emails/batch · 200"
+              lines={[
+                { kind: 'command', text: 'curl -s -X POST … /v1/emails/batch -d @invoices.json' },
+                { kind: 'success', text: '{ "data": [' },
+                { kind: 'success', text: '  { "id": "email_2Nq8x…" },' },
+                { kind: 'success', text: '  { "id": "email_2Nq8y…" },' },
+                {
+                  kind: 'output',
+                  text: '  { "index": 2, "error": { "name": "invalid_to_address",',
+                },
+                {
+                  kind: 'output',
+                  text: '                          "message": "`bob@@example.com` is not a valid address." } },',
+                },
+                { kind: 'success', text: '  { "id": "email_2Nq8z…" }' },
+                { kind: 'success', text: '] }' },
+                { kind: 'comment', text: '# 3 accepted, 1 rejected, HTTP 200 for all of it' },
+              ]}
+            />
+            <FactTable
+              columns={['Entry shape', 'Means', 'What you do with it']}
+              rows={[
+                [
+                  '{ "id": … }',
+                  'That item was accepted and spooled.',
+                  'Store the id against whatever your application calls this message.',
+                ],
+                [
+                  '{ "index": …, "error": … }',
+                  <>
+                    That item was rejected. <Mono>index</Mono> is its position in the array you
+                    sent, so an error entry still identifies itself once you have pulled the
+                    failures into their own collection.
+                  </>,
+                  'Fix those items and resend only those.',
+                ],
+              ]}
+              caption="The array is positional: data[2] is always the third item you sent."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The alternative design — reject the whole batch on the first bad item — sounds safer
-              and is worse in practice. It forces the caller to diff two arrays to work out what
-              happened, it turns one typo in a CSV import into ninety-nine messages that never went,
-              and it produces a retry loop that resends the ninety-nine good ones every time while
-              never fixing the one that is broken. Per-item results mean the correct recovery is
-              obvious: fix the items that reported an error, resend only those.
+              <strong className="text-ink">
+                The alternative design — reject the whole batch on the first bad item — sounds safer
+                and is worse in practice.
+              </strong>{' '}
+              It forces the caller to diff two arrays to work out what happened, it turns one typo
+              in a CSV import into ninety-nine messages that never went, and it produces a retry
+              loop that resends the ninety-nine good ones every time while never fixing the one that
+              is broken.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Read the results by <Mono>index</Mono>, not by position in a filtered list. The array
-              is positional, so <Mono>data[2]</Mono> always corresponds to the third item you sent;
-              the <Mono>index</Mono> field is there so that an error entry still identifies itself
-              after you have pulled the failures out into their own collection.
-            </p>
-            <Callout variant="warn" title="THE HTTP STATUS IS ABOUT THE REQUEST, NOT THE MESSAGES">
+            <Gotcha title="The HTTP status is about the request, not the messages">
               A batch where every single item failed still returns a 200 with a body full of errors,
               because the request itself was well-formed and was processed. Code that branches on{' '}
               <Mono>response.ok</Mono> and never reads <Mono>data</Mono> will report a hundred
-              successful sends that never happened. Your success number is the count of entries
-              carrying an <Mono>id</Mono>.
-            </Callout>
+              successful sends that never happened.
+            </Gotcha>
           </>
         ),
         scheduling: (
@@ -178,50 +220,44 @@ function Page() {
               the same response shape and the same id; the only difference is when the send path
               picks it up.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The field accepts more than an ISO timestamp, and the parser tells you how it read
-              what you sent rather than making you guess. That echoed interpretation is the whole
-              defence against the classic off-by-an-hour: you can assert on it in a test.
-            </p>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">You send</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Read as</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Meaning</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SCHEDULE_INPUTS.map(([input, kind, meaning]) => (
-                    <tr key={input} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[13px] text-ink">{input}</td>
-                      <td className="px-4 py-2 font-mono text-[13px] text-muted">{kind}</td>
-                      <td className="px-4 py-2 text-muted-2">{meaning}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Everything without an explicit offset is UTC.</strong>{' '}
-              Not your server’s zone, not the recipient’s, not the browser’s. This is deliberate and
-              it is the rule that stops the off-by-an-hour: a Worker’s clock is always UTC while a
-              self-hosted Node box is whatever the operator set, and “the same job rendered a
-              different date depending on which runtime picked it up” is a bug that only appears
-              near midnight, in production, at the worst possible time. If you mean a local time,
-              compute it in your own code and send an ISO timestamp with the offset in it. Sending{' '}
-              <Mono>tomorrow 9am</Mono> and expecting Berlin is the mistake.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Thirty days is the ceiling.</strong> Beyond that you get{' '}
-              <Mono>scheduling_too_far</Mono>. A send scheduled further out than a month is nearly
-              always a units bug — milliseconds where seconds were meant, or a year typo — and on
-              the rare occasion it is intentional, the content is going to be stale by the time it
-              goes anyway. Scheduling into the past gives you <Mono>scheduling_in_past</Mono>, with
-              a minute of slack so that clock skew between your machine and the edge is not an
-              error.
-            </p>
+            <Takeaway>
+              The field accepts more than an ISO timestamp, and the parser echoes back how it read
+              what you sent — which is the whole defence against the classic off-by-an-hour, because
+              you can assert on it in a test.
+            </Takeaway>
+            <FactTable
+              columns={['You send', 'Read as', 'Meaning']}
+              rows={SCHEDULE_INPUTS.map(([input, kind, meaning]) => [
+                input,
+                <span key={input} className="font-mono text-[13px]">
+                  {kind}
+                </span>,
+                meaning,
+              ])}
+            />
+            <FactTable
+              columns={['Bound', 'Error', 'Why it is there']}
+              rows={[
+                [
+                  '30 days ahead',
+                  'scheduling_too_far',
+                  'A send further out than a month is nearly always a units bug — milliseconds where seconds were meant, or a year typo — and on the rare occasion it is intentional, the content is stale by the time it goes.',
+                ],
+                [
+                  '60 seconds in the past',
+                  'scheduling_in_past',
+                  'A minute of slack, so that clock skew between your machine and the edge is not an error. Earlier than that is refused.',
+                ],
+              ]}
+            />
+            <Gotcha title="Everything without an explicit offset is UTC">
+              Not your server’s zone, not the recipient’s, not the browser’s. A Worker’s clock is
+              always UTC while a self-hosted Node box is whatever the operator set, and “the same
+              job rendered a different date depending on which runtime picked it up” is a bug that
+              only appears near midnight, in production, at the worst possible time. If you mean a
+              local time, compute it in your own code and send an ISO timestamp with the offset in
+              it. Sending <Mono>tomorrow 9am</Mono> and expecting Berlin is the mistake.
+            </Gotcha>
           </>
         ),
         'change-your-mind': (
@@ -232,6 +268,10 @@ function Page() {
               it. Both require the message to still be in the <Mono>scheduled</Mono> state, and both
               return a not-found error otherwise.
             </Lede>
+            <Takeaway>
+              <Mono>scheduled</Mono> is the only state that is still yours. There is no state after
+              it in which either call does anything.
+            </Takeaway>
             <div className="flex flex-col gap-3.5">
               <StepCard step={1} title="Move it" variant="rule">
                 <Terminal
@@ -281,13 +321,13 @@ function Page() {
               </StepCard>
             </div>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The cancel is two steps and both of them matter. The database row is moved to{' '}
-              <Mono>canceled</Mono> under a condition that only matches a still-scheduled row — so
-              two concurrent cancels cannot both succeed, and a cancel racing the scheduler loses
-              cleanly rather than half-applying — and then the timer holding that message is told to
-              drop it. Doing only the first would leave a fired timer looking for a message that is
-              no longer sendable; doing only the second would leave a row claiming it is still going
-              out.
+              <strong className="text-ink">The cancel is two steps and both of them matter.</strong>{' '}
+              The database row is moved to <Mono>canceled</Mono> under a condition that only matches
+              a still-scheduled row — so two concurrent cancels cannot both succeed, and a cancel
+              racing the scheduler loses cleanly rather than half-applying — and then the timer
+              holding that message is told to drop it. Doing only the first would leave a fired
+              timer looking for a message that is no longer sendable; doing only the second would
+              leave a row claiming it is still going out.
             </p>
             <Callout variant="warn" title="NOBODY CAN RECALL A SENT MESSAGE">
               Once a message has been handed to a transport it is gone. It is on somebody else’s
@@ -306,74 +346,69 @@ function Page() {
         'batch-vs-broadcast': (
           <>
             <Lede>
-              The rule of thumb: a batch is for distinct messages you already have in hand; a
-              broadcast is for one message to an audience you have not enumerated. They are not two
-              sizes of the same feature, and the difference shows up in how each one behaves when it
-              gets big.
+              They are not two sizes of the same feature, and the difference shows up in how each
+              one behaves when it gets big.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold" />
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Batch</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Broadcast</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-line border-t">
-                    <td className="px-4 py-2 font-semibold text-ink">Unit of work</td>
-                    <td className="px-4 py-2 text-muted">One HTTP request</td>
-                    <td className="px-4 py-2 text-muted">A long-running job you can leave</td>
-                  </tr>
-                  <tr className="border-line border-t">
-                    <td className="px-4 py-2 font-semibold text-ink">Size</td>
-                    <td className="px-4 py-2 text-muted">100 messages, hard</td>
-                    <td className="px-4 py-2 text-muted">The audience, whatever it is</td>
-                  </tr>
-                  <tr className="border-line border-t">
-                    <td className="px-4 py-2 font-semibold text-ink">You supply</td>
-                    <td className="px-4 py-2 text-muted">Every message body</td>
-                    <td className="px-4 py-2 text-muted">One template and a segment</td>
-                  </tr>
-                  <tr className="border-line border-t">
-                    <td className="px-4 py-2 font-semibold text-ink">Progress</td>
-                    <td className="px-4 py-2 text-muted">The response, once</td>
-                    <td className="px-4 py-2 text-muted">A cursor you can watch</td>
-                  </tr>
-                  <tr className="border-line border-t">
-                    <td className="px-4 py-2 font-semibold text-ink">Pause and resume</td>
-                    <td className="px-4 py-2 text-muted">No such concept</td>
-                    <td className="px-4 py-2 text-muted">The same operation as crash recovery</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              A batch is for distinct messages you already have in hand; a broadcast is for one
+              message to an audience you have not enumerated.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'Batch',
+                  tone: 'neutral',
+                  points: [
+                    'Unit of work: one HTTP request',
+                    'Size: 100 messages, hard',
+                    'You supply: every message body',
+                    'Progress: the response, once',
+                    'Pause and resume: no such concept',
+                  ],
+                },
+                {
+                  label: 'Broadcast',
+                  tone: 'good',
+                  points: [
+                    'Unit of work: a long-running job you can leave',
+                    'Size: the audience, whatever it is',
+                    'You supply: one template and a segment',
+                    'Progress: a cursor you can watch',
+                    'Pause and resume: the same operation as crash recovery',
+                  ],
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              A broadcast is split into thirty-two fixed ranges, each with its own coordinator and a
-              monotonic cursor, and there is deliberately no counting pass anywhere in it. A count
-              is a full scan that returns a number which is stale the instant it is computed, and it
-              gets slower in exact proportion to how expensive it already was. Because progress is a
-              cursor rather than a count, pausing and resuming a broadcast is the same operation the
-              system already performs after a crash — which is why it is trustworthy, rather than a
-              feature bolted on beside the happy path.
+              <strong className="text-ink">
+                A broadcast is split into thirty-two fixed ranges,
+              </strong>{' '}
+              each with its own coordinator and a monotonic cursor, and there is deliberately no
+              counting pass anywhere in it. A count is a full scan that returns a number which is
+              stale the instant it is computed, and it gets slower in exact proportion to how
+              expensive it already was. Because progress is a cursor rather than a count, pausing
+              and resuming is the same operation the system already performs after a crash — which
+              is why it is trustworthy, rather than a feature bolted on beside the happy path.
             </p>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              So: transactional mail that happens to arrive in clumps — a nightly run of invoices, a
-              queue of receipts, fifty password resets from an incident — is batch work. Anything
-              where the recipient list is a query rather than a list, and where you would want to
-              stop it halfway and look, is a{' '}
+              <strong className="text-ink">So: clumps of transactional mail are batch work</strong>{' '}
+              — a nightly run of invoices, a queue of receipts, fifty password resets from an
+              incident. Anything where the recipient list is a query rather than a list, and where
+              you would want to stop it halfway and look, is a{' '}
               <a
                 href="/guides/broadcasts-at-scale"
                 className="text-accent underline underline-offset-4"
               >
                 broadcast
               </a>
-              . If you find yourself writing a loop that pages through contacts and posts batches,
-              you have reimplemented broadcasts without the pacing, the cursor or the resume — the
-              send path learns each receiver’s unpublished quota by halving on rejection and growing
-              by at most double after a clean day, and your loop will not.
+              .
             </p>
+            <Gotcha title="A loop that posts batches is a broadcast without the pacing">
+              If you find yourself paging through contacts and posting batches, you have
+              reimplemented broadcasts without the pacing, the cursor or the resume — the send path
+              learns each receiver’s unpublished quota by halving on rejection and growing by at
+              most double after a clean day, and your loop will not.
+            </Gotcha>
           </>
         ),
       }}

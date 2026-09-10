@@ -12,6 +12,13 @@ import { TroubleshootingChecklist } from '~/components/guides/troubleshooting-ch
 import { VolumeCostPanel } from '~/components/guides/volume-cost-panel.tsx'
 import { WarmupPlanner } from '~/components/guides/warmup-planner.tsx'
 import { WebhookSignaturePlayground } from '~/components/guides/webhook-signature-playground.tsx'
+import {
+  Contrast,
+  Diagram,
+  FactTable,
+  Gotcha,
+  Takeaway,
+} from '~/components/marketing/guide-blocks.tsx'
 
 /**
  * Every widget renders on the server.
@@ -91,5 +98,77 @@ describe('guide widgets', () => {
     const html = renderToStaticMarkup(createElement(WebhookSignaturePlayground))
     expect(html).toContain('t=')
     expect(html).not.toContain('undefined')
+  })
+})
+
+/**
+ * The shared blocks, rendered with no browser.
+ *
+ * Twenty-six guides are built out of these five, and `failOnError: true` means
+ * one throw here would fail the build for all forty-two prerendered pages —
+ * so they are checked in milliseconds rather than at minute four of a deploy.
+ */
+describe('guide blocks', () => {
+  it('renders a Takeaway', () => {
+    const html = renderToStaticMarkup(createElement(Takeaway, {}, 'The one-line answer.'))
+    expect(html).toContain('The one-line answer.')
+    expect(html).toContain('TL;DR')
+  })
+
+  it('renders a FactTable with every row and its caption', () => {
+    const html = renderToStaticMarkup(
+      createElement(FactTable, {
+        columns: ['Record', 'Proves'],
+        rows: [
+          ['TXT', 'which servers may send'],
+          ['MX', 'where bounces land'],
+        ],
+        caption: 'Both are required.',
+      }),
+    )
+    expect(html).toContain('which servers may send')
+    expect(html).toContain('where bounces land')
+    expect(html).toContain('Both are required.')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('renders every step of a Diagram in order', () => {
+    const html = renderToStaticMarkup(
+      createElement(Diagram, {
+        steps: [
+          { kicker: 'MX', title: 'Email Routing' },
+          { kicker: 'WORKER', title: 'email() handler' },
+          { kicker: 'QUEUE', title: 'ms-inbound' },
+        ],
+      }),
+    )
+    expect(html.indexOf('Email Routing')).toBeLessThan(html.indexOf('email() handler'))
+    expect(html.indexOf('email() handler')).toBeLessThan(html.indexOf('ms-inbound'))
+  })
+
+  it('renders both sides of a Contrast, including every point', () => {
+    const html = renderToStaticMarkup(
+      createElement(Contrast, {
+        sides: [
+          { label: 'Hard', tone: 'bad', points: ['no such address', 'suppressed for good'] },
+          { label: 'Soft', tone: 'neutral', points: ['mailbox full', 'suppressed for days'] },
+        ],
+      }),
+    )
+    for (const text of [
+      'no such address',
+      'suppressed for good',
+      'mailbox full',
+      'suppressed for days',
+    ])
+      expect(html).toContain(text)
+  })
+
+  it('renders a Gotcha with an upper-cased title', () => {
+    const html = renderToStaticMarkup(
+      createElement(Gotcha, { title: 'Two SPF records is not two policies' }, 'It is a permerror.'),
+    )
+    expect(html).toContain('TWO SPF RECORDS IS NOT TWO POLICIES')
+    expect(html).toContain('It is a permerror.')
   })
 })

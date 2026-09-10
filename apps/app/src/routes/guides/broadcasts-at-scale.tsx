@@ -1,5 +1,12 @@
-import { Callout, StepCard } from '@mailysend/ui'
+import { Callout, Metric, MetricGrid, StepCard } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import {
+  Contrast,
+  Diagram,
+  FactTable,
+  Gotcha,
+  Takeaway,
+} from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -36,21 +43,36 @@ function Page() {
               holding a cursor per range, and page workers that do the actual sending and report
               back. Everything else in this guide follows from those three.
             </Lede>
+            <Takeaway>
+              The coordinator holds 32 cursors and nothing else. It never enumerates recipients, so
+              its write rate — roughly six a second — is the same for a thousand contacts as for
+              half a million.
+            </Takeaway>
+            <Diagram
+              steps={[
+                {
+                  kicker: 'COORDINATOR',
+                  title: '32 cursors',
+                  meta: 'one per range, plus a token bucket',
+                },
+                {
+                  kicker: 'TICK',
+                  title: 'Page jobs',
+                  meta: 'at most one per unfinished range, every 5s',
+                },
+                { kicker: 'QUEUE', title: 'Page worker', meta: '≤ 200 contacts, keyset-bounded' },
+                { kicker: 'RPC', title: 'Advance cursor', tone: 'accent', meta: 'forward only' },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The constraint that forces this shape is unglamorous. A Durable Object handles roughly
-              a thousand requests a second. A 500,000-contact broadcast running at 50,000 an hour
-              cannot route every individual send through one object, so something has to fan out.
-              The usual answer is to shard the coordinator, which trades a simple problem for a hard
-              one: who owns which contact, and what happens when a shard dies halfway through a
-              page.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Instead the coordinator holds{' '}
-              <strong className="text-ink">32 cursors and nothing else</strong>. It never enumerates
-              recipients. Each tick it mints a tick’s worth of tokens and hands out at most one page
-              job per unfinished range — a range index, a cursor to start after, and a limit. A page
-              worker takes that job, runs a keyset query bounded to its own range, sends what it
-              finds, and makes one RPC back to advance its cursor.
+              <strong className="text-ink">
+                The constraint that forces this shape is unglamorous.
+              </strong>{' '}
+              A Durable Object handles roughly a thousand requests a second, so a 500,000-contact
+              broadcast running at 50,000 an hour cannot route every individual send through one
+              object. The usual answer is to shard the coordinator, which trades a simple problem
+              for a hard one: who owns which contact, and what happens when a shard dies halfway
+              through a page.
             </p>
             <div className="flex flex-col gap-3">
               <StepCard step={1} title="Prepare" variant="rule">
@@ -79,10 +101,8 @@ function Page() {
               </StepCard>
             </div>
             <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
-              The number that matters is the coordinator’s write rate: roughly six writes a second,
-              whether the audience is a thousand contacts or half a million. Nothing in that loop
-              grows with your list. The expensive work happens in page workers, which are
-              horizontally cheap and individually disposable.
+              Nothing in that loop grows with your list. The expensive work happens in page workers,
+              which are horizontally cheap and individually disposable.
             </p>
             <Callout title="WHY RESUME IS FREE">
               <p className="m-0 text-[14.5px] leading-[1.65]">
@@ -103,47 +123,75 @@ function Page() {
               The reason there is not one in the send loop is not laziness; it is that the
               denominator is a lie that gets more expensive to tell as your list grows.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">A count is a full scan.</strong> Counting the members of
-              an audience or a segment means visiting every matching row. There is no index that
-              stores the answer, because the answer changes on every insert, unsubscribe and segment
-              recomputation. So the cost of knowing the total scales linearly with the total — which
-              is to say, the number gets slower to compute exactly as it gets more expensive to be
-              wrong about.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">And it is stale on arrival.</strong> By the time a count
-              of 480,000 has been computed and rendered, someone has unsubscribed, an import has
-              finished, and a segment’s hourly sweep has moved a few thousand people across the
-              boundary. The number was true at a moment that has already passed. A progress bar
-              built on it will drift, and the drift will be blamed on the sending rather than on the
-              denominator.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              So preparation does no counting pass over the audience. It asks one indexed aggregate
-              for the lowest and highest contact id — the two values it actually needs in order to
-              split the id space — and a total is recorded alongside them as a{' '}
-              <em>snapshot at acceptance</em>, for display. Nothing in the send loop consults it.
-              The ranges are boundaries in ULID space, not row counts, so they can be computed
-              without knowing how many rows fall inside each one.
-            </p>
-            <Callout variant="warn" title="WHAT THIS MEANS FOR YOU">
-              <p className="m-0 text-[14.5px] leading-[1.65]">
-                The recipient total you see when a broadcast is accepted is a snapshot from that
-                instant, and it will not match the number of messages that go out. Unsubscribes
-                between acceptance and delivery are excluded at page time, not at acceptance time.
-                That gap is correct behaviour: the alternative is honouring a consent decision that
-                was reverted an hour before you sent. Do not reconcile the two numbers; the sent
-                count is the true one.
-              </p>
-            </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              A useful way to hold this: the system knows where it is, not how far it has to go.
-              That is a weaker guarantee than a percentage and a much stronger one than a percentage
-              that is quietly wrong — and it is what makes every other property in this guide
-              possible, because a design that has to maintain an accurate total has to serialise
-              something somewhere.
-            </p>
+            <Takeaway>
+              The system knows where it is, not how far it has to go. That is a weaker guarantee
+              than a percentage and a much stronger one than a percentage that is quietly wrong.
+            </Takeaway>
+            <FactTable
+              columns={['The problem with a count', 'What it costs']}
+              monoFirst={false}
+              rows={[
+                [
+                  'A count is a full scan',
+                  'Counting the members of an audience or a segment means visiting every matching row. No index stores the answer, because the answer changes on every insert, unsubscribe and segment recomputation — so the number gets slower to compute exactly as it gets more expensive to be wrong about.',
+                ],
+                [
+                  'It is stale on arrival',
+                  'By the time a count of 480,000 has been computed and rendered, someone has unsubscribed, an import has finished, and a segment’s hourly sweep has moved a few thousand people across the boundary.',
+                ],
+                [
+                  'The drift gets blamed on the wrong thing',
+                  'A progress bar built on that number will drift, and the drift will be blamed on the sending rather than on the denominator.',
+                ],
+                [
+                  'It forces serialisation',
+                  'A design that has to maintain an accurate total has to serialise something somewhere — which is what makes every other property in this guide impossible.',
+                ],
+              ]}
+            />
+            <Contrast
+              sides={[
+                {
+                  label: 'resolveRecipients — at acceptance',
+                  tone: 'neutral',
+                  points: [
+                    <>
+                      One indexed query, three numbers: <Mono>COUNT(*)</Mono>, <Mono>MIN(id)</Mono>,{' '}
+                      <Mono>MAX(id)</Mono>
+                    </>,
+                    <>
+                      The segment case reads <Mono>segment_members</Mono> rather than re-evaluating
+                      the expression — membership is maintained continuously, and re-running the
+                      predicate here would make accepting a send O(audience)
+                    </>,
+                    <>
+                      Filters <Mono>unsubscribed = 0</Mono> as of that instant
+                    </>,
+                    <>
+                      The total it returns is a <em>snapshot at acceptance</em>, for display
+                    </>,
+                  ],
+                },
+                {
+                  label: 'prepare — in the coordinator',
+                  tone: 'neutral',
+                  points: [
+                    'Takes the two ids and splits the space between them into 32 ranges',
+                    'Ranges are boundaries in ULID space, not row counts, so it can compute them without knowing how many rows fall inside each one',
+                    'Stores the total as state and never consults it again',
+                    'Nothing in the send loop reads it: who actually receives a message is decided page by page, against the audience as it is then',
+                  ],
+                },
+              ]}
+            />
+            <Gotcha title="The two numbers will not match, and should not">
+              The recipient total you see when a broadcast is accepted is a snapshot from that
+              instant. Unsubscribes between acceptance and delivery are excluded at page time, not
+              at acceptance time, so fewer messages go out than the total suggests. That gap is
+              correct behaviour: the alternative is honouring a consent decision that was reverted
+              an hour before you sent. Do not reconcile the two numbers; the sent count is the true
+              one.
+            </Gotcha>
           </>
         ),
         ranges: (
@@ -153,23 +201,36 @@ function Page() {
               hand out work dynamically so fast workers pick up more — is better on paper and worse
               in every failure mode that actually happens.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Dynamic work-stealing needs a shared claim: some record of which unit of work is
-              currently owned by whom, so two workers do not take the same one. That record is
-              global, it is written on every hand-out, and it has to be correct under contention.
-              Now consider a worker that dies mid-page. Its claim has to expire, which means a lease
-              with a timeout, which means picking a timeout that is longer than the slowest
-              legitimate page and shorter than your patience — and being wrong in either direction
-              is a duplicate send or a stall.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Fixed ranges delete the whole category. A range is owned by its index, permanently.
-              There is no claim to expire, because there is nothing to claim: a page job is a
-              statement about where a range’s cursor is, and any worker can execute it. If a page
-              worker dies, the cursor simply did not advance, and the next tick dispatches the same
-              page again. There is no global bookkeeping, no lease, no reconciliation between what
-              was handed out and what came back.
-            </p>
+            <Takeaway>
+              A range is owned by its index, permanently, so there is no claim to expire and nothing
+              to reconcile between what was handed out and what came back.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'Dynamic work-stealing',
+                  tone: 'bad',
+                  points: [
+                    'Needs a shared claim: a global record of which unit of work is owned by whom',
+                    'Written on every hand-out, and has to be correct under contention',
+                    'A worker that dies mid-page needs its claim to expire, which means a lease with a timeout',
+                    'The timeout must be longer than the slowest legitimate page and shorter than your patience',
+                    'Wrong in either direction is a duplicate send or a stall',
+                  ],
+                },
+                {
+                  label: 'Fixed ranges',
+                  tone: 'good',
+                  points: [
+                    'A range is owned by its index, permanently',
+                    'A page job is a statement about where a range’s cursor is; any worker can execute it',
+                    'A dead worker means the cursor simply did not advance',
+                    'The next tick dispatches the same page again',
+                    'No global bookkeeping, no lease, no reconciliation',
+                  ],
+                },
+              ]}
+            />
             <Code>
               <Com>{`# what the coordinator stores, per range\n`}</Com>
               {`{ `}
@@ -189,22 +250,32 @@ function Page() {
               <Com>{`# a page job is derived from it, and carries no identity of its own
 { rangeIndex: 7, after: cursor || start, until: end, limit: 200 }`}</Com>
             </Code>
+            <FactTable
+              columns={['Safeguard', 'What it prevents']}
+              monoFirst={false}
+              rows={[
+                [
+                  'The cursor is monotonic',
+                  'An advance to an id lower than the current one is ignored, so a duplicated or delayed report cannot rewind a range.',
+                ],
+                [
+                  <>
+                    A claim in <Mono>broadcast_sends</Mono> before the send is accepted
+                  </>,
+                  'A range that genuinely is re-enumerated finds the claims already there and sends nothing twice.',
+                ],
+                [
+                  'The reconciler',
+                  'A crash between the claim and the acceptance leaves an unsent claim, which is exactly what it looks for.',
+                ],
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              Two safeguards make re-execution harmless. The cursor is monotonic — an advance to an
-              id lower than the current one is ignored — so a duplicated or delayed report cannot
-              rewind a range. And a page worker claims each contact’s row in{' '}
-              <Mono>broadcast_sends</Mono> before it accepts the send, so a range that genuinely is
-              re-enumerated finds the claims already there and sends nothing twice. A crash between
-              the claim and the acceptance leaves an unsent claim, which is what the reconciler
-              looks for.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The cost of fixed ranges is skew: if your contact ids are unevenly distributed, some
-              ranges finish long before others and the tail is served by fewer workers than the
-              start. In practice ULIDs are time-ordered and a real audience accumulates steadily, so
-              the distribution is close enough to uniform that the tail is short. It is a real
-              trade-off, and it is the right one — a slightly ragged tail costs minutes, while a
-              lease you got wrong costs duplicate mail to real people.
+              <strong className="text-ink">The cost of fixed ranges is skew.</strong> If your
+              contact ids are unevenly distributed, some ranges finish long before others and the
+              tail is served by fewer workers than the start. In practice ULIDs are time-ordered and
+              a real audience accumulates steadily, so the tail is short — a slightly ragged tail
+              costs minutes, while a lease you got wrong costs duplicate mail to real people.
             </p>
           </>
         ),
@@ -216,65 +287,67 @@ function Page() {
               being refused — so the send path does exactly that, and treats the answer as expensive
               to get wrong in one direction and cheap in the other.
             </Lede>
+            <Takeaway>
+              One actor per sending domain owns the three things that have to be serialised
+              somewhere: a send-rate governor, a learned daily ceiling, and a per-provider circuit
+              breaker. A broadcast consults it before releasing tokens.
+            </Takeaway>
+            <MetricGrid className="my-5" min={170}>
+              <Metric
+                value="5,000"
+                label="Starting daily ceiling for a domain with no history"
+                size="sm"
+              />
+              <Metric value="14/s" label="Default send-rate governor, burst 60" size="sm" />
+              <Metric
+                value="×2"
+                label="Most a clean day may raise the ceiling, capped at 5,000,000"
+                size="sm"
+              />
+              <Metric
+                value="5 in 5 min"
+                label="Failures that open the circuit breaker, for 30s"
+                size="sm"
+              />
+            </MetricGrid>
+            <FactTable
+              columns={['Signal', 'What happens']}
+              monoFirst={false}
+              rows={[
+                [
+                  'A domain with no history',
+                  'Starts at a daily ceiling of 5,000 — low enough not to trip a new ramp.',
+                ],
+                [
+                  'A provider rejects a send for exceeding its quota',
+                  'The ceiling is set to half of what was sent today, with a floor of 100, and the provider is held open for five minutes.',
+                ],
+                [
+                  'A day ends without reaching 90% of the ceiling',
+                  'The ceiling is allowed to double, capped at 5,000,000. At most double: providers ramp gradually and a sudden jump looks like an attack.',
+                ],
+                [
+                  'Five failures inside five minutes',
+                  'The circuit breaker opens for thirty seconds, then lets a single attempt through on a clean counter.',
+                ],
+                [
+                  'The daily ceiling is reached',
+                  'Sends are refused with a retry-after that points at the next UTC midnight, rather than being retried into the same wall.',
+                ],
+                [
+                  'Your broadcast throttle exceeds what the domain sustains',
+                  'Both buckets have to grant before a page goes out, so the domain governor is what you will actually observe.',
+                ],
+              ]}
+              caption="Underneath the daily ceiling sits an ordinary token bucket for instantaneous rate; the broadcast coordinator has its own, sized from the throttle you set."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              One actor per sending domain owns three things that have to be serialised somewhere: a
-              send-rate governor, a learned daily ceiling, and a per-provider circuit breaker. A
-              broadcast consults it before releasing tokens, which turns “first big send generates
-              ten thousand errors and a reputation hit” into “first big send throttles itself into
-              the ramp”.
-            </p>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Signal</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What happens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    [
-                      'A domain with no history',
-                      'Starts at a daily ceiling of 5,000 — low enough not to trip a new ramp.',
-                    ],
-                    [
-                      'A provider rejects a send for exceeding its quota',
-                      'The ceiling is set to half of what was sent today, with a floor of 100, and the provider is held open for five minutes.',
-                    ],
-                    [
-                      'A day ends without reaching 90% of the ceiling',
-                      'The ceiling is allowed to double, capped at 5,000,000. At most double: providers ramp gradually and a sudden jump looks like an attack.',
-                    ],
-                    [
-                      'Five failures inside five minutes',
-                      'The circuit breaker opens for thirty seconds, then lets a single attempt through on a clean counter.',
-                    ],
-                    [
-                      'The daily ceiling is reached',
-                      'Sends are refused with a retry-after that points at the next UTC midnight, rather than being retried into the same wall.',
-                    ],
-                  ].map(([signal, effect]) => (
-                    <tr key={signal} className="border-line border-t">
-                      <td className="px-4 py-2 text-ink">{signal}</td>
-                      <td className="px-4 py-2 text-muted">{effect}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
-              The asymmetry is the point. Halving on a rejection is deliberately aggressive and
-              doubling on a clean day is deliberately the fastest growth allowed, because
-              overshooting a ramp costs reputation and reputation is far more expensive to recover
-              than throughput. Losing an hour of sending is an inconvenience; getting a domain’s
-              reputation knocked down is weeks of careful behaviour.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Underneath the daily ceiling sits an ordinary token bucket for instantaneous rate,
-              defaulting to fourteen a second with a burst of sixty. The broadcast coordinator has
-              its own bucket sized from the throttle you set on the broadcast, and both have to
-              grant before a page goes out. If you set a broadcast throttle higher than the domain
-              can sustain, the domain governor is what you will actually observe.
+              <strong className="text-ink">The asymmetry is the point.</strong> Halving on a
+              rejection is deliberately aggressive and doubling on a clean day is deliberately the
+              fastest growth allowed, because overshooting a ramp costs reputation and reputation is
+              far more expensive to recover than throughput. Losing an hour of sending is an
+              inconvenience; getting a domain’s reputation knocked down is weeks of careful
+              behaviour.
             </p>
             <Callout title="THIS IS ALSO YOUR WARM-UP">
               <p className="m-0 text-[14.5px] leading-[1.65]">
@@ -301,36 +374,70 @@ function Page() {
               exact, neither is a percentage of anything, and together they tell you more than a
               progress bar would.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The coordinator’s status returns the broadcast state, all 32 range cursors and the sum
-              of what each range has dispatched. From that you can read three things directly. How
-              many ranges are <Mono>done</Mono> — that is your coarse position, in thirty-seconds.
-              How far each unfinished cursor has moved between its start and its end — that is your
-              fine position, and because ids are time-ordered it is a reasonable proxy for
-              proportion. And the dispatched total, which is the only number here that is a count of
-              real messages.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              A broadcast is complete when the last range is marked done, which happens when a page
-              worker walks a range and finds nothing left in it. Not when a total is reached — there
+            <Takeaway>
+              A broadcast is complete when the last range is marked done — which happens when a page
+              worker walks a range and finds nothing left in it. Not when a total is reached; there
               is no total to reach.
-            </p>
-            <Callout variant="warn" title="THE TWO NUMBERS THAT SAY STOP">
-              <p className="m-0 text-[14.5px] leading-[1.65]">
-                <strong>Complaint rate</strong> and <strong>hard-bounce rate</strong>, both measured
-                against delivered, both watched in the first few thousand messages rather than at
-                the end. A complaint rate above roughly 0.1% is the threshold every major receiver
-                treats as a signal, and it is reached long before a broadcast finishes. A
-                hard-bounce rate climbing past a couple of percent means the list is stale and the
-                rest of the send will make it worse. Both are reasons to pause — which costs you
-                nothing, because pausing is the same operation the system performs after a crash.
-              </p>
-            </Callout>
+            </Takeaway>
+            <FactTable
+              columns={['What status returns', 'How to read it']}
+              monoFirst={false}
+              rows={[
+                [
+                  'The broadcast state',
+                  'Running, paused, complete. Pausing and crashing look the same from here.',
+                ],
+                [
+                  <>
+                    How many ranges are <Mono>done</Mono>
+                  </>,
+                  'Your coarse position, in thirty-seconds.',
+                ],
+                [
+                  'How far each unfinished cursor has moved between its start and its end',
+                  'Your fine position — and because ids are time-ordered it is a reasonable proxy for proportion.',
+                ],
+                [
+                  'The sum of what each range has dispatched',
+                  'The only number here that is a count of real messages.',
+                ],
+              ]}
+            />
+            <Gotcha title="The two numbers that say stop">
+              <strong>Complaint rate</strong> and <strong>hard-bounce rate</strong>, both measured
+              against delivered, both watched in the first few thousand messages rather than at the
+              end. A complaint rate above roughly 0.1% is the threshold every major receiver treats
+              as a signal, and it is reached long before a broadcast finishes. A hard-bounce rate
+              climbing past a couple of percent means the list is stale and the rest of the send
+              will make it worse. Both are reasons to pause — which costs you nothing, because
+              pausing is the same operation the system performs after a crash.
+            </Gotcha>
+            <Contrast
+              sides={[
+                {
+                  label: 'Not a reason to stop',
+                  tone: 'good',
+                  points: [
+                    'A low open rate in the first hour — opens arrive over days and are heavily distorted by machine fetches',
+                    'The first hour’s figure is dominated by whoever happens to be at their desk',
+                    'A broadcast sitting at the same position for several minutes: usually the domain governor refusing capacity because the learned daily ceiling has been reached',
+                    'In that case the retry points at the next UTC midnight and the broadcast continues tomorrow — it is working, it is just declining to do the thing that would hurt you',
+                  ],
+                },
+                {
+                  label: 'A reason to stop',
+                  tone: 'bad',
+                  points: [
+                    'Complaint rate above roughly 0.1% of delivered',
+                    'Hard-bounce rate climbing past a couple of percent',
+                    'Both visible in the first few thousand messages',
+                    'Pausing is instant and resuming cannot re-send',
+                  ],
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              What is <em>not</em> a reason to stop: the open rate looking low in the first hour.
-              Opens arrive over days, are heavily distorted by machine fetches, and the first hour’s
-              figure is dominated by whoever happens to be at their desk. If you are making a
-              decision on opens at all, read{' '}
+              If you are making a decision on opens at all, read{' '}
               <a
                 href="/guides/open-rates-and-apple-mpp"
                 className="text-accent underline underline-offset-4"
@@ -338,13 +445,6 @@ function Page() {
                 what an open actually means
               </a>{' '}
               first — the headline number and the number you can act on are not the same number.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Nor is a broadcast sitting at the same position for several minutes. That is usually
-              the domain governor refusing capacity because the learned daily ceiling has been
-              reached, in which case the retry points at the next UTC midnight and the broadcast
-              will simply continue tomorrow. It is working; it is just declining to do the thing
-              that would hurt you.
             </p>
           </>
         ),

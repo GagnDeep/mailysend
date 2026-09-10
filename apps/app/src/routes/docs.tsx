@@ -774,8 +774,9 @@ function DocsPage() {
 
           <AnchorSection anchor="errors" heading="Errors & rate limits">
             <Lede>
-              Errors are typed, human-readable, and always name the fix. Default limit is 10
-              requests/second per key, burst 50 — raised on request, and never applied to inbound.
+              Errors are typed, human-readable, and always name the fix. Rate limits are a fixed
+              window per workspace, not per key: 600 sends a minute on <Mono>/v1/emails</Mono> and
+              1,000 requests a minute everywhere else. Inbound is never limited.
             </Lede>
             <div className="overflow-x-auto rounded-tile border border-line bg-card">
               <table className="w-full min-w-[520px] border-collapse text-[14px]">

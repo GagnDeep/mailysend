@@ -1,5 +1,6 @@
-import { Callout } from '@mailysend/ui'
+import { Callout, ComparisonTable } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import { FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono, Str } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -12,29 +13,7 @@ export const Route = createFileRoute('/guides/templates-handlebars-mjml')({
   component: Page,
 })
 
-const ENGINES: Array<[string, string, string]> = [
-  [
-    'jsx-ast',
-    'A validated data document',
-    'Authored as JSX, compiled by the CLI, stored as JSON. Renders anywhere, editable in a UI.',
-  ],
-  [
-    'handlebars',
-    'A string with merge tags',
-    'The one most people want. Interpreted, not compiled — see below for what that changes.',
-  ],
-  [
-    'mjml',
-    'MJML source, compiled to HTML',
-    'Node only. Throws on Workers rather than half-rendering, so compile it before it ships.',
-  ],
-  [
-    'html',
-    'Raw HTML, verbatim',
-    'Does not interpolate at all. Merge tags left in one are reported as a warning, not honoured.',
-  ],
-]
-
+/** The fifteen components the AST document is built from. There is no `div`. */
 const COMPONENTS: Array<[string, string]> = [
   ['Html', 'The document root'],
   ['Head', 'Where a style block lives'],
@@ -52,6 +31,15 @@ const COMPONENTS: Array<[string, string]> = [
   ['Preview', 'The hidden inbox preview line'],
   ['CodeBlock', 'Monospaced, for tokens and ids'],
 ]
+
+/**
+ * Why the AST filter chain and the handlebars helper table are the same table.
+ *
+ * Two renderers with two formatting tables is a bug that takes a year to
+ * surface and an afternoon to explain.
+ */
+const FILTER_CHAIN_NOTE =
+  'The filter chain — {value | formatDate:\u201cshort\u201d} — resolves against the exact same helper table the handlebars engine uses, on purpose, so that {{formatDate x \u201cshort\u201d}} and its AST equivalent cannot drift into producing different output.'
 
 function Page() {
   return (
@@ -80,30 +68,73 @@ function Page() {
               render identically in the preview you approved and in the broadcast that goes out an
               hour later. Two code paths would eventually be two behaviours.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Engine</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What you store</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Choose it when</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ENGINES.map(([name, stores, when]) => (
-                    <tr key={name} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[13px] font-semibold text-ink">
-                        {name}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{stores}</td>
-                      <td className="px-4 py-2 text-muted-2">{when}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              The choice comes down to two questions: who edits this, and what runtime does it have
+              to render on. Everything else is taste.
+            </Takeaway>
+            <ComparisonTable
+              minWidth={780}
+              labelColumn="minmax(150px, 1.1fr)"
+              columns={[
+                { key: 'ast', label: 'jsx-ast', emphasis: true },
+                { key: 'hbs', label: 'handlebars' },
+                { key: 'mjml', label: 'mjml' },
+                { key: 'html', label: 'html' },
+              ]}
+              rows={[
+                {
+                  label: 'What you store',
+                  values: {
+                    ast: 'A validated JSON document',
+                    hbs: 'A string with merge tags',
+                    mjml: 'MJML source, compiled to HTML',
+                    html: 'Raw HTML, verbatim',
+                  },
+                },
+                {
+                  label: 'Interpolates',
+                  values: {
+                    ast: true,
+                    hbs: true,
+                    mjml: true,
+                    html: {
+                      kind: 'text',
+                      label: 'No — tags left in are a warning',
+                      tone: 'negative',
+                    },
+                  },
+                },
+                {
+                  label: 'Renders on a Worker',
+                  values: {
+                    ast: true,
+                    hbs: true,
+                    mjml: { kind: 'text', label: 'Throws MjmlUnavailableError', tone: 'negative' },
+                    html: true,
+                  },
+                },
+                {
+                  label: 'Editable as a form',
+                  values: {
+                    ast: true,
+                    hbs: { kind: 'partial', label: 'As text' },
+                    mjml: { kind: 'partial', label: 'As text' },
+                    html: { kind: 'partial', label: 'As text' },
+                  },
+                },
+                {
+                  label: 'Choose it when',
+                  values: {
+                    ast: 'Somebody who is not you edits it',
+                    hbs: 'It is a string with names in it',
+                    mjml: 'You already have MJML and a build step',
+                    html: 'The body came from elsewhere and must not be touched',
+                  },
+                },
+              ]}
+              caption="One entry point, renderTemplate, covers all four."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The choice is really about two questions.{' '}
               <strong className="text-ink">Who edits this?</strong> If the answer includes anybody
               who does not want to see angle brackets, you want a structured document rather than a
               string, because only a structured document can be presented as a form.{' '}
@@ -111,15 +142,14 @@ function Page() {
               answer is a Cloudflare Worker — which it is, for every send on a default deployment —
               then MJML is out, and that is a hard constraint rather than a preference.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              One property is shared by all four and is worth knowing before you build tooling on
-              top: nothing in the template package throws on a data problem. A missing merge field,
-              an unknown filter, a subject that is too long, an HTML body over Gmail’s clipping
-              threshold — all of these come back as <Mono>warnings</Mono> on the render result. A
-              broadcast that stops halfway because one contact has no first name is worse than one
-              that goes out with a blank in it, so the package records and the caller decides. Read
-              the warnings array in your publish flow; that is where it is meant to be enforced.
-            </p>
+            <Gotcha title="Nothing in the template package throws on a data problem">
+              A missing merge field, an unknown filter, a subject that is too long, an HTML body
+              over Gmail’s clipping threshold — all of these come back as <Mono>warnings</Mono> on
+              the render result. A broadcast that stops halfway because one contact has no first
+              name is worse than one that goes out with a blank in it, so the package records and
+              the caller decides. Read the warnings array in your publish flow; that is where it is
+              meant to be enforced.
+            </Gotcha>
           </>
         ),
         'the-ast': (
@@ -129,36 +159,12 @@ function Page() {
               the most boring, which is the point. You author a React-Email-shaped <Mono>.tsx</Mono>{' '}
               file; <Mono>mailysend templates push</Mono> runs it through a real parser on your
               machine, where a parser and a filesystem are entirely reasonable things to have; and
-              what gets stored is a data-only JSON tree. The server never sees JSX and never
-              evaluates anything.
+              what gets stored is a data-only JSON tree.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              That split is the whole design. A template body is customer-controlled data that gets
-              stored and later rendered inside a shared isolate on behalf of somebody else’s send.
-              Anything in that path capable of evaluating an expression from the body is a sandbox
-              escape waiting to be found. So the expression language has no function calls, no
-              arithmetic, no operators outside a fixed comparison set, and no route to a prototype —
-              the path schema explicitly refuses <Mono>__proto__</Mono>, <Mono>constructor</Mono>{' '}
-              and <Mono>prototype</Mono> as property names, paths are capped at twelve segments, and
-              every interpolation site escapes.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Fifteen components make up the document. They are deliberately email components rather
-              than web ones — there is no <Mono>div</Mono>, because a div is not how you lay out a
-              message that has to survive Outlook.
-            </p>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <tbody>
-                  {COMPONENTS.map(([name, role]) => (
-                    <tr key={name} className="border-line border-t first:border-t-0">
-                      <td className="px-4 py-1.5 font-mono text-[13px] text-ink">{name}</td>
-                      <td className="px-4 py-1.5 text-muted-2">{role}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              The server never sees JSX and never evaluates anything — which is what makes a visual
+              editor and a safe render the same feature rather than two competing ones.
+            </Takeaway>
             <Code>
               <Com>{'// welcome.tsx — what you write'}</Com>
               {
@@ -170,12 +176,43 @@ function Page() {
               {'}>Activate</Button>\n</Container>'}
             </Code>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The filter chain — <Mono>{'{value | formatDate:"short"}'}</Mono> — resolves against
-              the exact same helper table the handlebars engine uses, on purpose, so that{' '}
-              <Mono>{'{{formatDate x "short"}}'}</Mono> and its AST equivalent cannot drift into
-              producing different output. Two renderers with two formatting tables is a bug that
-              takes a year to surface and an afternoon to explain.
+              <strong className="text-ink">That split is the whole design.</strong> A template body
+              is customer-controlled data that gets stored and later rendered inside a shared
+              isolate on behalf of somebody else’s send, so anything in that path capable of
+              evaluating an expression from the body is a sandbox escape waiting to be found.
             </p>
+            <FactTable
+              columns={['The expression language has', 'Because']}
+              rows={[
+                [
+                  'No function calls, no arithmetic',
+                  'Neither can be bounded, and neither is needed to name a field.',
+                ],
+                [
+                  'No operators outside a fixed comparison set',
+                  'An enumerable set is the only kind that can be reviewed.',
+                ],
+                [
+                  'No __proto__, constructor or prototype',
+                  'The path schema refuses those property names outright.',
+                ],
+                ['A cap of twelve path segments', 'A path that deep is a bug, not a lookup.'],
+                [
+                  'Escaping at every interpolation site',
+                  'There is no opt-out, so there is no gap.',
+                ],
+              ]}
+            />
+            <p className="text-[15.5px] leading-[1.7] text-muted">
+              <strong className="text-ink">Fifteen components make up the document.</strong> They
+              are deliberately email components rather than web ones — there is no <Mono>div</Mono>,
+              because a div is not how you lay out a message that has to survive Outlook.
+            </p>
+            <FactTable
+              columns={['Component', 'What it is']}
+              rows={COMPONENTS.map(([name, role]) => [name, role])}
+              caption={FILTER_CHAIN_NOTE}
+            />
           </>
         ),
         handlebars: (
@@ -183,22 +220,39 @@ function Page() {
             <Lede>
               This is a handlebars <em>interpreter</em>, not a handlebars compiler. Upstream
               handlebars compiles a template into a JavaScript function; this one parses the
-              template into a tree and walks it. The runtime has no <Mono>new Function</Mono> and no{' '}
-              <Mono>eval</Mono>, by design, and that single fact explains every difference you will
-              notice.
+              template into a tree and walks it.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              What you get is a fixed, enumerable set of capabilities: four block helpers —{' '}
-              <Mono>if</Mono>, <Mono>unless</Mono>, <Mono>each</Mono>, <Mono>with</Mono> — plus a
-              helper table you can read on one screen. Formatting: <Mono>upper</Mono>,{' '}
-              <Mono>lower</Mono>, <Mono>capitalize</Mono>, <Mono>truncate</Mono>,{' '}
-              <Mono>default</Mono>, <Mono>formatDate</Mono>, <Mono>formatNumber</Mono>,{' '}
-              <Mono>pluralize</Mono>, <Mono>link</Mono>. Comparison and logic: <Mono>eq</Mono>,{' '}
-              <Mono>ne</Mono>, <Mono>gt</Mono>, <Mono>gte</Mono>, <Mono>lt</Mono>, <Mono>lte</Mono>,{' '}
-              <Mono>and</Mono>, <Mono>or</Mono>, <Mono>not</Mono>. That is the list. Being able to
-              enumerate what a template can do is the only form of sandboxing that survives contact
-              with untrusted authors.
-            </p>
+            <Takeaway>
+              The runtime has no <Mono>new Function</Mono> and no <Mono>eval</Mono>, by design, and
+              that single fact explains every difference you will notice.
+            </Takeaway>
+            <FactTable
+              columns={['Group', 'The whole list', 'Note']}
+              rows={[
+                [
+                  'Block helpers',
+                  <Mono key="blocks">if · unless · each · with</Mono>,
+                  'Four. There is no way to add a fifth from a template.',
+                ],
+                [
+                  'Formatting',
+                  <Mono key="formatting">
+                    upper · lower · capitalize · truncate · default · formatDate · formatNumber ·
+                    pluralize · link
+                  </Mono>,
+                  <>
+                    <Mono>formatDate</Mono> defaults to UTC and takes an explicit <Mono>tz</Mono>{' '}
+                    when you want otherwise. <Mono>default</Mono> treats the empty string as
+                    missing, because “Hi ,” is the failure everybody has received.
+                  </>,
+                ],
+                [
+                  'Comparison and logic',
+                  <Mono key="logic">eq · ne · gt · gte · lt · lte · and · or · not</Mono>,
+                  'Being able to enumerate what a template can do is the only form of sandboxing that survives contact with untrusted authors.',
+                ],
+              ]}
+            />
             <Code>
               {'Hi {{'}
               <Key>{'capitalize first_name'}</Key>
@@ -219,13 +273,10 @@ function Page() {
               {'}}\n{{/each}}'}
             </Code>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              <Mono>formatDate</Mono> defaults to UTC and takes an explicit <Mono>tz</Mono> when you
-              want otherwise. That default exists because a Worker’s clock is always UTC while a
-              self-hosted Node box is whatever the operator set, and “the same broadcast rendered a
-              different date depending on which runtime picked up the job” is a bug that only
-              appears near midnight, in production. <Mono>default</Mono> treats the empty string as
-              missing, because a blank merge field is the common case and “Hi ,” is the failure
-              everybody has received.
+              <strong className="text-ink">The UTC default is not a shrug.</strong> A Worker’s clock
+              is always UTC while a self-hosted Node box is whatever the operator set, and “the same
+              broadcast rendered a different date depending on which runtime picked up the job” is a
+              bug that only appears near midnight, in production.
             </p>
             <Callout variant="warn" title="TRIPLE BRACES ESCAPE. THIS IS NOT A BUG.">
               <p className="m-0">
@@ -247,19 +298,17 @@ function Page() {
                 reader trusts.
               </p>
             </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              One implementation detail worth understanding because it shapes how you should write
-              broadcast templates: parsed templates are cached in a map keyed by the template
-              source, bounded at sixty-four entries, evicting oldest-first. A broadcast renders the
-              same body once per recipient and parsing is by far the most expensive part of that
-              loop, so the cache turns an O(recipients) parse cost into O(1). It is <em>bounded</em>{' '}
-              because a Worker isolate is shared across workspaces, and an unbounded map keyed by
-              customer-controlled text is a memory leak with an attacker-supplied key. The practical
-              consequence: keep the template body stable across a send. Generating a slightly
-              different source string per recipient — splicing a name into the template rather than
-              passing it as data — defeats the cache completely and is the difference between one
-              parse and a hundred thousand.
-            </p>
+            <Gotcha title="Keep the template body stable across a send">
+              Parsed templates are cached in a map keyed by the template source, bounded at
+              sixty-four entries, evicting oldest-first — bounded because a Worker isolate is shared
+              across workspaces, and an unbounded map keyed by customer-controlled text is a memory
+              leak with an attacker-supplied key. A broadcast renders the same body once per
+              recipient and parsing is by far the most expensive part of that loop, so the cache
+              turns an O(recipients) parse cost into O(1). Generating a slightly different source
+              string per recipient — splicing a name into the template rather than passing it as
+              data — defeats the cache completely, and is the difference between one parse and a
+              hundred thousand.
+            </Gotcha>
           </>
         ),
         mjml: (
@@ -268,18 +317,32 @@ function Page() {
               MJML is supported and it is Node-only. The compiler needs Node APIs that Cloudflare
               Workers does not provide, so on a Worker the engine throws{' '}
               <Mono>MjmlUnavailableError</Mono> immediately rather than attempting a partial render.
-              That is the whole story, and the design decision is in the word “immediately”.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The runtime check is explicit:{' '}
-              <Mono>navigator.userAgent === "Cloudflare-Workers"</Mono> is the documented Workers
-              signal, and a <Mono>process.versions.node</Mono> string is what distinguishes real
-              Node from the Deno and Bun shims that also define <Mono>process</Mono>. Only if that
-              passes is <Mono>mjml</Mono> loaded, through a dynamic import indirected via a variable
-              so that bundlers which statically rewrite <Mono>import("mjml")</Mono> leave the Worker
-              build alone. If the optional dependency is simply not installed, you get the same
-              error class with the reason in it — not a stack trace about a missing module.
-            </p>
+            <Takeaway>
+              The design decision is in the word “immediately”: an error that names the fix is worth
+              more than a capability check, and both supported answers are build-time.
+            </Takeaway>
+            <FactTable
+              columns={['What the engine checks', 'What it concludes']}
+              rows={[
+                [
+                  'navigator.userAgent === "Cloudflare-Workers"',
+                  'The documented Workers signal. MJML cannot run here; throw before doing anything else.',
+                ],
+                [
+                  'process.versions.node',
+                  'A version string is what distinguishes real Node from the Deno and Bun shims that also define process.',
+                ],
+                [
+                  'A dynamic import, indirected via a variable',
+                  'So that bundlers which statically rewrite import("mjml") leave the Worker build alone.',
+                ],
+                [
+                  'The optional dependency is not installed',
+                  'The same error class with the reason in it — not a stack trace about a missing module.',
+                ],
+              ]}
+            />
             <Code>
               <Com>{'// on a Worker:'}</Com>
               {'\nMjmlUnavailableError: MJML cannot be compiled on Cloudflare Workers.\n'}
@@ -294,13 +357,10 @@ function Page() {
               <Com>{'// CI and store the compiled HTML on the template version.'}</Com>
             </Code>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              An error that names the fix is worth more than a capability check. The two supported
-              answers are both build-time: push through the CLI, which compiles on your machine and
-              uploads the resulting HTML, or compile in CI and store the HTML on the template
-              version. Either way the send path receives plain HTML and nothing on the hot path
-              depends on a Node-only dependency. If you are starting a template from scratch and
-              want MJML’s layout guarantees without its runtime, the AST engine was designed for
-              exactly this constraint.
+              <strong className="text-ink">Either way the send path receives plain HTML</strong> and
+              nothing on the hot path depends on a Node-only dependency. If you are starting a
+              template from scratch and want MJML’s layout guarantees without its runtime, the AST
+              engine was designed for exactly this constraint.
             </p>
             <Callout title="THE MERGE PASS RUNS AFTER COMPILATION, NOT BEFORE">
               MJML output is ordinary HTML that may still carry merge tags, so handlebars runs on
@@ -315,63 +375,79 @@ function Page() {
           <>
             <Lede>
               Whichever engine produced it, the HTML then goes through a fixed post-render pipeline
-              before it becomes a MIME message. None of these steps is optional decoration; each one
-              exists because email clients are not browsers.
+              before it becomes a MIME message.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                <Mono>inlineCss</Mono>
-              </strong>{' '}
-              flattens a <Mono>&lt;style&gt;</Mono> block into <Mono>style</Mono> attributes on the
-              elements it matched. Gmail strips head styles in several contexts and older clients
-              never supported them, so a design that relies on a stylesheet arrives unstyled. It
-              runs only when there is a style block to flatten, and reports the selectors it could
-              not handle as warnings rather than dropping them silently.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                <Mono>ensureTableLayout</Mono>
-              </strong>{' '}
-              stamps the attributes every layout table needs. <Mono>cellpadding</Mono> and{' '}
-              <Mono>cellspacing</Mono> default to non-zero in Outlook and older Gmail, which is
-              precisely where the mystery two-pixel gaps in a sliced hero image come from, and{' '}
-              <Mono>role="presentation"</Mono> stops a screen reader announcing your layout
-              scaffolding as a data table.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                <Mono>injectTracking</Mono>
-              </strong>{' '}
-              adds the open pixel and rewrites links, with three deliberate exemptions. A link
-              carrying <Mono>data-ms-no-track</Mono> is left alone — that is how the unsubscribe
-              stays untracked. A link whose href is a <Mono>mailto:</Mono> or <Mono>tel:</Mono> is
-              left alone. And a link whose href still contains an unresolved placeholder —{' '}
-              <Mono>{'{{'}</Mono>, <Mono>{'{%'}</Mono>, <Mono>%token%</Mono>, <Mono>${'{'}</Mono> —
-              is left alone, because rewriting it would sign a literal{' '}
+            <Takeaway>
+              None of these steps is optional decoration. Each one exists because email clients are
+              not browsers.
+            </Takeaway>
+            <FactTable
+              columns={['Step', 'What it does', 'Why it has to']}
+              rows={[
+                [
+                  'inlineCss',
+                  <>
+                    Flattens a <Mono>&lt;style&gt;</Mono> block into <Mono>style</Mono> attributes
+                    on the elements it matched. Runs only when there is a style block, and reports
+                    selectors it could not handle as warnings rather than dropping them silently.
+                  </>,
+                  'Gmail strips head styles in several contexts and older clients never supported them, so a design that relies on a stylesheet arrives unstyled.',
+                ],
+                [
+                  'ensureTableLayout',
+                  <>
+                    Stamps the attributes every layout table needs: <Mono>cellpadding</Mono>,{' '}
+                    <Mono>cellspacing</Mono> and <Mono>role="presentation"</Mono>.
+                  </>,
+                  'cellpadding and cellspacing default to non-zero in Outlook and older Gmail — precisely where the mystery two-pixel gaps in a sliced hero image come from. role="presentation" stops a screen reader announcing layout scaffolding as a data table.',
+                ],
+                [
+                  'injectTracking',
+                  'Adds the open pixel and rewrites links, with three deliberate exemptions.',
+                  'See the exemptions below — each one is a link that would break if it were signed into the click tracker.',
+                ],
+                [
+                  'hasUnsubscribe',
+                  <>
+                    The pre-send check: does the body already resolve to an unsubscribe, through a
+                    placeholder or the literal word. Both <Mono>{'{{unsubscribe_url}}'}</Mono> and
+                    the Mailchimp-era <Mono>%unsubscribe_url%</Mono> are recognised, because senders
+                    migrate and paste.
+                  </>,
+                  'If nothing is found a default footer is appended before the closing body tag, rather than the message going out without one.',
+                ],
+                [
+                  'htmlToText',
+                  'Derives the plain-text part when you have not supplied one, and records that it did so as a warning.',
+                  'A multipart message with a real text alternative is treated better by filters than an HTML-only one, and there is a population of readers who see only that part.',
+                ],
+              ]}
+            />
+            <Gotcha title="Three links injectTracking will not touch">
+              A link carrying <Mono>data-ms-no-track</Mono> is left alone — that is how the
+              unsubscribe stays untracked. A link whose href is a <Mono>mailto:</Mono> or{' '}
+              <Mono>tel:</Mono> is left alone. And a link whose href still contains an unresolved
+              placeholder — <Mono>{'{{'}</Mono>, <Mono>{'{%'}</Mono>, <Mono>%token%</Mono>,{' '}
+              <Mono>${'{'}</Mono> — is left alone, because rewriting it would sign a literal{' '}
               <Mono>{'{{unsubscribe_url}}'}</Mono> into the click tracker and produce a link that
               redirects to nowhere.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                <Mono>hasUnsubscribe</Mono>
-              </strong>{' '}
-              is the pre-send check: does the body already resolve to an unsubscribe, either through
-              a placeholder or the literal word. Both the handlebars-shaped{' '}
-              <Mono>{'{{unsubscribe_url}}'}</Mono> and the Mailchimp-era{' '}
-              <Mono>%unsubscribe_url%</Mono> are recognised, because senders migrate and paste. If
-              nothing is found, a default footer is appended before the closing body tag rather than
-              the message going out without one.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                <Mono>htmlToText</Mono>
-              </strong>{' '}
-              derives the plain-text part when you have not supplied one, and records that it did so
-              as a warning. A multipart message with a real text alternative is treated better by
-              filters than an HTML-only one, and there is a population of readers who see only that
-              part. Supplying your own is better than the derived one; the derived one is much
-              better than nothing.
-            </p>
+            </Gotcha>
+            <FactTable
+              columns={['Threshold', 'Warning', 'What it costs you']}
+              rows={[
+                [
+                  '~102 KB of rendered body',
+                  'Gmail clipping',
+                  'Gmail shows a “View entire message” link and hides everything after the cut — including, in practice, your unsubscribe footer and your open pixel, so a clipped broadcast simultaneously under-reports opens and over-reports complaints.',
+                ],
+                [
+                  '150 characters of subject',
+                  'Subject too long',
+                  'Most clients show fewer than eighty. The subject is rendered as plain text rather than HTML, since it ends up in a MIME header where &amp;amp; would be shown to the recipient literally.',
+                ],
+              ]}
+              caption="Both are warnings on the render result. Wire them into your publish check rather than reading them by eye."
+            />
             <Callout title="THE HEADERS GO ON EVERY MESSAGE, INCLUDING TRANSACTIONAL">
               Separately from the body, the send path attaches <Mono>List-Unsubscribe</Mono> — an
               HTTPS one-click endpoint and a <Mono>mailto:</Mono> fallback — plus{' '}
@@ -388,16 +464,6 @@ function Page() {
               </a>{' '}
               covers the rest.
             </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Two warnings from this stage are worth wiring into your publish check rather than
-              reading by eye. A rendered body over roughly 102 KB will be clipped by Gmail, which
-              shows a “View entire message” link and hides everything after the cut — including, in
-              practice, your unsubscribe footer and your open pixel, so a clipped broadcast
-              simultaneously under-reports opens and over-reports complaints. And a subject over 150
-              characters is reported because most clients show fewer than eighty; the subject is
-              rendered as plain text rather than HTML, since it ends up in a MIME header where{' '}
-              <Mono>&amp;amp;</Mono> would be shown to the recipient literally.
-            </p>
           </>
         ),
       }}

@@ -1,6 +1,7 @@
-import { Callout } from '@mailysend/ui'
+import { Callout, ComparisonTable, Metric, MetricGrid } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { VolumeCostPanel } from '~/components/guides/volume-cost-panel.tsx'
+import { FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -62,25 +63,35 @@ function Page() {
           <>
             <Lede>
               Put your own volume in. These are the same functions the pricing page runs — imported
-              rather than restated, because a guide quoting its own hard-coded "$X at 100k" is a
+              rather than restated, because a guide quoting its own hard-coded “$X at 100k” is a
               second, unversioned copy of the pricing model, and the first time the real one moves
               the guide starts lying.
             </Lede>
+            <Takeaway>
+              Three numbers drive everything below: a $5 floor, 3,000 messages included, and $0.35
+              per thousand after that.
+            </Takeaway>
+            <MetricGrid className="my-5" min={160}>
+              <Metric value="$5" label="Workers Paid, per month, at any volume" size="sm" />
+              <Metric value="3,000" label="Messages included before metering" size="sm" />
+              <Metric value="$0.35" label="Per thousand messages after that" size="sm" />
+              <Metric value="$0" label="Software. MIT licensed, no upgrade tier" size="sm" />
+            </MetricGrid>
             <VolumeCostPanel />
             <p className="mt-6 text-[15.5px] leading-[1.7] text-muted">
-              Two things the panel deliberately does not do. It does not price your time — that is a
-              real cost and it gets its own treatment in the last section rather than a made-up
-              hourly rate here. And it does not pretend to be a quote: the Cloudflare rates it uses
-              are published rates, your bill is between you and your provider, and if the numbers
-              have moved since this page was written then your invoice is right and this page is
-              stale.
+              <strong className="text-ink">The self-hosted figure is an infrastructure bill</strong>
+              , not a plan price. There is no upgrade tier here to buy, no seat count, and no
+              feature held back for a higher band — the software is MIT licensed and the whole of it
+              is what you deployed. That is why the comparison in the last section is against
+              infrastructure rather than against plans.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The self-hosted figure is an infrastructure bill, not a plan price. There is no
-              upgrade tier here to buy, no seat count, and no feature held back for a higher band —
-              the software is MIT licensed and the whole of it is what you deployed. That is why the
-              comparison below is against infrastructure rather than against plans.
-            </p>
+            <Gotcha title="Two things the panel deliberately does not do">
+              It does not price your time — that is a real cost and it gets its own treatment in the
+              last section rather than a made-up hourly rate here. And it does not pretend to be a
+              quote: the Cloudflare rates it uses are published rates, your bill is between you and
+              your provider, and if the numbers have moved since this page was written then your
+              invoice is right and this page is stale.
+            </Gotcha>
           </>
         ),
         'line-items': (
@@ -90,32 +101,28 @@ function Page() {
               about. Knowing which eight are rounding errors is more useful than knowing the exact
               total, because it tells you which optimisations are real and which are hobbies.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Product</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What it does</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Rate</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">At 100k</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {LINES.map(([product, role, rate, weight]) => (
-                    <tr key={product} className="border-line border-t">
-                      <td className="px-4 py-2 font-semibold text-ink">{product}</td>
-                      <td className="px-4 py-2 text-muted">{role}</td>
-                      <td className="px-4 py-2 font-mono text-[12px] text-muted">{rate}</td>
-                      <td className="px-4 py-2 text-muted-2">{weight}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
-              Worked out at a hundred thousand messages a month, it is three lines and one of them
-              is the answer:
-            </p>
+            <Takeaway>
+              Eighty-five per cent of the bill is the messages. Everything else together is about a
+              dollar twenty.
+            </Takeaway>
+            <FactTable
+              columns={['Product', 'What it does', 'Rate', 'At 100k']}
+              monoFirst={false}
+              rows={LINES.map(([product, role, rate, weight]) => [
+                product,
+                role,
+                <span key={product} className="font-mono text-[12px]">
+                  {rate}
+                </span>,
+                weight,
+              ])}
+            />
+            <MetricGrid className="my-5" min={160}>
+              <Metric value="$5.00" label="Workers Paid" size="sm" />
+              <Metric value="$33.95" label="97,000 messages at $0.35/1k" size="sm" />
+              <Metric value="≈$1.20" label="D1, R2, Queues, everything else" size="sm" />
+              <Metric value="≈$40" label="Monthly total at 100,000" size="sm" />
+            </MetricGrid>
             <Code>
               {
                 'Workers Paid                       $5.00\n97,000 messages @ $0.35/1k        $33.95   '
@@ -126,8 +133,10 @@ function Page() {
               {'                                    ≈$40'}
             </Code>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              Eighty-five per cent of that bill is the messages. Which means the only optimisation
-              with real money in it is the transport — and that is a{' '}
+              <strong className="text-ink">
+                The only optimisation with real money in it is the transport
+              </strong>{' '}
+              — and that is a{' '}
               <a
                 href="/guides/choose-a-sending-transport"
                 className="text-accent underline underline-offset-4"
@@ -141,17 +150,29 @@ function Page() {
               month, which is not obviously worth the extra moving part; at a million it is more
               than two hundred, and the answer changes.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Why the other eight stay small.</strong> Not by accident:
-              the architecture was shaped by these rates. Events land in Analytics Engine, which is
-              included, rather than as one D1 row per open — a row per event is the line item that
-              gets expensive fastest, and D1 holds only state you actually query. The suppression
-              list is read from KV on every send because it must be, and KV reads at this volume are
-              cents. R2 has no egress fees, so serving an attachment costs storage and nothing else.
-              A broadcast is deliberately never counted before it is sent, which sounds like a
-              product decision and is also a billing one: a counting pass is a full scan that gets
-              slower exactly as it gets more expensive.
-            </p>
+            <FactTable
+              columns={['Why the other eight stay small', 'The architectural choice behind it']}
+              monoFirst={false}
+              rows={[
+                [
+                  'Events do not become rows',
+                  'They land in Analytics Engine, which is included, rather than one D1 row per open. A row per event is the line item that gets expensive fastest, so D1 holds only state you actually query.',
+                ],
+                [
+                  'The suppression list is in KV',
+                  'It is read on every send because it must be, and KV reads at this volume are cents.',
+                ],
+                [
+                  'R2 has no egress fees',
+                  'So serving an attachment costs storage and nothing else.',
+                ],
+                [
+                  'A broadcast is never counted before it is sent',
+                  'Which sounds like a product decision and is also a billing one: a counting pass is a full scan that gets slower exactly as it gets more expensive.',
+                ],
+              ]}
+              caption="Not an accident — the architecture was shaped by these rates."
+            />
             <Callout title="THE LINE ITEM THAT SURPRISES PEOPLE">
               Inbound is free. Email Routing costs nothing, so receiving mail — parsing it,
               threading it, storing it — is Workers requests and R2 storage, both of which are
@@ -167,50 +188,28 @@ function Page() {
               confusing about pricing comparisons comes from people arguing about one of those two
               numbers while standing at different volumes.
             </Lede>
+            <Takeaway>
+              The interesting quantity is not the marginal rate. It is what the floor amortises to,
+              and that is a curve that falls fast and then flattens.
+            </Takeaway>
             <Code>
               {'monthly ≈ $5  +  (messages − 3,000) × $0.00035  +  small change\n         '}
               <Com>{'└ floor'}</Com>
               {'          '}
               <Com>{'└ marginal'}</Com>
             </Code>
+            <FactTable
+              columns={['Volume / month', 'Total', 'Effective per 1,000', 'What dominates']}
+              rows={[
+                ['1,000', '$5.00', '$5.00', 'The floor, entirely'],
+                ['10,000', '$7.45', '$0.75', 'Still mostly the floor'],
+                ['100,000', '$40.15', '≈$0.40', 'The messages'],
+                ['1,000,000', '$362.95', '≈$0.36', 'The messages, overwhelmingly'],
+              ]}
+              caption="Straight from the same cost functions the calculator runs. The curve approaches $0.35 and never reaches it."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              Thirty-five hundredths of a cent per message is small enough that the interesting
-              quantity is not the marginal rate at all — it is what the floor amortises to. Watch
-              the effective price per thousand as volume climbs:
-            </p>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Volume / month</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Total</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Effective per 1,000</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What dominates</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['1,000', '$5.00', '$5.00', 'The floor, entirely'],
-                    ['10,000', '$7.45', '$0.75', 'Still mostly the floor'],
-                    ['100,000', '≈$40', '≈$0.40', 'The messages'],
-                    ['1,000,000', '≈$363', '≈$0.36', 'The messages, overwhelmingly'],
-                  ].map(([volume, total, per, what]) => (
-                    <tr key={volume} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[12.5px] font-semibold text-ink">
-                        {volume}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-[12.5px] text-muted">{total}</td>
-                      <td className="px-4 py-2 font-mono text-[12.5px] text-muted">{per}</td>
-                      <td className="px-4 py-2 text-muted-2">{what}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
-              The curve falls fast and then flattens against $0.35, which it approaches and never
-              reaches. That is the whole shape, and it has one consequence that matters more than
-              any individual number:{' '}
+              That shape has one consequence that matters more than any individual number:{' '}
               <strong className="text-ink">the comparison changes with volume</strong>. Not the
               winner's margin — the winner. Somebody arguing that self-hosting is obviously cheaper
               is standing at a hundred thousand. Somebody arguing that it is obviously more
@@ -226,13 +225,13 @@ function Page() {
               you are paying a lot for the last few thousand messages. A self-hosted bill has no
               steps; it is a straight line from the floor.
             </p>
-            <Callout variant="warn" title="THE FLOOR IS PAID WHETHER YOU SEND OR NOT">
+            <Gotcha title="The floor is paid whether you send or not">
               Five dollars a month at zero messages. If you are deploying this to send a few hundred
               transactional emails, you are paying five dollars for something a free tier gives you
               for nothing, and no argument about the marginal rate rescues that. Whether it is worth
               it depends entirely on what you are buying instead — which is the next section, and it
               is not a pricing argument.
-            </Callout>
+            </Gotcha>
           </>
         ),
         versus: (
@@ -241,46 +240,67 @@ function Page() {
               An honest comparison has to include the costs self-hosting adds, and it has to be
               willing to lose. Here is where each side actually wins, at the volumes where it wins.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Volume</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Self-hosted</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">A per-message vendor</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Honest verdict</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['Under 3,000', '$5.00', '$0 on a free tier', 'The vendor. Not close.'],
-                    [
-                      '10,000',
-                      '$7.45',
-                      '≈$20 on a starter plan',
-                      'Roughly a wash once you count your time',
-                    ],
-                    ['100,000', '≈$40', '≈$90', 'Self-hosted, by about half'],
-                    [
-                      '1,000,000',
-                      '≈$363',
-                      'Usually "contact us"',
-                      'Self-hosted, and the gap widens',
-                    ],
-                  ].map(([volume, self, vendor, verdict]) => (
-                    <tr key={volume} className="border-line border-t">
-                      <td className="px-4 py-2 font-mono text-[12.5px] font-semibold text-ink">
-                        {volume}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-[12.5px] text-muted">{self}</td>
-                      <td className="px-4 py-2 font-mono text-[12.5px] text-muted">{vendor}</td>
-                      <td className="px-4 py-2 text-muted-2">{verdict}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
+            <Takeaway>
+              Below a few thousand messages a month a vendor's free tier is genuinely cheaper. Above
+              a hundred thousand it is not close in the other direction.
+            </Takeaway>
+            <ComparisonTable
+              caption="Monthly cost at four volumes"
+              labelColumn="minmax(150px, 1fr)"
+              minWidth={720}
+              columns={[
+                { key: 'self', label: 'Self-hosted', emphasis: true },
+                { key: 'ses', label: 'Self-hosted + SES' },
+                { key: 'resend', label: 'Resend' },
+                { key: 'sendgrid', label: 'SendGrid' },
+              ]}
+              rows={[
+                {
+                  label: '1,000 / month',
+                  values: {
+                    self: { kind: 'text', label: '$5.00', tone: 'muted' },
+                    ses: '$5.10',
+                    resend: { kind: 'text', label: '$0', tone: 'positive' },
+                    sendgrid: '$19.95',
+                  },
+                },
+                {
+                  label: '10,000 / month',
+                  values: {
+                    self: '$7.45',
+                    ses: { kind: 'text', label: '$6.00', tone: 'positive' },
+                    resend: '$20.00',
+                    sendgrid: '$19.95',
+                  },
+                },
+                {
+                  label: '100,000 / month',
+                  values: {
+                    self: '$40.15',
+                    ses: { kind: 'text', label: '$16.20', tone: 'positive' },
+                    resend: '$90.00',
+                    sendgrid: '$60.00',
+                  },
+                },
+                {
+                  label: '1,000,000 / month',
+                  values: {
+                    self: '$362.95',
+                    ses: { kind: 'text', label: '$114.00', tone: 'positive' },
+                    resend: '$650',
+                    sendgrid: '$600',
+                  },
+                },
+              ]}
+            />
+            <p className="text-[15.5px] leading-[1.7] text-muted">
+              Those are the calculator's own functions evaluated at four points: a Cloudflare-only
+              deployment, the same deployment with a domain pointed at SES, Resend's published plan
+              ladder, and SendGrid's Essentials/Pro rate flattened over its floor. At a million
+              messages the vendor columns are extrapolations of a published per-thousand rate — in
+              practice that band is usually a conversation rather than a price.
+            </p>
+            <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 Below a few thousand messages a month, a vendor's free tier is genuinely cheaper.
               </strong>{' '}
@@ -290,14 +310,10 @@ function Page() {
               pricing page that cannot say that about its own product is a pricing page you should
               not trust about anything else either.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                And self-hosting adds costs the table cannot price.
-              </strong>{' '}
-              These are real line items even though none of them arrives as an invoice:
-            </p>
-            <div className="flex flex-col gap-3">
-              {[
+            <FactTable
+              columns={['What self-hosting adds', 'What it actually costs']}
+              monoFirst={false}
+              rows={[
                 [
                   'Your time, up front',
                   'Deploying, verifying DNS for each sending domain, wiring webhooks and reading enough of the operational surface to be useful in an incident. An afternoon if things go well. A day if your registrar is one of the ones that appends the zone to every record you type.',
@@ -314,14 +330,10 @@ function Page() {
                   'Reputation you build yourself',
                   'A vendor sends from pools with years of history. You are starting from nothing and warming up, which is a real, temporary deliverability cost — and the flip side of owning it rather than sharing it with whoever else is on your IP.',
                 ],
-              ].map(([title, body]) => (
-                <div key={title} className="rounded-tile border border-line bg-card p-4">
-                  <p className="mt-0 mb-1.5 text-[15.5px] font-semibold text-ink">{title}</p>
-                  <p className="m-0 text-[14.5px] leading-[1.6] text-muted">{body}</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
+              ]}
+              caption="Real line items, none of which arrives as an invoice."
+            />
+            <p className="text-[15.5px] leading-[1.7] text-muted">
               Price those honestly and the ten-thousand-message row stops being a win. Twelve
               dollars a month of savings does not pay for an afternoon of anybody's time, and it
               will not pay for it next year either. The crossover where self-hosting is
@@ -343,20 +355,17 @@ function Page() {
               </a>{' '}
               lists them line by line with what each one is doing in the send path. A comparison you
               cannot check is not worth reading — so check it, including against your own provider's
-              current page, before you move anything.
-            </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              If the numbers do point your way, the{' '}
+              current page, before you move anything. If the numbers do point your way, the{' '}
               <a
                 href="/guides/migrate-from-resend"
                 className="text-accent underline underline-offset-4"
               >
                 migration guide
               </a>{' '}
-              covers the cutover — including the part where you keep both running on a percentage
-              split until you are sure. <Mono>/v1/emails</Mono> is Resend-compatible, so the code
+              covers the cutover, including the part where you keep both running on a percentage
+              split until you are sure — <Mono>/v1/emails</Mono> is Resend-compatible, so the code
               change is a base URL and a key.
-            </p>
+            </Callout>
           </>
         ),
       }}

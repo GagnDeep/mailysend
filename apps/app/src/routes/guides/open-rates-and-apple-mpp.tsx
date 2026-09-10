@@ -1,6 +1,7 @@
-import { Callout, StepCard } from '@mailysend/ui'
+import { Callout } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { OpenRateCalculator } from '~/components/guides/open-rate-calculator.tsx'
+import { Contrast, FactTable, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono, Str } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -37,6 +38,10 @@ function Page() {
               looks at it. An open pixel is a remote image. So the pixel fires on delivery, from an
               Apple address, for a person who may never open the mail at all.
             </Lede>
+            <Takeaway>
+              MPP did not make the open rate noisier — it changed what the number is, from weak
+              evidence that somebody rendered your message into a measure of Apple’s cache.
+            </Takeaway>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               This did not degrade the open rate — it changed what the number is. Before MPP, an
               open event was weak evidence that somebody rendered your message: undercounted by
@@ -71,52 +76,41 @@ function Page() {
               too — but only <Mono>human</Mono> is in <Mono>COUNTS_AS_ENGAGEMENT</Mono>, so only{' '}
               <Mono>human</Mono> reaches a headline rate.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="p-3 font-mono text-[12px] font-bold">CLASS</th>
-                    <th className="p-3 font-mono text-[12px] font-bold">COUNTS?</th>
-                    <th className="p-3 font-mono text-[12px] font-bold">WHAT IT MEANS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    [
-                      'human',
-                      'Yes',
-                      'No bot signal matched. The weakest possible claim, stated honestly: this is what is left after every rule that could rule a person out has declined to.',
-                    ],
-                    [
-                      'mpp',
-                      'No',
-                      'Apple Mail Privacy Protection. The message reached a privacy-protected mailbox; whether anyone read it is unknowable, in both directions.',
-                    ],
-                    [
-                      'proxy_prefetch',
-                      'No',
-                      'An image proxy warming its cache, close enough to delivery that no human was involved. It restates the delivery event and adds nothing.',
-                    ],
-                    [
-                      'scanner',
-                      'No',
-                      'A security appliance walking the message — Proofpoint, Mimecast, SafeLinks, Defender and the rest. Usually the most damaging class to count, because it produces clicks too.',
-                    ],
-                    [
-                      'bot',
-                      'No',
-                      'Crawlers, monitoring, HTTP libraries, headless browsers, and anything arriving with no user agent at all.',
-                    ],
-                  ].map(([cls, counts, meaning]) => (
-                    <tr key={cls} className="border-line border-t">
-                      <td className="p-3 align-top font-mono text-[12.5px] text-ink">{cls}</td>
-                      <td className="p-3 align-top font-mono text-[12.5px] text-muted">{counts}</td>
-                      <td className="p-3 align-top text-muted">{meaning}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              Five classes, everything stored, and exactly one of them — <Mono>human</Mono> —
+              counted toward a headline rate.
+            </Takeaway>
+            <FactTable
+              columns={['Class', 'Counts?', 'What it means']}
+              rows={[
+                [
+                  'human',
+                  'Yes',
+                  'No bot signal matched. The weakest possible claim, stated honestly: this is what is left after every rule that could rule a person out has declined to.',
+                ],
+                [
+                  'mpp',
+                  'No',
+                  'Apple Mail Privacy Protection. The message reached a privacy-protected mailbox; whether anyone read it is unknowable, in both directions.',
+                ],
+                [
+                  'proxy_prefetch',
+                  'No',
+                  'An image proxy warming its cache, close enough to delivery that no human was involved. It restates the delivery event and adds nothing.',
+                ],
+                [
+                  'scanner',
+                  'No',
+                  'A security appliance walking the message — Proofpoint, Mimecast, SafeLinks, Defender and the rest. Usually the most damaging class to count, because it produces clicks too.',
+                ],
+                [
+                  'bot',
+                  'No',
+                  'Crawlers, monitoring, HTTP libraries, headless browsers, and anything arriving with no user agent at all.',
+                ],
+              ]}
+              caption="COUNTS_AS_ENGAGEMENT holds one entry. Everything else is recorded with the reason string that produced it and left out of the headline."
+            />
             <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 Why <Mono>proxy_prefetch</Mono> is excluded rather than counted.
@@ -153,6 +147,10 @@ function Page() {
               treated as people who did not open. The third option is to remove them from both sides
               and say so.
             </Lede>
+            <Takeaway>
+              MPP opens come out of the numerator and the denominator, and when that leaves nothing
+              the function returns <Mono>null</Mono> with a sentence rather than a number.
+            </Takeaway>
             <OpenRateCalculator />
             <p className="mt-6 text-[15.5px] leading-[1.7] text-muted">
               The function is four lines of arithmetic and one refusal:
@@ -202,13 +200,17 @@ function Page() {
               the tracking endpoint does not pass them the inputs they need. The heuristics are
               good; the wiring is incomplete. Telling you which is which is the point of this page.
             </Lede>
+            <Takeaway>
+              Classification in production today is user-agent matching plus a HEAD check. Every
+              rule that reads timing or network context is dead code on live traffic.
+            </Takeaway>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <Mono>apps/app/src/server/tracking.ts</Mono> calls <Mono>classifyHit</Mono> with
               exactly four things: the user agent, the connecting IP, the HTTP method, and (on the
               open path) the country header. It never populates <Mono>msSinceDelivery</Mono>,{' '}
-              <Mono>recentLinkHits</Mono>, <Mono>cfAsn</Mono> or <Mono>cfVerifiedBot</Mono>. Every
-              rule that reads one of those fields therefore evaluates against an absent value and
-              falls through.
+              <Mono key="recentLinkHits">recentLinkHits</Mono>, <Mono>cfAsn</Mono> or{' '}
+              <Mono key="cfVerifiedBot">cfVerifiedBot</Mono>. Every rule that reads one of those
+              fields therefore evaluates against an absent value and falls through.
             </p>
             <Code>
               {'const hit = '}
@@ -222,42 +224,71 @@ function Page() {
               {'\n})\n\n'}
               <Com>{'// not passed: msSinceDelivery · recentLinkHits · cfAsn · cfVerifiedBot'}</Com>
             </Code>
-            <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Inert today.</strong> These four rules exist, are tested,
-              and never trigger on real traffic:
-            </p>
-            <div className="mt-4 flex flex-col gap-5">
-              <StepCard
-                step={1}
-                title="Three links in two seconds → scanner"
-                variant="rule"
-                description="Several distinct links from one message hit inside two seconds is a link checker walking the message, not a reader. It needs recentLinkHits, which is never supplied, so a scanner that presents a browser-like user agent is classified human."
-              />
-              <StepCard
-                step={2}
-                title="The Gmail-proxy 2-second timing window"
-                variant="rule"
-                description="A GoogleImageProxy fetch within two seconds of delivery is the cache warming; a later one is likely a real open. It needs msSinceDelivery, which is never supplied, so the comparison is against positive infinity and every Gmail proxy hit takes the delayed branch and is classified human."
-              />
-              <StepCard
-                step={3}
-                title="The Apple and Google ASN rules"
-                variant="rule"
-                description="Apple Private Relay egress (ASNs 714, 6185, 2709) as mpp, and Google egress (15169, 396982) inside two seconds as proxy_prefetch. Both need cfAsn, which is never supplied. Apple traffic is caught only when its user agent matches; anything from those networks with an unfamiliar user agent is not."
-              />
-              <StepCard
-                step={4}
-                title="Verified-bot detection"
-                variant="rule"
-                description="Cloudflare identifies known good bots independently of what they claim to be. It needs cfVerifiedBot, which is never supplied, so a well-behaved crawler is caught only if its user agent happens to match the bot pattern list."
-              />
-            </div>
-            <p className="mt-6 text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Live today.</strong> These do run on every hit, and they
-              are all that runs:
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {[
+            <Contrast
+              sides={[
+                {
+                  label: 'Inert today',
+                  tone: 'bad',
+                  points: [
+                    'Three links in two seconds → scanner',
+                    'Gmail image proxy within 2s of delivery → proxy_prefetch',
+                    'Apple Private Relay network → mpp',
+                    'Google network within 2s of delivery → proxy_prefetch',
+                    'Cloudflare verified bot → bot',
+                  ],
+                },
+                {
+                  label: 'Live today',
+                  tone: 'good',
+                  points: [
+                    'HEAD request → scanner',
+                    'Security-vendor user agent → scanner',
+                    'Apple MPP user agents → mpp',
+                    'Bot user agents → bot',
+                    'Empty user agent → bot',
+                    'Everything else → human',
+                  ],
+                },
+              ]}
+            />
+            <FactTable
+              columns={['Inert rule', 'Input it needs', 'What happens instead']}
+              monoFirst={false}
+              rows={[
+                [
+                  'Three or more links hit within two seconds → scanner',
+                  <Mono key="recentLinkHits">recentLinkHits</Mono>,
+                  'A link checker walking the message is indistinguishable from a reader, so a scanner presenting a browser-like user agent is classified human.',
+                ],
+                [
+                  'Gmail image proxy within 2s of delivery → proxy_prefetch',
+                  <Mono key="msSinceDelivery">msSinceDelivery</Mono>,
+                  'The comparison runs against positive infinity, so every GoogleImageProxy hit takes the delayed branch and is classified human — “likely a real open”.',
+                ],
+                [
+                  'Apple Private Relay egress (ASNs 714, 6185, 2709) → mpp',
+                  <Mono key="cfAsn">cfAsn</Mono>,
+                  'Apple traffic is caught only when its user agent matches. Anything from those networks with an unfamiliar user agent is not.',
+                ],
+                [
+                  'Google egress (ASNs 15169, 396982) within 2s → proxy_prefetch',
+                  <span key="cfAsn-and-msSinceDelivery">
+                    <Mono>cfAsn</Mono> and <Mono>msSinceDelivery</Mono>
+                  </span>,
+                  'Both routes into proxy_prefetch depend on timing data that is not there, which is why that class is almost certainly an under-count.',
+                ],
+                [
+                  'Cloudflare verified bot → bot',
+                  <Mono key="cfVerifiedBot">cfVerifiedBot</Mono>,
+                  'A well-behaved crawler is caught only if its user agent happens to match the bot pattern list.',
+                ],
+              ]}
+              caption="These rules exist and are tested. They never trigger on real traffic, because tracking.ts does not populate the field each one reads."
+            />
+            <FactTable
+              columns={['Live rule', 'What it matches']}
+              monoFirst={false}
+              rows={[
                 [
                   'HEAD request → scanner',
                   'No mail client fetches an image or follows a link with HEAD. Method is passed, so this fires.',
@@ -268,11 +299,11 @@ function Page() {
                 ],
                 [
                   'Apple MPP user agents → mpp',
-                  'The Apple Mail and iPhone Mail patterns, plus the exact Private Relay user-agent string. This is what makes the adjusted rate work at all.',
+                  'The Apple Mail, iPhone Mail and MacOutlook preview patterns, plus the exact Private Relay user-agent string. This is what makes the adjusted rate work at all.',
                 ],
                 [
                   'Bot user agents → bot',
-                  'crawler, spider, slurp, curl, wget, python-requests, okhttp, axios, Go-http-client, Java, HeadlessChrome, PhantomJS, Playwright, Puppeteer, monitoring, uptime, pingdom, newrelic.',
+                  'bot, crawler, spider, slurp, curl/, wget, python-requests, okhttp, axios, Go-http-client, Java/, libwww, HeadlessChrome, PhantomJS, Playwright, Puppeteer, monitoring, uptime, pingdom, newrelic.',
                 ],
                 [
                   'Empty user agent → bot',
@@ -282,13 +313,8 @@ function Page() {
                   'Everything else → human',
                   'The default, reached by falling through every rule above. Read it as “nothing ruled this out”, not as “a person did this”.',
                 ],
-              ].map(([label, body]) => (
-                <div key={label} className="rounded-tile border border-line bg-card p-4">
-                  <div className="text-[14.5px] font-semibold text-ink">{label}</div>
-                  <p className="m-0 mt-1.5 text-[14px] leading-[1.6] text-muted">{body}</p>
-                </div>
-              ))}
-            </div>
+              ]}
+            />
             <p className="mt-6 text-[15.5px] leading-[1.7] text-muted">
               What this means for your numbers, concretely. Classification today is user-agent
               matching plus a HEAD check. That catches the honest actors — Apple identifies itself,
@@ -314,31 +340,31 @@ function Page() {
               which is a favour: the metrics that survive intact are the ones that were more
               informative anyway, because each of them requires a decision by a person.
             </Lede>
-            <div className="flex flex-col gap-3">
-              {[
+            <Takeaway>
+              Clicks, replies and downstream conversion survive MPP intact, because each of them
+              takes a decision by a person that no proxy can manufacture.
+            </Takeaway>
+            <FactTable
+              columns={['Metric', 'What it proves', 'Why it survives MPP']}
+              monoFirst={false}
+              rows={[
                 [
                   'Clicks',
                   'Somebody chose to go somewhere.',
-                  'MPP does not follow links — it pre-fetches images. Clicks are the nearest thing to an intact engagement signal, with one caveat worth taking seriously: security scanners do follow links, which is why scanner classification matters more for clicks than for opens.',
+                  'MPP does not follow links — it pre-fetches images. The nearest thing to an intact engagement signal, with one caveat worth taking seriously: security scanners do follow links, which is why scanner classification matters more for clicks than for opens.',
                 ],
                 [
                   'Replies',
                   'Somebody wrote back.',
-                  'The highest-quality signal available and the one no proxy can manufacture. It is also read by receivers as a strong positive on your reputation, which makes it a metric worth optimising for its own sake as well as for what it tells you.',
+                  'The highest-quality signal available and the one no proxy can manufacture. It is also read by receivers as a strong positive on your reputation, which makes it worth optimising for its own sake as well as for what it tells you.',
                 ],
                 [
                   'Downstream conversion',
                   'Somebody did the thing.',
-                  'A signup, a purchase, a login, a renewal. It sits outside the mail system entirely, which means it cannot be faked by anything in the mail system — and it is the only one of the three that is denominated in the outcome you actually wanted.',
+                  'A signup, a purchase, a login, a renewal. It sits outside the mail system entirely, so nothing in the mail system can fake it — and it is the only one of the three denominated in the outcome you actually wanted.',
                 ],
-              ].map(([name, one, two]) => (
-                <div key={name} className="rounded-tile border border-line bg-card p-4">
-                  <div className="font-mono text-[13px] font-bold text-accent">{name}</div>
-                  <p className="mt-1 mb-1.5 text-[15.5px] font-semibold text-ink">{one}</p>
-                  <p className="m-0 text-[14.5px] leading-[1.6] text-muted">{two}</p>
-                </div>
-              ))}
-            </div>
+              ]}
+            />
             <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
               The practical consequence is in your segments. A re-engagement or sunset rule built on
               opens will now retire people who read every message on an iPhone and keep people whose

@@ -1,6 +1,13 @@
-import { Callout } from '@mailysend/ui'
+import { Callout, Metric, MetricGrid } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { WarmupPlanner } from '~/components/guides/warmup-planner.tsx'
+import {
+  Contrast,
+  Diagram,
+  FactTable,
+  Gotcha,
+  Takeaway,
+} from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -36,6 +43,64 @@ const TIERS: Array<[string, string, string]> = [
   ],
 ]
 
+/** A worked run of the rule in `SendingDomainActor`, one row per rollover. */
+const LEARNED: Array<[string, string, string, string]> = [
+  [
+    'Day 1',
+    'none stored — 5,000 default',
+    '4,100 sent, no rejection',
+    'Nothing is learned. The ceiling is still unstored, so the rollover does not grow it.',
+  ],
+  [
+    'Day 2',
+    'none stored — 5,000 default',
+    'provider rejects on quota after 3,000',
+    'ceiling = max(100, floor(3,000 × 0.5)) = 1,500, written; the provider is held for 5 minutes.',
+  ],
+  [
+    'Day 3',
+    '1,500',
+    '1,200 sent — under 90% (1,350)',
+    'A clean day under the threshold, so tomorrow’s rollover doubles it.',
+  ],
+  [
+    'Day 4',
+    '3,000',
+    '2,900 sent — over 90% (2,700)',
+    'You used the headroom, so no growth. The ceiling stays where it is.',
+  ],
+  [
+    'Day 5',
+    '3,000',
+    '2,000 sent — under 90%',
+    'Under the threshold again, so the rollover doubles.',
+  ],
+  ['Day 6', '6,000', '—', 'Two rejections away from the real number, without ever being told it.'],
+]
+
+const SIGNALS: Array<[string, string, string]> = [
+  [
+    'Deferrals rising',
+    'A 4.x.x response is “not now, try later”, and one or two is background noise. A rate that climbs as your volume climbs is the receiver saying the ramp is ahead of what it will accept.',
+    'Hold at the current rung. The send path is already backing off; do not add volume on top of that backoff because the schedule said today was a bigger day.',
+  ],
+  [
+    'Unknown-user rate moving',
+    'Hard bounces for addresses that do not exist — the hard_invalid and hard_domain classes, from enhanced codes 5.1.1, 5.1.3, 5.1.6 and 5.1.2.',
+    'You have reached a tier of the list that has decayed. Stop, clean that tier, resume. Mailing it tells every receiver you do not know who your subscribers are.',
+  ],
+  [
+    'Complaint rate moving at all',
+    'Not exceeding a threshold — moving. You are sending to your most engaged people, so it should be near zero.',
+    'Hold. The published ceiling of 0.3% is where you are already in trouble; the number that should stop you is any visible change from your baseline.',
+  ],
+  [
+    'Open rate falling, delivery flat',
+    'Harder to see, and the signature of spam-folder placement: an accepted message counts as delivered regardless of the folder it landed in.',
+    'Treat it as directional only, then confirm in placement terms — opens are classified into five audience classes and only human opens count.',
+  ],
+]
+
 function Page() {
   return (
     <GuideLayout
@@ -61,30 +126,70 @@ function Page() {
               domain that the people receiving it visibly wanted. Volume is the axis you control.
               Wanted is the thing being measured.
             </Lede>
+            <Takeaway>
+              You are not warming an IP so much as building a per-receiver history of mail people
+              visibly wanted, at a volume that does not look like an incident.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'IP reputation',
+                  tone: 'neutral',
+                  points: [
+                    'Attaches to an address that can be rented for an afternoon',
+                    'Shed by moving hosts — which is exactly why receivers weigh it less',
+                  ],
+                },
+                {
+                  label: 'Domain reputation',
+                  tone: 'good',
+                  points: [
+                    <>
+                      Attaches to the name in your <Mono>From</Mono> header and to the DKIM{' '}
+                      <Mono>d=</Mono> domain
+                    </>,
+                    'Follows you across transports and cannot be shed — the permanence is the point',
+                    'Two years of clean sending behind a domain cannot be rented',
+                  ],
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              This is why domain warming matters more than IP warming now. Domain reputation
-              attaches to the name in your From header and to the DKIM <Mono>d=</Mono> domain, which
-              means it follows you across transports and cannot be shed by moving hosts — that
-              permanence is exactly why receivers weigh it. An IP can be rented for an afternoon; a
-              domain with two years of clean sending behind it cannot.
+              <strong className="text-ink">The failure mode has a specific shape.</strong> A
+              brand-new domain that sends nothing, nothing, nothing, and then 80,000 messages on a
+              Tuesday has produced the exact signature of a compromised account or a throwaway spam
+              domain, because that is the signature those things have. No receiver can tell the
+              difference from the outside, and none will give you the benefit of the doubt to find
+              out.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The failure mode you are avoiding has a specific shape. A brand-new domain that sends
-              nothing, nothing, nothing, and then 80,000 messages on a Tuesday has produced the
-              exact signature of a compromised account or a throwaway spam domain, because that is
-              the signature those things have. No receiver can tell the difference from the outside,
-              and none of them will give you the benefit of the doubt to find out. The response is
-              deferrals first, then spam placement, then outright rejections — and the placement
-              damage outlives the send by weeks.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Two consequences follow that people find counter-intuitive. The first is that
-              consistency matters as much as growth: a ramp that sends 5,000 a day for six days and
-              then nothing for four is worse than a flat 3,000 every day, because the pattern itself
-              is what is being read. The second is that you cannot warm with mail nobody wants. Ten
-              thousand messages a day to a purchased list does not build a reputation, it builds a
-              bad one faster than sending nothing at all would have.
-            </p>
+            <Diagram
+              steps={[
+                { kicker: 'WEEKS', title: 'Nothing sent', meta: 'no history at any receiver' },
+                {
+                  kicker: 'TUESDAY',
+                  title: '80,000 messages',
+                  tone: 'accent',
+                  meta: 'indistinguishable from a compromised account',
+                },
+                { kicker: 'THEN', title: 'Deferrals' },
+                { kicker: 'THEN', title: 'Spam placement' },
+                { kicker: 'THEN', title: 'Rejections', meta: 'outlives the send by weeks' },
+              ]}
+            />
+            <FactTable
+              columns={['What people assume', 'What actually happens']}
+              monoFirst={false}
+              rows={[
+                [
+                  'Growth is the thing being measured',
+                  'Consistency matters as much: 5,000 a day for six days and then nothing for four is worse than a flat 3,000 every day, because the pattern itself is what is being read.',
+                ],
+                [
+                  'Any volume warms a domain',
+                  'You cannot warm with mail nobody wants. Ten thousand a day to a purchased list does not build a reputation, it builds a bad one faster than sending nothing would have.',
+                ],
+              ]}
+            />
             <Callout title="WHAT WARMING CANNOT DO">
               It cannot repair a domain that already has a poor reputation — the only cure for that
               is time plus different behaviour. It cannot substitute for authentication, and a ramp
@@ -108,29 +213,39 @@ function Page() {
               volume and where you are trying to get to; every row renders, because a plan that
               hides days behind a control is a plan you cannot check against what actually happened.
             </Lede>
+            <Takeaway>
+              One number and one rule — a day-one volume small enough to go unnoticed, multiplied by
+              something under two on every day you get away with it.
+            </Takeaway>
             <WarmupPlanner />
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              A few notes on reading it. The volumes are <em>per receiving provider</em> in spirit
-              rather than in total — a receiver forms an opinion of you from the mail it sees, so
-              20,000 messages split across five providers is four thousand-ish opinions each, not
-              one impression of 20,000. In practice most consumer lists are dominated by two or
-              three providers, so the total is a reasonable proxy; if your list is unusually
-              concentrated at one provider, treat the ramp as applying to that provider and be more
-              patient.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Send at the same time each day, every day, including the days where the number feels
-              too small to bother with. The gap is the signal you are trying not to send. And keep
-              transactional mail on the ramp too if it shares the domain — it counts toward the
-              volume the receiver observes whether or not you counted it in your plan.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Four to six weeks is the realistic figure for reaching a steady six-figure monthly
-              volume with engaged recipients. If the arithmetic in the planner says you cannot get
-              from your day-one number to your target inside thirty days, that is real information
-              and the answer is not to steepen the curve. Start higher — if you genuinely have
-              enough recently-engaged recipients to justify it — or accept a longer ramp.
-            </p>
+            <FactTable
+              columns={['Reading the plan', 'Why']}
+              monoFirst={false}
+              rows={[
+                [
+                  'The volumes are per receiving provider, in spirit',
+                  'A receiver forms an opinion of you from the mail it sees, so 20,000 messages split across five providers is four thousand-ish opinions each, not one impression of 20,000. Most consumer lists are dominated by two or three providers, so the total is a reasonable proxy; if yours is concentrated at one provider, treat the ramp as applying to that provider and be more patient.',
+                ],
+                [
+                  'Send at the same time each day, every day',
+                  'Including the days where the number feels too small to bother with. The gap is the signal you are trying not to send.',
+                ],
+                [
+                  'Transactional mail is on the ramp too',
+                  'If it shares the domain it counts toward the volume the receiver observes, whether or not you counted it in your plan.',
+                ],
+                [
+                  'Four to six weeks to steady six-figure monthly volume',
+                  'With engaged recipients. If the planner’s arithmetic says you cannot reach your target inside thirty days, that is real information — start higher only if you genuinely have enough recently-engaged recipients to justify it, or accept the longer ramp.',
+                ],
+              ]}
+            />
+            <Gotcha title="The schedule is a ceiling, not a commitment">
+              A row in the plan is the most you may send that day, not an amount you owe. The
+              correct response to a deferral is to hold at the current rung and send the same volume
+              tomorrow — not to push through it and try again the day after from where you had meant
+              to be. Steepening the curve to catch up is how a ramp restarts instead of finishing.
+            </Gotcha>
           </>
         ),
         'who-first': (
@@ -141,26 +256,15 @@ function Page() {
               uses when deciding what to do with day four, so the sequence to send in is strictly
               descending by likelihood of a positive reaction.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">When</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Who</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Why them</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TIERS.map(([when, who, why]) => (
-                    <tr key={when} className="border-line border-t">
-                      <td className="px-4 py-2 font-semibold text-ink">{when}</td>
-                      <td className="px-4 py-2 text-muted">{who}</td>
-                      <td className="px-4 py-2 text-muted-2">{why}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              Order the ramp strictly descending by likelihood of a positive reaction — your best
+              segment buys the volume the next one gets to use.
+            </Takeaway>
+            <FactTable
+              columns={['When', 'Who', 'Why them']}
+              monoFirst={false}
+              rows={TIERS.map(([when, who, why]) => [when, who, why])}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               These tiers are expressible directly as segments, so the ramp does not have to be run
               by hand from exported CSVs:
@@ -175,22 +279,35 @@ function Page() {
               {'\nnot never_opened and bounce_count = 0         '}
               <Com>{'← the standing ceiling'}</Com>
             </Code>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Two refinements worth the effort. First, if you have a mixed list, put the people who
-              signed up most recently at the front regardless of open history — recency of consent
-              predicts a positive reaction better than almost anything else, and a subscriber from
-              last week remembers asking. Second, hold your hardest audience for last: the free-tier
-              signups from three years ago who have never opened anything belong at the end of the
-              ramp or, more honestly, not on it at all.
-            </p>
-            <Callout variant="warn" title="NEVER WARM WITH YOUR WORST SEGMENT">
+            <Contrast
+              sides={[
+                {
+                  label: 'Put newest consent at the front',
+                  tone: 'good',
+                  points: [
+                    'On a mixed list, order by recency of signup regardless of open history',
+                    'Recency of consent predicts a positive reaction better than almost anything else',
+                    'A subscriber from last week remembers asking',
+                  ],
+                },
+                {
+                  label: 'Hold the hardest audience for last',
+                  tone: 'neutral',
+                  points: [
+                    'Free-tier signups from three years ago who have never opened anything',
+                    'They belong at the end of the ramp — or, more honestly, not on it at all',
+                  ],
+                },
+              ]}
+            />
+            <Gotcha title="Never warm with your worst segment">
               The temptation is real and it is always framed as prudence: send to the dormant people
               first, because it matters less if it goes badly. It does not matter less. A ramp
               opened by an audience that does not open produces a low engagement rate, a high
               unknown-user rate from addresses that died years ago, and a complaint rate from people
               who forgot you — on a domain with no history to absorb any of it. That is not a
               cautious start, that is a bad first impression bought deliberately.
-            </Callout>
+            </Gotcha>
           </>
         ),
         'learned-quota': (
@@ -202,46 +319,61 @@ function Page() {
               solve with a spreadsheet of guessed numbers, and it is the part the send path solves
               for you by not guessing at all.
             </Lede>
+            <Takeaway>
+              The send path never learns the receiver’s number — it halves its own ceiling the
+              moment it is rejected and doubles it after a day it did not need, which converges on
+              the invisible limit from below.
+            </Takeaway>
+            <MetricGrid min={140}>
+              <Metric size="sm" value="5,000" label="Starting ceiling, no history" />
+              <Metric size="sm" value="×0.5" label="Applied to what was sent, on rejection" />
+              <Metric size="sm" value="5 min" label="Provider held after a quota rejection" />
+              <Metric size="sm" value="5,000,000" label="Hard cap on the learned ceiling" />
+            </MetricGrid>
+            <Diagram
+              steps={[
+                { kicker: 'REJECT', title: 'Provider refuses on quota' },
+                {
+                  kicker: 'HALVE',
+                  title: 'max(100, floor(sent × 0.5))',
+                  tone: 'accent',
+                  meta: 'written as the ceiling',
+                },
+                { kicker: 'HOLD', title: 'Provider paused', meta: '5 minutes' },
+                { kicker: 'CLEAN DAY', title: 'sent < 90% of ceiling' },
+                { kicker: 'GROW', title: 'ceiling × 2', meta: 'at the next rollover' },
+              ]}
+            />
+            <FactTable
+              columns={['Day', 'Ceiling in force', 'What happened', 'What the rule did']}
+              monoFirst={false}
+              rows={LEARNED.map(([day, ceiling, what, did]) => [day, ceiling, what, did])}
+              caption="A worked run of the rule the sending-domain actor actually applies. Growth happens once, at the day rollover, and never above 5,000,000."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The rule is two lines, and it is deliberately asymmetric. On a rejection — a deferral,
-              a rate-limit response, a 4.x.x anything — the send path{' '}
-              <strong className="text-ink">halves</strong> its rate for that destination. After a
-              clean day, it grows by <strong className="text-ink">at most 2×</strong>. Nothing
-              anywhere in the system ever needs to know what the real number was.
-            </p>
-            <Code>
-              {'on rejection:  rate = rate / 2        '}
-              <Com>{'← immediate, per destination'}</Com>
-              {'\nafter a clean day: rate = min(rate * 2, target)   '}
-              <Com>{'← at most'}</Com>
-            </Code>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Why that converges: the doubling walks upward until it crosses the invisible ceiling,
-              the crossing produces exactly one rejection, the halving puts you back underneath it,
-              and the next doubling brings you back to the boundary. The rate oscillates in a
-              narrowing band around a number nobody ever told you. It is the same shape as TCP’s
-              congestion control, for the same reason — the capacity is unknown, unstable, and only
-              observable by occasionally exceeding it.
+              <strong className="text-ink">Why that converges.</strong> The doubling walks upward
+              until it crosses the invisible ceiling, the crossing produces exactly one rejection,
+              the halving puts you back underneath it, and the next doubling brings you back to the
+              boundary. The rate oscillates in a narrowing band around a number nobody ever told you
+              — the same shape as TCP’s congestion control, for the same reason: the capacity is
+              unknown, unstable, and only observable by occasionally exceeding it.
             </p>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The asymmetry is the important part. Halving is instant and doubling is capped, which
-              means the cost of an overshoot is one rejection and a quick recovery, while the cost
-              of being too aggressive compounds. If the response to a rejection were a small linear
-              decrease, a receiver that had genuinely tightened would see you keep pushing for
-              hours, and pushing after a deferral is the specific behaviour receivers read as abuse.
+              <strong className="text-ink">The asymmetry is the important part.</strong> Halving is
+              instant and doubling is capped, so an overshoot costs one rejection and a quick
+              recovery while over-aggression compounds. This is also the same curve the planner
+              above draws, which is not a coincidence: a schedule that grows by a factor under two
+              per clean day is the human-readable form of the rule the rate limiter already follows.
+              The learned ceiling is persisted per domain, so an interrupted ramp resumes from what
+              was learned rather than from the beginning.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                This is the same curve the planner above draws, and that is not a coincidence.
-              </strong>{' '}
-              A warm-up schedule that grows by a factor under two per clean day is the
-              human-readable form of the rule the rate limiter is already following. So the plan on
-              your wall and the behaviour of the software agree with each other rather than being
-              two unrelated pieces of advice that quietly fight — which is what happens when a
-              product’s pacing is a fixed table and its documentation recommends a curve. The
-              learned quota is also persisted per domain, so a ramp that is interrupted resumes from
-              what was learned rather than from the beginning.
-            </p>
+            <Gotcha title="A domain that has never been rejected does not grow">
+              The rollover only doubles a ceiling that has been <em>learned</em> — the growth branch
+              is skipped while no ceiling has been stored. Until the first quota rejection writes
+              one, the domain sits at the 5,000 default no matter how many clean days it strings
+              together, and <Mono>reserve()</Mono> starts refusing with{' '}
+              <Mono>reason: daily_ceiling</Mono> and a retry-after that runs to midnight UTC.
+            </Gotcha>
             <Callout title="WHY THERE IS NO NUMBER TO CONFIGURE">
               There is no field where you type a receiver’s hourly limit, and adding one would make
               things worse: any number you entered would be a guess, it would be wrong differently
@@ -258,57 +390,38 @@ function Page() {
               the same volume tomorrow, and only resume growing once the signal has gone. Any one of
               them alone is enough.
             </Lede>
+            <Takeaway>
+              Any one of these on its own means hold at the current rung — not stop sending, and not
+              push through to the number the schedule promised.
+            </Takeaway>
+            <FactTable
+              columns={['Signal', 'What it is', 'What to do']}
+              monoFirst={false}
+              rows={SIGNALS.map(([signal, what, action]) => [signal, what, action])}
+              caption="The first three are the stop-climbing signals. The fourth is slower to see and is evidence rather than a verdict."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">1. Deferrals rising.</strong> A 4.x.x response is the
-              receiver saying “not now, try later”, and one or two is normal background noise. A
-              deferral rate that climbs as your volume climbs is the receiver telling you the ramp
-              is ahead of what it will accept, in the politest terms available in the protocol. The
-              send path is already backing off; the mistake is to add volume on top of that backoff
-              because the schedule said today was a bigger day. Notably, a soft throttle suppresses
-              the address for one day, so the system’s own recovery window is already a day long.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">2. Unknown-user rate moving.</strong> Hard bounces for
-              addresses that do not exist — the <Mono>hard_invalid</Mono> and{' '}
-              <Mono>hard_domain</Mono> classes, from enhanced codes <Mono>5.1.1</Mono>,{' '}
-              <Mono>5.1.3</Mono>, <Mono>5.1.6</Mono> and <Mono>5.1.2</Mono>. During a ramp this rate
-              rising means you have reached a tier of the list that has decayed, and continuing to
-              mail it tells every receiver you do not know who your subscribers are. Stop, clean
-              that tier, and resume.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">3. Complaint rate moving at all.</strong> Not exceeding a
-              threshold — moving. During a warm-up you are sending to your most engaged people, so
-              the complaint rate should be near zero and any movement means the audience is less
-              willing than you assumed. The published ceiling of 0.3% is where you are already in
-              trouble; the number that should make you hold is any visible change from your
-              baseline.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              A fourth signal that is harder to see but worth watching: open rate falling while
-              delivery stays flat. That is the signature of spam-folder placement, because an
-              accepted message counts as delivered regardless of the folder it landed in. Read that
-              number carefully, though — opens are classified into five audience classes and only
-              human opens count toward the headline rate, and in production today the classifier
-              receives only the user agent, IP, method and country, so the timing- and ASN-based
-              rules do not fire. Treat a falling open rate as directional evidence, then confirm it
-              in{' '}
+              <strong className="text-ink">Read a falling open rate carefully.</strong> In
+              production today the classifier receives only the user agent, IP, method and country,
+              so the timing- and ASN-based rules do not fire. Treat the percentage as directional
+              evidence, then confirm it in{' '}
               <a
                 href="/guides/inbox-placement-vs-delivery"
                 className="text-accent underline underline-offset-4"
               >
                 placement terms
               </a>{' '}
-              rather than acting on the percentage alone.
+              rather than acting on it alone. On the deferral side, a soft throttle suppresses the
+              address for one day, so the system’s own recovery window is already a day long.
             </p>
-            <Callout variant="warn" title="DO NOT RETRY THE BATCH YOURSELF">
+            <Gotcha title="Do not retry the batch yourself">
               When a send is deferred, the send path holds it and retries on its own schedule. What
               you must not do is re-queue the batch from your side, or increase concurrency to
               “catch up”. Manual retries after a deferral turn a receiver’s polite backpressure into
               a pattern indistinguishable from an attack, and that is a much harder reputation to
               recover from than a ramp that took an extra week. Warming faster than receivers will
               accept does not compress the timeline; it restarts it.
-            </Callout>
+            </Gotcha>
           </>
         ),
       }}

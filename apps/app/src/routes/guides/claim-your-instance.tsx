@@ -1,5 +1,6 @@
 import { Callout, StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
+import { Diagram, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -64,20 +65,46 @@ function Page() {
             <Lede>
               A deployed instance is a public URL before it is anybody’s. There is no central
               account system to have registered with in advance — that is the whole design — so the
-              first-run flow cannot be a sign-up. It is a claim: a one-time proof that the person at
-              the keyboard is the person who deployed it.
+              first-run flow cannot be a sign-up.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                Everything else needs something you do not have yet.
-              </strong>{' '}
-              A fresh deployment has no verified sending domain, so it cannot email you a code. It
-              has no identity provider, so Cloudflare Access answers nothing. It has nobody in{' '}
-              <Mono>memberships</Mono>, so there is no account to sign into. A passkey is the one
-              credential that needs none of that: the browser already open on the page creates it,
-              and it is the strongest of the lot. So claiming is “prove you have a browser pointed
-              at this instance, and that you read its log”, and then write down ten recovery codes.
-            </p>
+            <Takeaway>
+              It is a claim: a one-time proof that the person at the keyboard is the person who
+              deployed it, made with a passkey and locked with a code that only the deployment’s own
+              log has ever shown.
+            </Takeaway>
+            <Diagram
+              steps={[
+                { kicker: 'DEPLOY', title: 'A public URL', meta: 'unclaimed' },
+                { kicker: 'FIRST BOOT', title: 'Claim code printed once', meta: 'log only' },
+                { kicker: '/SETUP', title: 'Address + code + passkey', tone: 'accent' },
+                { kicker: 'CLAIMED', title: 'Owner exists', meta: 'setup routes refuse' },
+              ]}
+            />
+            <FactTable
+              columns={['Credential', 'On a fresh deployment']}
+              rows={[
+                [
+                  'Emailed one-time code',
+                  'No verified sending domain, so it cannot email you anything.',
+                ],
+                [
+                  'Cloudflare Access',
+                  'No identity provider is configured, so Access answers nothing.',
+                ],
+                [
+                  'An existing account',
+                  <>
+                    Nobody is in <Mono>memberships</Mono>, so there is no account to sign into.
+                  </>,
+                ],
+                [
+                  'Passkey',
+                  'Needs none of that — the browser already open on the page creates it, and it is the strongest of the lot.',
+                ],
+              ]}
+              monoFirst={false}
+              caption="So claiming is “prove you have a browser pointed at this instance, and that you read its log”, and then write down ten recovery codes."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 The claim code is what makes first-claimant-wins safe.
@@ -100,25 +127,23 @@ function Page() {
               other way round, the loser would be left holding a working passkey, which is a sign-in
               rather than a failed setup.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                Upgrading an older deployment does not open a window.
-              </strong>{' '}
+            <Gotcha title="Upgrading an older deployment does not open a window">
               The first boot after the upgrade marks any instance that already has a member as
               claimed, so <Mono>/setup</Mono> cannot be used to take over a running deployment. An
               instance with no member at all stays unclaimed — which is precisely the case{' '}
               <Mono>/setup</Mono> exists for: a deploy nobody ever managed to sign into. Such an
               instance has no stored claim code either, and so is not asked for one, rather than
               being permanently unclaimable.
-            </p>
+            </Gotcha>
           </>
         ),
         'claim-it': (
           <>
-            <Lede>
-              Two minutes, and the safe version is the one where you decide who may claim it before
-              the instance is reachable.
-            </Lede>
+            <Lede>Two minutes, and one optional step that is worth taking first.</Lede>
+            <Takeaway>
+              The safe version is the one where you decide who may claim it before the instance is
+              reachable.
+            </Takeaway>
             <div className="flex flex-col gap-3.5">
               <StepCard step={1} title="Optional: pin the owner first" variant="rule">
                 <p className="mt-1.5 mb-2 text-[15px] leading-[1.6] text-muted">
@@ -190,22 +215,20 @@ function Page() {
         'six-doors': (
           <>
             <Lede>
-              Six ways in, and the right number to have enabled is two: one you use, and one that
-              still works when the first one’s dependencies are down. Every door below is optional
-              except the passkey, and the sign-in page renders each one only when it is genuinely
-              open — a button that answers 501 costs the person trying to get in more time than no
-              button at all.
+              Six ways in. Every door below is optional except the passkey, and the sign-in page
+              renders each one only when it is genuinely open — a button that answers 501 costs the
+              person trying to get in more time than no button at all.
             </Lede>
-            <div className="flex flex-col gap-2.5">
-              {DOORS.map((door) => (
-                <div key={door.name} className="rounded-tile border border-line bg-card p-4">
-                  <div className="text-[15px] font-semibold text-ink">{door.name}</div>
-                  <p className="mt-1.5 mb-1 text-[14.5px] leading-[1.6] text-muted">{door.good}</p>
-                  <p className="m-0 text-[13.5px] leading-[1.55] text-muted-2">{door.cost}</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-5 text-[15.5px] leading-[1.7] text-muted">
+            <Takeaway>
+              The right number to have enabled is two: one you use, and one that still works when
+              the first one’s dependencies are down.
+            </Takeaway>
+            <FactTable
+              columns={['Door', 'What it gives you', 'What it costs you']}
+              rows={DOORS.map((door) => [door.name, door.good, door.cost])}
+              monoFirst={false}
+            />
+            <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">You can ask an instance which of these are open.</strong>{' '}
               <Mono>GET /v1/instance</Mono> is unauthenticated and is what every pre-auth screen
               renders from, so the page and the endpoint cannot disagree:
@@ -215,15 +238,26 @@ function Page() {
                 '{ "object": "instance", "claimed": true, "mode": "single",\n  "claim":   { "code_required": false, "reserved": false },\n  "auth":    { "passkey": true, "access": false, "otp": true,\n               "device": true, "oidc": false },\n  "sending": { "ready": true, "verified_domains": 1, "last_error": null } }'
               }
             </Code>
-            <p className="mt-4 text-[15.5px] leading-[1.7] text-muted">
-              It carries no secrets and no per-address facts by design. <Mono>auth.access</Mono> is
-              simply whether both Access variables are set; <Mono>auth.otp</Mono> is whether{' '}
-              <em>any</em> domain is verified, which is a fact about the deployment rather than
-              about a person; and <Mono>claim.reserved</Mono> says an address is required without
-              saying which. Until <Mono>auth.otp</Mono> is true, <Mono>POST /v1/auth/otp</Mono>{' '}
-              answers <Mono>202 {'{"status":"unavailable"}'}</Mono> rather than claiming to have
-              sent mail.
-            </p>
+            <FactTable
+              columns={['Field', 'What it actually says']}
+              rows={[
+                ['auth.access', 'Simply whether both Access variables are set.'],
+                [
+                  'auth.otp',
+                  'Whether any domain is verified — a fact about the deployment, not about a person.',
+                ],
+                ['claim.reserved', 'That an address is required, without saying which.'],
+                [
+                  'POST /v1/auth/otp',
+                  <>
+                    Until <Mono>auth.otp</Mono> is true, answers{' '}
+                    <Mono>202 {'{"status":"unavailable"}'}</Mono> rather than claiming to have sent
+                    mail.
+                  </>,
+                ],
+              ]}
+              caption="It carries no secrets and no per-address facts, by design."
+            />
             <Callout variant="warn" title="THE CIRCULAR DEPENDENCY">
               If one-time codes are your only sign-in method, and codes are delivered by the
               instance you are trying to sign in to, then a broken sending path locks you out of the
@@ -240,25 +274,36 @@ function Page() {
               Turn off what you are not using. Every enabled method is a way in, and an unused one
               is a way in that nobody is watching.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">The one that matters most is already handled.</strong>{' '}
-              The first-run claim closes permanently the moment an owner exists, so there is nothing
-              to remember to disable and no window left open behind you. What remains is ordinary
-              hygiene: unset the OIDC variables if you stopped using that provider, unset{' '}
-              <Mono>MS_ACCESS_TEAM</Mono> and <Mono>MS_ACCESS_AUD</Mono> if the Access application
-              is gone, and remember that removing a door from the environment removes it from the
-              sign-in page too, because the page is rendered from what is actually configured.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                A claimed instance invites people; it does not enrol them.
-              </strong>{' '}
+            <Takeaway>
+              The one that matters most is already handled: the first-run claim closes permanently
+              the moment an owner exists, so there is no window left open behind you.
+            </Takeaway>
+            <FactTable
+              columns={['If you stopped using', 'Unset', 'What happens']}
+              rows={[
+                [
+                  'That OIDC provider',
+                  'the three OIDC variables',
+                  'The button stops rendering, because the sign-in page is drawn from what is actually configured.',
+                ],
+                [
+                  'The Access application',
+                  <>
+                    <Mono>MS_ACCESS_TEAM</Mono> and <Mono>MS_ACCESS_AUD</Mono>
+                  </>,
+                  'The Access door disappears from the sign-in page with it.',
+                ],
+              ]}
+              monoFirst={false}
+            />
+            <Gotcha title="Auto-provisioning is the one setting that widens access quietly">
               After the claim, only existing members sign in — the exception being{' '}
               <Mono>MS_OIDC_AUTO_PROVISION=true</Mono>, which enrols an unknown address on first
-              sign-in and refuses to work without a domain allowlist alongside it. That combination
-              is the one configuration on this page that can quietly widen who has access, so it is
-              worth writing down why you set it.
-            </p>
+              sign-in and refuses to work without a domain allowlist alongside it. A claimed
+              instance invites people; it does not enrol them. That combination is the one
+              configuration on this page that can quietly widen who has access, so it is worth
+              writing down why you set it.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Nothing stored is a working credential.</strong> Session
               tokens are random values whose SHA-256 is the row’s primary key, so a dump of{' '}
@@ -268,17 +313,13 @@ function Page() {
               over plain HTTP on localhost, and a session lasts thirty days. This is also why
               nothing in the product can show you a key a second time.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                Moving to your own domain is a security event, not a cosmetic one.
-              </strong>{' '}
+            <Gotcha title="Moving to your own domain is a security event">
               A passkey is bound to a hostname, so changing the host invalidates every passkey
-              registered on the old one. Do it from{' '}
-              <strong className="text-ink">Settings → Access</strong>, which pins the new value,
-              records the old one, and tells you in advance that you will need a recovery code and a
-              re-registration — and the sign-in page names the previous host when it sees the
-              mismatch, instead of showing a login that simply never succeeds.
-            </p>
+              registered on the old one. Do it from <strong>Settings → Access</strong>, which pins
+              the new value, records the old one, and tells you in advance that you will need a
+              recovery code and a re-registration — and the sign-in page names the previous host
+              when it sees the mismatch, instead of showing a login that simply never succeeds.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 There is no password store, and there will not be.

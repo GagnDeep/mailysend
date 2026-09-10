@@ -1,6 +1,7 @@
 import { Callout } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { TroubleshootingChecklist } from '~/components/guides/troubleshooting-checklist.tsx'
+import { Contrast, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Key, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -12,6 +13,18 @@ export const Route = createFileRoute('/guides/debug-a-550-rejection')({
   head: () => guideHead(SLUG),
   component: Page,
 })
+
+/** Every class `classifyBounce` can return, with the window `softSuppressionDays` gives it. */
+const CLASSES: Array<[string, string, string]> = [
+  ['hard_invalid', 'Permanent', 'None — there is nothing to wait for'],
+  ['hard_domain', 'Permanent', 'None'],
+  ['hard_blocked', 'Permanent', 'None'],
+  ['soft_mailbox_full', 'Temporary', '7 days'],
+  ['soft_throttled', 'Temporary', '1 day'],
+  ['soft_content', 'Temporary', '3 days'],
+  ['soft_temporary', 'Temporary', '2 days'],
+  ['unknown', 'Neither', 'None — and deliberately not suppressed'],
+]
 
 /** Drawn from the patterns `classifyBounce` actually matches, in that order. */
 const DIAGNOSTICS: Array<{
@@ -95,7 +108,7 @@ const DIAGNOSTICS: Array<{
     permanent: true,
   },
   {
-    seen: '550 blocked using Spamhaus / listed / poor reputation',
+    seen: '550 5.7.1 blocked using Spamhaus / listed / poor reputation',
     klass: 'hard_blocked',
     means: 'A reputation decision about your sending IP or domain, not about this recipient.',
     fix: 'Stop the campaign. One receiving domain rejecting you wholesale is an incident, not a bounce.',
@@ -133,6 +146,10 @@ function Page() {
               trustworthiness, delivered in one line, and reading them in the wrong order is how
               people end up deleting perfectly good addresses.
             </Lede>
+            <Takeaway>
+              Read the enhanced status code first, the reply code for one bit of information, and
+              the free text last.
+            </Takeaway>
             <Code>
               {'550 5.1.1 <someone@example.com>: Recipient address rejected: User unknown\n'}
               <Key>{'└┬┘'}</Key> <Key>{'└─┬─┘'}</Key>{' '}
@@ -153,47 +170,46 @@ function Page() {
               {'    enhanced status code (RFC 3463) — the reliable field'}
               {'\n reply code — coarse: 5xx permanent, 4xx temporary'}
             </Code>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">The reply code tells you almost nothing.</strong> It has
-              exactly one bit of real information in it: 5 means permanent, 4 means temporary. And
-              even that is treated with suspicion, because a meaningful number of receivers use a
-              550 loosely for conditions that are plainly transient. It is a starting point, not a
-              verdict.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The enhanced status code is the field that matters.
-              </strong>{' '}
-              Three dotted numbers — class, subject, detail. The subject is the useful one:{' '}
-              <Mono>1</Mono> is addressing, <Mono>2</Mono> is the mailbox, <Mono>3</Mono> is the
-              mail system, <Mono>7</Mono> is security and policy. Because it is a structured field
-              with a specification behind it, the classifier checks it before it ever looks at the
-              prose, and its answer wins.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The free text is a fallback, and it is one on purpose.
-              </strong>{' '}
-              Plenty of MTAs emit no enhanced code at all, so the classifier falls back to matching
-              phrases — <em>mailbox full</em>, <em>over quota</em>, <em>greylist</em>,{' '}
-              <em>user unknown</em>, <em>no such user</em>, <em>domain not found</em>,{' '}
-              <em>blacklist</em>, <em>reputation</em>. It works, and it is guessing at somebody’s
-              English prose, which is why it never overrides a code that was actually specified.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              There is a fourth source above all three: the provider’s own classification, when it
-              sends one. SES and Resend both pre-classify, and they are trusted when present because
-              they can see things this system cannot — their own suppression lists, feedback loops,
-              and the outcome of previous attempts to the same address from other senders.
-              Everything from the SMTP text is checked against it rather than instead of it.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The output of all this is one of eight classes — <Mono>hard_invalid</Mono>,{' '}
-              <Mono>hard_domain</Mono>, <Mono>hard_blocked</Mono>, <Mono>soft_mailbox_full</Mono>,{' '}
-              <Mono>soft_throttled</Mono>, <Mono>soft_content</Mono>, <Mono>soft_temporary</Mono>,{' '}
-              <Mono>unknown</Mono> — and that class, not the number, is what everything downstream
-              acts on.
-            </p>
+            <FactTable
+              columns={['Field', 'How much to trust it', 'How the classifier uses it']}
+              rows={[
+                [
+                  'Reply code',
+                  'One bit',
+                  'It says 5 for permanent and 4 for temporary, and even that is treated with suspicion: a meaningful number of receivers use a 550 loosely for conditions that are plainly transient. A starting point, not a verdict.',
+                ],
+                [
+                  'Enhanced status code',
+                  'The reliable field',
+                  'Three dotted numbers — class, subject, detail. A structured field with a specification behind it, so it is checked before the prose is ever looked at, and its answer wins.',
+                ],
+                [
+                  'Free text',
+                  'A fallback, on purpose',
+                  'Plenty of MTAs emit no enhanced code at all, so phrases are matched — mailbox full, over quota, greylist, user unknown, no such user, domain not found, blacklist, reputation. It works, and it is guessing at somebody’s English prose, which is why it never overrides a code that was actually specified.',
+                ],
+                [
+                  'The provider’s own classification',
+                  'Above all three',
+                  'SES and Resend both pre-classify, and they are trusted when present because they can see things this system cannot — their own suppression lists, feedback loops, and the outcome of previous attempts to the same address from other senders. Everything from the SMTP text is checked against it rather than instead of it.',
+                ],
+              ]}
+            />
+            <FactTable
+              columns={['Subject digit', 'What that class of problem is']}
+              rows={[
+                ['x.1.x', 'Addressing — the recipient'],
+                ['x.2.x', 'The mailbox'],
+                ['x.3.x', 'The mail system'],
+                ['x.7.x', 'Security and policy — you'],
+              ]}
+              caption="The subject is the middle number and the useful one."
+            />
+            <FactTable
+              columns={['Class', 'Permanence', 'Suppression window']}
+              rows={CLASSES.map(([name, permanence, window]) => [name, permanence, window])}
+              caption="The output of all of the above is one of these, and that class — not the number — is what everything downstream acts on."
+            />
           </>
         ),
         'about-you-or-them': (
@@ -201,18 +217,37 @@ function Page() {
             <Lede>
               One question splits the whole problem in half, and the two halves have nothing in
               common. Is this rejection about <em>the recipient</em> — this address, at this domain
-              — or about <em>you</em>: your domain, your IP, your content, your sending pattern? The
-              first is list hygiene and takes a minute. The second is deliverability work and takes
-              weeks.
+              — or about <em>you</em>: your domain, your IP, your content, your sending pattern?
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The heuristic that gets you there fastest is the subject digit of the enhanced code.{' '}
-              <Mono>5.1.x</Mono> is addressing: they are telling you this recipient is wrong.{' '}
-              <Mono>5.7.x</Mono> is policy: they are telling you <em>you</em> are wrong, and the
-              recipient may be entirely real and entirely willing. Everything else — mailbox state,
-              message size, temporary failure — sits in the middle and is usually about the message
-              rather than either party.
-            </p>
+            <Takeaway>
+              The subject digit of the enhanced code gets you there fastest: <Mono>5.1.x</Mono> is
+              addressing, <Mono>5.7.x</Mono> is policy.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'About the recipient · 5.1.x',
+                  tone: 'neutral',
+                  points: [
+                    'They are telling you this recipient is wrong',
+                    'List hygiene, and it takes a minute',
+                    'Remove the address and look at where it came from',
+                  ],
+                },
+                {
+                  label: 'About you · 5.7.x',
+                  tone: 'bad',
+                  points: [
+                    <>
+                      They are telling you <em>you</em> are wrong, and the recipient may be entirely
+                      real and entirely willing
+                    </>,
+                    'Deliverability work, and it takes weeks',
+                    'Everything else — mailbox state, message size, temporary failure — sits in the middle and is usually about the message rather than either party',
+                  ],
+                },
+              ]}
+            />
             <TroubleshootingChecklist
               title="WHICH SIDE IS THIS REJECTION ABOUT?"
               steps={[
@@ -243,14 +278,14 @@ function Page() {
                 },
               ]}
             />
-            <Callout variant="warn" title="A 5.7.x IS NOT A LIST PROBLEM">
+            <Gotcha title="A 5.7.x is not a list problem">
               The reflex to suppress and move on is right for <Mono>hard_invalid</Mono> and{' '}
               <Mono>hard_domain</Mono> and wrong for <Mono>hard_blocked</Mono>. A policy rejection
               suppresses the address here — because continuing to hammer a receiver that has said no
               is itself the behaviour being punished — but the address is probably fine, and
               treating a wave of them as list hygiene means you shrink a good list while the real
               problem compounds. Suppress, then investigate: the two are not alternatives.
-            </Callout>
+            </Gotcha>
           </>
         ),
         'common-ones': (
@@ -261,57 +296,49 @@ function Page() {
               the text examples are the phrases the fallback matcher looks for when no code is
               present.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What you see</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Class</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What it means</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">First thing to change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DIAGNOSTICS.map((row) => (
-                    <tr key={row.seen} className="border-line border-t align-top">
-                      <td className="px-4 py-2.5 font-mono text-[12.5px] text-ink">{row.seen}</td>
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={
-                            row.permanent
-                              ? 'font-mono text-[12px] text-warning'
-                              : 'font-mono text-[12px] text-muted'
-                          }
-                        >
-                          {row.klass}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted">{row.means}</td>
-                      <td className="px-4 py-2.5 text-muted-2">{row.fix}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              Soft classes carry a suppression window rather than a permanent entry, and the windows
-              are different because the underlying conditions clear at different speeds: a full
-              mailbox holds for 7 days, a throttle for 1, a content rejection for 3, a generic
-              temporary failure for 2. Hard classes carry no window because there is nothing to wait
-              for.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              And then there is the ninth outcome, which is the most important one to understand:{' '}
-              <Mono>unknown</Mono>. When a diagnostic matches no code and no phrase, the classifier
-              says so and{' '}
-              <strong className="text-ink">deliberately does not suppress the address</strong>. That
-              is not a gap in the product’s ambition, it is the correct trade. An unrecognised
-              diagnostic is a gap in <em>the classifier</em>, and the cost of guessing wrong is a
-              real subscriber removed permanently on the strength of a sentence nobody wrote a rule
-              for. If you see <Mono>unknown</Mono> at any volume, the diagnostic text is on the
-              event and it is worth reading — it is the raw material for the pattern that should
-              exist.
-            </p>
+            <Takeaway>
+              Act on the class in the second column. The number in the first is how you got there,
+              not what you do about it.
+            </Takeaway>
+            <FactTable
+              columns={['What you see', 'Class', 'What it means', 'First thing to change']}
+              rows={DIAGNOSTICS.map((row) => [
+                row.seen,
+                <span
+                  key={row.seen}
+                  className={
+                    row.permanent
+                      ? 'font-mono text-[12px] text-warning'
+                      : 'font-mono text-[12px] text-muted'
+                  }
+                >
+                  {row.klass}
+                </span>,
+                row.means,
+                row.fix,
+              ])}
+              caption="Soft classes carry a suppression window rather than a permanent entry, because the underlying conditions clear at different speeds. Hard classes carry no window because there is nothing to wait for."
+            />
+            <Gotcha title="Without an enhanced code, the word spam wins">
+              The phrase list is tried in order, and <Mono>/spam|content rejected|…/</Mono> is
+              tested before <Mono>/blocked|blacklist|reputation|spamhaus/</Mono>. So a rejection
+              that carries <em>no</em> enhanced status code and whose text says
+              <Mono>spamhaus</Mono> matches <Mono>spam</Mono> first and lands in{' '}
+              <Mono>soft_content</Mono> rather than <Mono>hard_blocked</Mono> — a temporary window
+              instead of a permanent entry. In practice a reputation block nearly always arrives
+              with <Mono>5.7.1</Mono>, and the enhanced code is read first, which is why the row
+              above is written with one. It is worth knowing which of the two paths classified a
+              given bounce before you act on the class.
+            </Gotcha>
+            <Gotcha title="Unknown deliberately does not suppress">
+              When a diagnostic matches no code and no phrase, the classifier says so and leaves the
+              address alone. That is not a gap in the product’s ambition, it is the correct trade:
+              an unrecognised diagnostic is a gap in <em>the classifier</em>, and the cost of
+              guessing wrong is a real subscriber removed permanently on the strength of a sentence
+              nobody wrote a rule for. If you see <Mono>unknown</Mono> at any volume, the diagnostic
+              text is on the event and it is worth reading — it is the raw material for the pattern
+              that should exist.
+            </Gotcha>
           </>
         ),
         'do-not-retry': (
@@ -321,41 +348,38 @@ function Page() {
               is a signal, it is recorded, and it is one of the specific behaviours large receivers
               use to distinguish a legitimate sender from a list that is being sprayed.
             </Lede>
+            <Takeaway>
+              A hard class suppresses immediately and without a window — not to save you the send,
+              which costs nothing, but to stop your instance producing the one behavioural signal
+              that is hardest to recover from.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'Retrying is correct',
+                  tone: 'good',
+                  points: [
+                    'A 4.7.x deferral on first contact — greylisting — is the receiver checking whether you behave like a real MTA',
+                    'The queue does it for you, backing off rather than hammering',
+                    'The difference between a retry and a retry loop: one respects the interval the receiver implied, the other ignores it',
+                  ],
+                },
+                {
+                  label: 'Retrying makes it worse',
+                  tone: 'bad',
+                  points: [
+                    'A well-run mail system told this mailbox does not exist removes the address',
+                    'A system that keeps delivering either is not processing bounces or does not care — both describe a list not built from consent',
+                    'The rejection rate against non-existent addresses is a cheap, high-signal proxy for list quality, which is why it is measured. Some receivers seed known-dead addresses specifically to see what you do',
+                  ],
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              The logic from their side is simple and hard to argue with. A well-run mail system
-              that is told <em>this mailbox does not exist</em> removes the address. A system that
-              keeps delivering to it either is not processing bounces at all or does not care what
-              it is told — and both of those describe a sender whose list was not built from
-              consent. The rejection rate against non-existent addresses is a cheap, high-signal
-              proxy for list quality, which is exactly why it is measured. Some receivers seed
-              known-dead addresses specifically to see what you do.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              This is why a hard class suppresses immediately and without a window. Not to protect
-              you from wasted sends — the send itself costs nothing — but to stop your instance
-              producing the one behavioural signal that is hardest to recover from. Reputation
-              recovers slowly, over weeks of clean sending, and it degrades in an afternoon.
-            </p>
-            <Callout variant="warn" title="THE ANTI-PATTERN, NAMED">
-              The failure mode is a nightly job that re-imports the same CSV, unaware of the
-              suppression list, and re-queues everything in it. Every run, the same two hundred dead
-              addresses are attempted again. The dashboard looks fine because the bounce rate is a
-              stable small percentage. Six weeks later a major receiver silently starts filing
-              everything from the domain into spam, and nothing in the sending history explains it
-              because nothing changed — the same wrong thing kept happening. If your import path
-              writes directly to the send queue without consulting suppressions, that is the bug.
-            </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              The one case where retrying is not just acceptable but expected is greylisting. A
-              4.7.x deferral on first contact is the receiver checking whether you behave like a
-              real MTA, and the correct response is to wait and try again — which the queue does for
-              you, backing off rather than hammering. That is the entire difference between a retry
-              and a retry loop: one respects the interval the receiver implied, the other ignores
-              it.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              If you are looking at a wall of <Mono>hard_blocked</Mono> rather than scattered
-              invalid addresses, stop sending before you do anything else, then work through{' '}
+              <strong className="text-ink">Reputation recovers slowly</strong>, over weeks of clean
+              sending, and it degrades in an afternoon. If you are looking at a wall of{' '}
+              <Mono>hard_blocked</Mono> rather than scattered invalid addresses, stop sending before
+              you do anything else, then work through{' '}
               <a
                 href="/guides/why-email-goes-to-spam"
                 className="text-accent underline underline-offset-4"
@@ -370,6 +394,15 @@ function Page() {
               do, because every additional rejection is another data point in the case being built
               against your domain.
             </p>
+            <Callout variant="warn" title="THE ANTI-PATTERN, NAMED">
+              The failure mode is a nightly job that re-imports the same CSV, unaware of the
+              suppression list, and re-queues everything in it. Every run, the same two hundred dead
+              addresses are attempted again. The dashboard looks fine because the bounce rate is a
+              stable small percentage. Six weeks later a major receiver silently starts filing
+              everything from the domain into spam, and nothing in the sending history explains it
+              because nothing changed — the same wrong thing kept happening. If your import path
+              writes directly to the send queue without consulting suppressions, that is the bug.
+            </Callout>
           </>
         ),
       }}

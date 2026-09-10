@@ -1,8 +1,12 @@
+// biome-ignore-all lint/complexity/noUselessFragments: a single-element FactTable cell must stay
+// wrapped. Unwrapped, the row literal trips useJsxKeyInIterable — an error rather than an info,
+// and a false one, since FactTable keys its own cells from the row key and the column name.
 import { Callout, StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
-import { TroubleshootingChecklist } from '~/components/guides/troubleshooting-checklist.tsx'
+import type { ReactNode } from 'react'
+import { Contrast, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
-import { Code, Com, Key, Lede, Mono } from '~/components/marketing/prose.tsx'
+import { Code, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { DEPLOY_URL } from '~/seo'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
 
@@ -23,7 +27,7 @@ const RESOURCES: Array<[string, string, string]> = [
   [
     'Queues',
     'Sends, events and webhooks',
-    'Twelve, counting the dead-letter queue: ms-send, ms-send-bulk, ms-events-cf, ms-events-norm, ms-webhooks, ms-broadcast-pages, ms-inbound, ms-segments, ms-automation-triggers, ms-dmarc, ms-export, ms-dlq.',
+    'Twelve, counting the dead-letter queue — listed below.',
   ],
   [
     'Durable Objects',
@@ -46,6 +50,89 @@ const RESOURCES: Array<[string, string, string]> = [
     'Analytics Engine',
     'Chart queries',
     'Left out of the deploy unless you ask for it. The datasets need no provisioning; they are created on first write.',
+  ],
+]
+
+/** Batch size, batch timeout and retries are `wrangler.jsonc`'s own consumer block. */
+const QUEUES: Array<[string, string, string, string]> = [
+  ['ms-send', 'SEND_QUEUE', '10 / 5s', '5'],
+  ['ms-send-bulk', 'SEND_BULK_QUEUE', '25 / 10s', '5'],
+  ['ms-events-cf', 'consumer only', '100 / 5s', '3'],
+  ['ms-events-norm', 'EVENTS_QUEUE', '100 / 5s', '3'],
+  ['ms-webhooks', 'WEBHOOKS_QUEUE', '10 / 2s', '6'],
+  ['ms-broadcast-pages', 'BROADCAST_QUEUE', '5 / 2s', '5'],
+  ['ms-inbound', 'INBOUND_QUEUE', '5 / 5s', '3'],
+  ['ms-segments', 'SEGMENTS_QUEUE', '20 / 10s', '4'],
+  ['ms-automation-triggers', 'AUTOMATION_QUEUE', '50 / 5s', '4'],
+  ['ms-dmarc', 'DMARC_QUEUE', '1 / 30s', '3'],
+  ['ms-export', 'EXPORT_QUEUE', '1 / 30s', '3'],
+  ['ms-dlq', 'dead letter for all eleven', 'no consumer', '—'],
+]
+
+const FIRST_BOOT: Array<[string, string, string]> = [
+  ['Migrations', 'Runs every migration the instance does not already have.', 'Idempotent'],
+  [
+    'Workspace + API key',
+    'Creates the workspace and prints one bootstrap API key.',
+    'Printed once — only the SHA-256 is stored',
+  ],
+  [
+    'Claim code',
+    'Mints and prints one claim code, the lock on /setup.',
+    'Printed once — only the SHA-256 is stored',
+  ],
+  [
+    'The two undefaultable values',
+    'Resolves the signing secret and the public URL, then persists them.',
+    'Yes — both are learned or generated, not configured',
+  ],
+]
+
+const FAILURES: Array<[string, ReactNode, ReactNode]> = [
+  [
+    'A binding error during provisioning, not a billing message',
+    <>The account is not on Workers Paid. Durable Objects and Queues both require it.</>,
+    <>
+      Upgrade the account. This is first because it is cheapest to check and looks like anything but
+      itself.
+    </>,
+  ],
+  [
+    'Every queue collides at once',
+    <>
+      A second MailySend deployment in the same account. A queue has exactly one consumer and queue
+      names are account-global.
+    </>,
+    <>
+      Deploy the second one to a different Cloudflare account, or remove the first Worker’s
+      consumers.
+    </>,
+  ],
+  [
+    'A failed deploy naming a queue or namespace, after a clean build',
+    <>
+      The build token cannot create resources. <Mono>ensure-resources.mjs</Mono> does not fail the
+      build when a creation is refused; it leaves the id out and lets wrangler try.
+    </>,
+    <>
+      Check the token carries <Mono>Queues:Edit</Mono>.
+    </>,
+  ],
+  [
+    'You need to enable Analytics Engine … [code: 10089]',
+    <>
+      The bindings were included — <Mono>MS_ANALYTICS_ENGINE=1</Mono> — on an account where the
+      feature has not been enabled.
+    </>,
+    <>Enable it on the account, or build without that variable and let D1 answer the charts.</>,
+  ],
+  [
+    'The deploy succeeds and the first send fails',
+    <>Email Sending is not enabled on the account.</>,
+    <>
+      Cloudflare Email Service is in beta, Workers Paid only, with a daily quota that ramps with
+      reputation and is not published — MailySend learns that ceiling rather than assuming one.
+    </>,
   ],
 ]
 
@@ -73,41 +160,35 @@ function Page() {
           <>
             <Lede>
               The deploy creates eight kinds of resource. All of them are in your account, billed to
-              you, visible in your dashboard, and deletable by you. There is no MailySend-operated
-              server anywhere in the path — which is the argument for this product, and also why
-              nobody here can recover your data for you if you delete it.
+              you, visible in your dashboard, and deletable by you.
             </Lede>
-            <div className="overflow-x-auto rounded-card border border-line">
-              <table className="w-full border-collapse text-[14px]">
-                <thead>
-                  <tr className="bg-tint text-left">
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Product</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">What it holds</th>
-                    <th className="px-4 py-2.5 text-[12px] font-semibold">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {RESOURCES.map(([name, holds, note]) => (
-                    <tr key={name} className="border-line border-t">
-                      <td className="px-4 py-2 font-semibold text-ink">{name}</td>
-                      <td className="px-4 py-2 text-muted">{holds}</td>
-                      <td className="px-4 py-2 text-muted-2">{note}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Takeaway>
+              There is no MailySend-operated server anywhere in the path — which is the argument for
+              this product, and also why nobody here can recover your data for you if you delete it.
+            </Takeaway>
+            <FactTable
+              columns={['Product', 'What it holds', 'Notes']}
+              rows={RESOURCES}
+              monoFirst={false}
+            />
+            <FactTable
+              columns={['Queue', 'Producer binding', 'Batch / timeout', 'Retries']}
+              rows={QUEUES}
+              caption="ms-events-cf has no producer here because Cloudflare itself publishes to it. Every consumer dead-letters to ms-dlq, which has no consumer of its own."
+            />
             <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
               Who actually creates them
             </h3>
+            <Gotcha title="Wrangler validates every binding before it uploads">
+              A missing resource does not degrade the Worker — it fails the deploy, one resource at
+              a time, each failure after a multi-megabyte upload:{' '}
+              <Mono>{'Queue "ms-events-cf" does not exist'}</Mono>, then a KV namespace error, then
+              the next. That is why provisioning cannot be left to the deploy.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Not the button, mostly.</strong> The Deploy to Cloudflare
               flow auto-creates the bindings it knows how to auto-create — KV, D1, R2 — and does not
-              create queues at all. That would not matter if a missing resource degraded the Worker,
-              but <Mono>wrangler deploy</Mono> validates every binding <em>before</em> it uploads,
-              so a clean account fails the deploy one resource at a time:{' '}
-              <Mono>{'Queue "ms-events-cf" does not exist'}</Mono>, then a KV namespace error, each
-              after a multi-megabyte upload. So <Mono>build:cf</Mono> ends by running{' '}
+              create queues at all. So <Mono>build:cf</Mono> ends by running{' '}
               <Mono>scripts/ensure-resources.mjs</Mono>, which creates the twelve queues, the R2
               bucket, the D1 database and the two KV namespaces, then writes the generated D1 and KV
               ids into the config wrangler deploys.
@@ -158,21 +239,52 @@ function Page() {
         ),
         'run-it': (
           <>
-            <Lede>
-              Two paths to the same place. The button is faster; the commands let you watch each
-              resource appear, which is worth doing once if you are going to operate this.
-            </Lede>
+            <Lede>Two paths to the same place.</Lede>
+            <Takeaway>
+              The button is faster; the commands let you watch each resource appear, which is worth
+              doing once if you are going to operate this.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'Deploy to Cloudflare button',
+                  tone: 'good',
+                  points: [
+                    'Forks the repository into your GitHub account and connects it to Workers Builds',
+                    'Nothing to fill in first — every variable has a default or is generated on first boot',
+                    <>
+                      Uses Cloudflare’s own build token, so no <Mono>CLOUDFLARE_API_TOKEN</Mono> of
+                      your own
+                    </>,
+                  ],
+                },
+                {
+                  label: 'Wrangler, by hand',
+                  tone: 'neutral',
+                  points: [
+                    <>
+                      Needs <Mono>CLOUDFLARE_ACCOUNT_ID</Mono> and <Mono>CLOUDFLARE_API_TOKEN</Mono>{' '}
+                      in your shell
+                    </>,
+                    <>
+                      The token needs <Mono>Queues:Edit</Mono>, plus{' '}
+                      <Mono>Workers Scripts:Edit</Mono>, <Mono>D1:Edit</Mono>,{' '}
+                      <Mono>Workers KV:Edit</Mono> and <Mono>Workers R2:Edit</Mono>
+                    </>,
+                    'Every call is idempotent, so re-running on a provisioned account prints “exists” rather than an error',
+                  ],
+                },
+              ]}
+            />
             <div className="flex flex-col gap-3.5">
               <StepCard step={1} title="Deploy" variant="rule">
                 <p className="mt-1.5 mb-2 text-[15px] leading-[1.65] text-muted">
-                  The one-click deploy forks the repository into your GitHub account, connects it to
-                  Workers Builds, and then builds and deploys — which is where the table above
-                  actually gets provisioned. There is nothing to fill in first: every variable has a
-                  default or is generated on first boot, which is why <Mono>.env.example</Mono>{' '}
-                  carries no keys at all. Cloudflare builds the deploy form from that file, shows
-                  key names without their comments, stores every answer as a secret and does not
-                  prefill from the file — so a key with a perfectly good default would render as a
-                  blank, masked, mandatory-looking password box.
+                  The one-click deploy builds and deploys, which is where the tables above actually
+                  get provisioned. <Mono>.env.example</Mono> carries no keys at all on purpose:
+                  Cloudflare builds the deploy form from that file, shows key names without their
+                  comments, stores every answer as a secret and does not prefill from the file — so
+                  a key with a perfectly good default would render as a blank, masked,
+                  mandatory-looking password box.
                 </p>
                 <a
                   href={DEPLOY_URL}
@@ -198,25 +310,22 @@ function Page() {
                 />
                 <p className="mt-2 mb-0 text-[14px] leading-[1.6] text-muted-2">
                   <Mono>provision</Mono> is the interesting one: it creates the queues and the
-                  bucket and checks that the token can read the Analytics Engine datasets, and every
-                  call in it is idempotent — re-running it on a provisioned account is a sequence of
-                  “exists” lines rather than an error. The token needs <Mono>Queues:Edit</Mono>,
-                  plus <Mono>Workers Scripts:Edit</Mono>, <Mono>D1:Edit</Mono>,{' '}
-                  <Mono>Workers KV:Edit</Mono> and <Mono>Workers R2:Edit</Mono> if you deploy with
-                  the same token rather than from the button.
+                  bucket and checks that the token can read the Analytics Engine datasets.
                 </p>
               </StepCard>
               <StepCard step={3} title="Check it answered" variant="rule">
-                <Code className="mt-1.5">
-                  {'curl https://'}
-                  <Key>your-worker.workers.dev</Key>
-                  {'/v1/health\n\n'}
-                  <Com>
-                    {
-                      '# { "status": "operational", "mode": "single", "version": "…",\n#   "database": "ok", "time": "…" }'
-                    }
-                  </Com>
-                </Code>
+                <Terminal
+                  className="mt-1.5"
+                  caption="GET /v1/health"
+                  lines={[
+                    { kind: 'command', text: 'curl https://your-worker.workers.dev/v1/health' },
+                    { kind: 'output', text: '{ "status": "operational",' },
+                    { kind: 'output', text: '  "mode": "single",' },
+                    { kind: 'output', text: '  "version": "…",' },
+                    { kind: 'output', text: '  "database": "ok",' },
+                    { kind: 'output', text: '  "time": "2026-09-11T09:14:02.118Z" }' },
+                  ]}
+                />
                 <p className="mt-2 mb-0 text-[14px] leading-[1.6] text-muted-2">
                   Deliberately unauthenticated, because a load balancer cannot hold a key. It runs a{' '}
                   <Mono>SELECT 1</Mono> against D1 and answers <Mono>200</Mono> when that works;
@@ -229,48 +338,68 @@ function Page() {
             <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
               The commands Workers Builds guesses
             </h3>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              They work now, and it is worth knowing why they did not, because both failures look
-              like something else. Cloudflare proposes <Mono>pnpm deploy</Mono>, and{' '}
-              <Mono>deploy</Mono> is one of pnpm’s own subcommands, so the built-in always wins and
-              a script of that name never runs — hence <Mono>ERR_PNPM_INVALID_DEPLOY_TARGET</Mono>{' '}
+            <FactTable
+              columns={['Set this', 'To this', 'Because']}
+              rows={[
+                [
+                  'Build command',
+                  <>
+                    <Mono>pnpm run build:cf</Mono>
+                  </>,
+                  <>
+                    <Mono>build:node</Mono> emits a socket server, not a Worker.
+                  </>,
+                ],
+                [
+                  'Deploy command',
+                  <>
+                    <Mono>npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json</Mono>
+                  </>,
+                  <>
+                    That is the config Vite <em>generates</em> next to the bundle.{' '}
+                    <Mono>apps/app/wrangler.jsonc</Mono> is the input to that generation, and
+                    deploying it directly points <Mono>main</Mono> at TypeScript source.
+                  </>,
+                ],
+              ]}
+              monoFirst={false}
+              caption="Workers → your Worker → Settings → Builds. They work without being set; this is what they are."
+            />
+            <Gotcha title="pnpm deploy is a pnpm subcommand">
+              Cloudflare proposes <Mono>pnpm deploy</Mono>, and the built-in always wins, so a
+              script of that name never runs — hence <Mono>ERR_PNPM_INVALID_DEPLOY_TARGET</Mono>{' '}
               rather than anything about this repository. No script here is called{' '}
-              <Mono>deploy</Mono> any more for exactly that reason. It then proposes a bare{' '}
-              <Mono>npx wrangler deploy</Mono> from the repository root, where wrangler cannot tell
-              which workspace package is the Worker and stops before doing anything. So{' '}
-              <Mono>build:cf</Mono> ends by writing a root <Mono>wrangler.json</Mono> — a copy of
-              the config Vite generates next to the bundle with its path fields rewritten,
-              regenerated on every build and gitignored, so bindings still have one source of truth.
-            </p>
+              <Mono>deploy</Mono> any more for exactly that reason.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              To set them explicitly instead, under{' '}
-              <strong className="text-ink">Workers → your Worker → Settings → Builds</strong>, the
-              build command is <Mono>pnpm run build:cf</Mono> and the deploy command is{' '}
-              <Mono>npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json</Mono>. Two
-              details there are load-bearing. <Mono>build:cf</Mono> rather than{' '}
-              <Mono>build:node</Mono>: the Node target emits a socket server, not a Worker. And the{' '}
-              <Mono>-c</Mono> path points at the config Vite <em>generates</em> next to the bundle —{' '}
-              <Mono>apps/app/wrangler.jsonc</Mono> is the input to that generation, and deploying it
-              directly points <Mono>main</Mono> at TypeScript source.
+              <strong className="text-ink">The other guess fails just as obliquely.</strong>{' '}
+              Cloudflare then proposes a bare <Mono>npx wrangler deploy</Mono> from the repository
+              root, where wrangler cannot tell which workspace package is the Worker and stops
+              before doing anything. So <Mono>build:cf</Mono> ends by writing a root{' '}
+              <Mono>wrangler.json</Mono> — a copy of the generated config with its path fields
+              rewritten, regenerated on every build and gitignored, so bindings still have one
+              source of truth.
             </p>
           </>
         ),
         'first-boot': (
           <>
             <Lede>
-              The first request to a fresh instance does four things: it runs the database
-              migrations, it creates the workspace and prints one bootstrap API key, it mints and
-              prints one claim code, and it resolves the two values that cannot be defaulted — the
-              signing secret and the public URL — and then persists them.
+              The first request to a fresh instance does four things, and one of them you have to be
+              watching for.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Read the log once.</strong> The API key and the claim
-              code are printed exactly once each, because only their SHA-256 hashes are ever stored;
-              there is no screen anywhere in the product that can show either of them again. On
-              Workers they land in <Mono>wrangler tail</Mono> and the Worker’s <em>Logs</em> tab.
-              Everything else on this page can be done later — this is the one thing that has to be
-              done now.
-            </p>
+            <FactTable
+              columns={['On first request', 'What happens', 'Recoverable later?']}
+              rows={FIRST_BOOT}
+              monoFirst={false}
+            />
+            <Gotcha title="Read the log once">
+              The API key and the claim code are printed exactly once each, because only their
+              SHA-256 hashes are ever stored; there is no screen anywhere in the product that can
+              show either of them again. On Workers they land in <Mono>wrangler tail</Mono> and the
+              Worker’s <em>Logs</em> tab. Everything else on this page can be done later — this is
+              the one thing that has to be done now.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">The public URL is learned, not configured.</strong>{' '}
               Nothing pins it in <Mono>wrangler.jsonc</Mono> on purpose: a placeholder hostname
@@ -312,10 +441,7 @@ function Page() {
               </a>{' '}
               covers the whole flow.
             </Callout>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                One decision to take before you register a passkey.
-              </strong>{' '}
+            <Gotcha title="Decide the hostname before you register a passkey">
               A passkey is bound to a hostname, and because the public URL is learned, an instance
               that starts on <Mono>*.workers.dev</Mono> and later answers on your own domain changes
               the WebAuthn relying party — every passkey registered on the old host stops working
@@ -323,96 +449,85 @@ function Page() {
               rather than looking broken, and the fix is a recovery code plus a re-registration. If
               you already know which hostname this deployment will live on, set{' '}
               <Mono>MS_PUBLIC_URL</Mono> before anybody enrols a credential.
-            </p>
+            </Gotcha>
           </>
         ),
         'what-is-not-done': (
           <>
-            <Lede>
-              Four things the deploy deliberately leaves to you, each because automating it would
-              make the system less trustworthy rather than more convenient.
-            </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Your DNS is not touched.</strong> Publishing SPF, DKIM
-              and DMARC records changes how the entire internet treats mail from your domain. A
-              deploy button that silently rewrote your zone would be doing something you cannot
-              easily inspect or undo, at exactly the moment you have the least context.{' '}
-              <a href="/guides/spf-dkim-dmarc" className="text-accent underline underline-offset-4">
-                The DNS guide
-              </a>{' '}
-              generates your records and explains each one.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">No domain is verified.</strong> Verification is a claim
-              that you control a domain. Pre-verifying one would make the claim meaningless — and it
-              has a visible consequence you should expect rather than debug: until a domain is
-              verified there is nothing to send an email with, so <Mono>POST /v1/auth/otp</Mono>{' '}
-              answers <Mono>202 {'{"status":"unavailable"}'}</Mono> and the sign-in page does not
-              offer emailed codes at all.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">No transport is configured.</strong> Which service
-              actually carries your mail is a decision with real consequences for cost, attachment
-              size and what event data you get back — Cloudflare caps a message at 5 MiB where SES
-              allows 40 MB, to name the one that surprises people. See{' '}
-              <a
-                href="/guides/choose-a-sending-transport"
-                className="text-accent underline underline-offset-4"
-              >
-                choosing a transport
-              </a>
-              . Defaulting it would be picking for you and hoping you never looked.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Receiving is not wired up.</strong> Sending and receiving
-              are independent setups on the same domain, and receiving is configured in two places:
-              Email Routing in the Cloudflare dashboard needs a catch-all rule whose action is{' '}
-              <em>Send to a Worker</em> pointed at this script, and the domain’s Receiving tab in
-              MailySend needs a mailbox. Doing only the first is the usual cause of “I bound the
-              catch-all and nothing arrived”: mail for an address with no mailbox and no catch-all
-              is refused at the door with <Mono>550 5.1.1 No such mailbox</Mono>, which is the
-              honest answer to a typo and tells a spammer nothing. <em>Check receiving</em> on the
-              domain resolves the MX and names which half is missing.
-            </p>
+            <Lede>Four things the deploy deliberately leaves to you.</Lede>
+            <Takeaway>
+              Each one is left undone because automating it would make the system less trustworthy
+              rather than more convenient.
+            </Takeaway>
+            <div className="grid gap-3 md:grid-cols-2">
+              <StepCard step={1} title="Your DNS is not touched" variant="tile">
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-[1.6] text-muted">
+                  Publishing SPF, DKIM and DMARC records changes how the entire internet treats mail
+                  from your domain. A deploy button that silently rewrote your zone would be doing
+                  something you cannot easily inspect or undo, at exactly the moment you have the
+                  least context.{' '}
+                  <a
+                    href="/guides/spf-dkim-dmarc"
+                    className="text-accent underline underline-offset-4"
+                  >
+                    The DNS guide
+                  </a>{' '}
+                  generates your records and explains each one.
+                </p>
+              </StepCard>
+              <StepCard step={2} title="No domain is verified" variant="tile">
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-[1.6] text-muted">
+                  Verification is a claim that you control a domain, and pre-verifying one would
+                  make the claim meaningless. It has a visible consequence you should expect rather
+                  than debug: until a domain is verified there is nothing to send an email with, so{' '}
+                  <Mono>POST /v1/auth/otp</Mono> answers{' '}
+                  <Mono>202 {'{"status":"unavailable"}'}</Mono> and the sign-in page does not offer
+                  emailed codes at all.
+                </p>
+              </StepCard>
+              <StepCard step={3} title="No transport is configured" variant="tile">
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-[1.6] text-muted">
+                  Which service carries your mail has real consequences for cost, attachment size
+                  and what event data you get back — Cloudflare caps a message at 5 MiB where SES
+                  allows 40 MB, to name the one that surprises people. Defaulting it would be
+                  picking for you and hoping you never looked. See{' '}
+                  <a
+                    href="/guides/choose-a-sending-transport"
+                    className="text-accent underline underline-offset-4"
+                  >
+                    choosing a transport
+                  </a>
+                  .
+                </p>
+              </StepCard>
+              <StepCard step={4} title="Receiving is not wired up" variant="tile">
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-[1.6] text-muted">
+                  Sending and receiving are independent setups on the same domain, and receiving is
+                  configured in two places: Email Routing in the Cloudflare dashboard needs a
+                  catch-all rule whose action is <em>Send to a Worker</em> pointed at this script,
+                  and the domain’s Receiving tab in MailySend needs a mailbox.
+                </p>
+              </StepCard>
+            </div>
+            <Gotcha title="I bound the catch-all and nothing arrived">
+              Doing only the Cloudflare half is the usual cause. Mail for an address with no mailbox
+              and no catch-all is refused at the door with <Mono>550 5.1.1 No such mailbox</Mono>,
+              which is the honest answer to a typo and tells a spammer nothing.{' '}
+              <em>Check receiving</em> on the domain resolves the MX and names which half is
+              missing.
+            </Gotcha>
           </>
         ),
         troubleshoot: (
           <>
             <Lede>
-              Five failures account for nearly every deploy that does not come up. They are listed
-              cheapest-to-check first, and the last two are the ones whose error messages point
-              somewhere other than the cause.
+              Five failures account for nearly every deploy that does not come up, cheapest to check
+              first.
             </Lede>
-            <TroubleshootingChecklist
-              title="DEPLOY WILL NOT COME UP"
-              steps={[
-                {
-                  label: 'The account is not on Workers Paid',
-                  detail:
-                    'Durable Objects and Queues both require it. The failure appears as a binding error during provisioning rather than as a billing message, which is why this is first.',
-                },
-                {
-                  label: 'A second deployment in the same account',
-                  detail:
-                    'A queue has exactly one consumer and queue names are account-global, so two MailySend deployments in one Cloudflare account collide on every queue. Deploy the second one to a different account, or remove the first Worker’s consumers.',
-                },
-                {
-                  label: 'The build token cannot create resources',
-                  detail:
-                    'ensure-resources.mjs does not fail the build when a creation is refused; it leaves the id out and lets wrangler try. So the symptom is a failed deploy naming a queue or namespace, not a failed build. Check that the token carries Queues:Edit.',
-                },
-                {
-                  label: 'The deploy dies on Analytics Engine',
-                  detail:
-                    'You need to enable Analytics Engine … [code: 10089] means the bindings were included — MS_ANALYTICS_ENGINE=1 — on an account where the feature has not been enabled. Enable it on the account, or build without that variable and let D1 answer the charts.',
-                },
-                {
-                  label: 'Email Sending is not enabled on the account',
-                  detail:
-                    'The deploy succeeds and the first send fails. Cloudflare Email Service is in beta, Workers Paid only, with a daily quota that ramps with reputation and is not published — MailySend learns that ceiling rather than assuming one.',
-                },
-              ]}
-            />
+            <Takeaway>
+              The last two are the ones whose error messages point somewhere other than the cause.
+            </Takeaway>
+            <FactTable columns={['Symptom', 'Cause', 'Fix']} rows={FAILURES} monoFirst={false} />
             <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
               When the deploy fails on queue consumers
             </h3>
@@ -425,18 +540,31 @@ function Page() {
               The script uploaded; only the trigger update failed, and the build is reported as
               failed regardless. The message names neither the queue nor the reason — but the list
               of consumers wrangler prints immediately above it does: whichever declared queue is{' '}
-              <em>missing</em> from that list is the one that failed. The two causes are the two
-              rows above it in the checklist, a queue that was never created and a queue another
+              <em>missing</em> from that list is the one that failed. The two causes are rows two
+              and three of the table above, a queue that was never created and a queue another
               Worker already consumes.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              If none of that is it, <Mono>/v1/health</Mono> tells you whether the database resolved
-              and <Mono>/v1/instance</Mono> tells you what the deployment believes about itself —
-              claimed or not, which doors are open, whether any domain is verified. Then the
-              Worker’s tail log tells you what it did instead. In that order: the two endpoints are
-              one request each and need nothing set up, and the tail needs you to reproduce the
-              failure while you are watching.
-            </p>
+            <FactTable
+              columns={['If none of that is it', 'What it tells you', 'Cost']}
+              rows={[
+                [
+                  'GET /v1/health',
+                  'Whether the database resolved.',
+                  'One request, nothing to set up',
+                ],
+                [
+                  'GET /v1/instance',
+                  'What the deployment believes about itself — claimed or not, which doors are open, whether any domain is verified.',
+                  'One request, nothing to set up',
+                ],
+                [
+                  'wrangler tail',
+                  'What the Worker did instead.',
+                  'Needs you to reproduce the failure while watching',
+                ],
+              ]}
+              caption="In that order, and for that reason."
+            />
           </>
         ),
       }}

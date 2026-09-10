@@ -190,7 +190,7 @@ export const DOC_SECTIONS: DocSection[] = [
     navLabel: 'Errors & rate limits',
     headline: 'Errors & rate limits',
     description:
-      'Typed errors that name the fix, and a default limit of 10 requests per second per key with a burst of 50.',
+      'Typed errors that name the fix, and a fixed-window limit per workspace: 600 sends a minute, 1,000 requests a minute everywhere else.',
   },
 ]
 

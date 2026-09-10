@@ -1,9 +1,10 @@
-import { Callout } from '@mailysend/ui'
+import { Callout, ComparisonTable, Metric, MetricGrid } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import { TransportChooser } from '~/components/guides/transport-chooser.tsx'
 import { VolumeCostPanel } from '~/components/guides/volume-cost-panel.tsx'
+import { Contrast, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
-import { Code, Lede, Mono } from '~/components/marketing/prose.tsx'
+import { Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
 
 const SLUG = 'choose-a-sending-transport'
@@ -13,6 +14,25 @@ export const Route = createFileRoute('/guides/choose-a-sending-transport')({
   head: () => guideHead(SLUG),
   component: Page,
 })
+
+const QUESTIONS: Array<[string, string]> = [
+  [
+    'Are you on Cloudflare at all?',
+    'If not, Cloudflare Email Service is unavailable and the field is SES, Resend, SendGrid, Postmark or your own relay. If yes, it is the default for a reason: no third-party account, no extra credential, and the events come back on a Queues subscription. The domain has to already be on the same Cloudflare account, and onboarding happens in Cloudflare’s dashboard rather than here — it writes every DNS record itself, so there is nothing to copy.',
+  ],
+  [
+    'Do you send attachments over 5 MiB?',
+    'Then Cloudflare Email Service is out for those messages — it caps at 5 MiB, and 25 MiB only to verified destinations. SES and Resend accept 40 MB; a raw relay is capped at 25 MiB here whatever your relay would take. Route the heavy sending domain elsewhere rather than capping your whole product, and remember the ceiling is measured after base64.',
+  ],
+  [
+    'Do you need bounce and complaint data?',
+    'Everyone does, eventually. That rules out raw SMTP as a primary transport and means configuring SES properly rather than minimally: an SNS configuration set at setup time, not after the first campaign. On SES it also means asking AWS for production access — a new account is in the sandbox, which delivers only to addresses you have verified, at 200 messages a day, and looks exactly like a broken instance until you know that.',
+  ],
+  [
+    'What does it cost at your volume?',
+    'Below a few thousand a month this question does not decide anything: the fixed floor dominates and a vendor free tier is genuinely cheaper. Above a hundred thousand it decides everything, and the answer is usually SES by a wide margin. The panel below runs the pricing page’s own functions rather than restating them.',
+  ],
+]
 
 function Page() {
   return (
@@ -36,7 +56,65 @@ function Page() {
               path enforces, imported into this page, so what you read here is what your instance
               will refuse.
             </Lede>
+            <Takeaway>
+              Fifty recipients everywhere; the message ceiling is the number that differs, and it is
+              measured on the rendered message rather than on your attachment.
+            </Takeaway>
             <TransportChooser />
+            <ComparisonTable
+              caption="The four transports, side by side"
+              columns={[
+                { key: 'cf', label: 'Cloudflare' },
+                { key: 'ses', label: 'SES' },
+                { key: 'resend', label: 'Resend' },
+                { key: 'smtp', label: 'Raw SMTP' },
+              ]}
+              rows={[
+                {
+                  label: 'Message ceiling',
+                  values: {
+                    cf: { kind: 'text', label: '5 MiB', tone: 'negative' },
+                    ses: '40 MB',
+                    resend: '40 MB',
+                    smtp: '25 MiB',
+                  },
+                },
+                {
+                  label: 'Header budget',
+                  values: {
+                    cf: { kind: 'text', label: '16 KiB', tone: 'negative' },
+                    ses: '100 KiB',
+                    resend: '100 KiB',
+                    smtp: '100 KiB',
+                  },
+                },
+                {
+                  label: 'Recipients per send',
+                  values: { cf: '50', ses: '50', resend: '50', smtp: '50' },
+                },
+                {
+                  label: 'Subject characters',
+                  values: { cf: '998', ses: '998', resend: '998', smtp: '998' },
+                },
+                {
+                  label: 'Measured before it leaves',
+                  values: { cf: true, ses: true, resend: false, smtp: true },
+                },
+                {
+                  label: 'Delivery events',
+                  values: {
+                    cf: true,
+                    ses: { kind: 'partial', label: 'With an SNS configuration set' },
+                    resend: true,
+                    smtp: false,
+                  },
+                },
+                {
+                  label: 'Published daily quota',
+                  values: { cf: false, ses: false, resend: false, smtp: false },
+                },
+              ]}
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">The ceiling is measured on the rendered message.</strong>{' '}
               Not on your attachment, and not on your HTML. Three of the four adapters build the
@@ -47,20 +125,19 @@ function Page() {
               ceiling by the time it is a message. If you are anywhere near a limit, the number to
               compare against is roughly four-thirds of your attachment bytes, plus the body.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">What crossing it actually does.</strong> The send throws
-              a <Mono>permanent</Mono> error naming the measured size and the ceiling — for
-              instance,{' '}
+            <Gotcha title="Crossing the ceiling is permanent, not a failover">
+              The send throws a <Mono>permanent</Mono> error naming the measured size and the
+              ceiling — for instance,{' '}
               <em>
                 message is 6.41 MiB; the Cloudflare transport accepts at most 5 MiB to unverified
                 destinations
               </em>
               . Permanent is a classification with teeth: it is not retried, and it does not fail
               over, because only <Mono>transient</Mono> and <Mono>throttled</Mono> errors are
-              allowed to reach a second transport. That is the correct behaviour — a message too
-              large for this transport does not shrink on the way to the next one — but it means the
-              message is dead at the first attempt, with a reason, rather than sitting in a queue.
-            </p>
+              allowed to reach a second transport. A message too large for this transport does not
+              shrink on the way to the next one — so it is dead at the first attempt, with a reason,
+              rather than sitting in a queue.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
                 Resend is the exception, and it is worth knowing.
@@ -77,10 +154,9 @@ function Page() {
               is 50 across <Mono>to</Mono>, <Mono>cc</Mono> and <Mono>bcc</Mono> combined, counted
               before the send. Most relays would accept far more, but a large <Mono>RCPT</Mono> list
               is a spam signal at many receivers and the API contract promises the same number on
-              every transport — consistency is worth more here than squeezing a relay. Header
-              budgets are the one other place the four diverge quietly: 16 KiB on Cloudflare against
-              100 KiB on the rest, which only matters if you are stuffing metadata into custom
-              headers.
+              every transport — consistency is worth more here than squeezing a relay. The header
+              budget is the one place the four diverge quietly, and it only matters if you are
+              stuffing metadata into custom headers.
             </p>
             <Callout title="NOBODY PUBLISHES A DAILY QUOTA">
               All four transports carry <Mono>dailyQuota: null</Mono>, because none of them
@@ -98,13 +174,36 @@ function Page() {
               that costs them a week, three months in, when someone asks why the bounce chart is
               empty.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">Raw SMTP reports nothing.</strong> Not by omission —
-              there is nothing to report. A <Mono>250</Mono> from a relay says the relay accepted
-              responsibility for the message, and the protocol offers no further callback. Bounces
-              arrive afterwards as DSNs, which is a separate inbound path you have to actually wire
-              up, and only some of them arrive at all.
-            </p>
+            <Takeaway>
+              Two of the four report events with nothing to configure, one reports only if you
+              configured it, and one cannot report at all.
+            </Takeaway>
+            <FactTable
+              columns={['Transport', 'What comes back', 'What you have to do']}
+              rows={[
+                [
+                  'Cloudflare Email Service',
+                  'Delivery events by default, over a Queues subscription scoped per sending domain.',
+                  'Nothing.',
+                ],
+                ['Resend', 'Delivery events by default, over its webhooks.', 'Nothing.'],
+                [
+                  'Amazon SES',
+                  'Delivery, bounce and complaint notifications — but only with an SNS configuration set. Without one, SES accepts your mail and tells you nothing.',
+                  <>
+                    Set <Mono>configuration_set</Mono> in the provider form, with a subscription
+                    pointed back at this instance.
+                  </>,
+                ],
+                [
+                  'Raw SMTP relay',
+                  'Nothing. A 250 says the relay accepted responsibility for the message, and the protocol offers no further callback.',
+                  'Wire up DSNs to your return path, and publish its MX record.',
+                ],
+              ]}
+              monoFirst={false}
+              caption="A missing SNS configuration set is the single most common reason a migration to SES appears to “lose” deliverability data."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">What a DSN gets you, and what it does not.</strong> A DSN
               is a <Mono>multipart/report; report-type=delivery-status</Mono> message delivered to
@@ -114,32 +213,23 @@ function Page() {
               delivered, because a successful delivery generates no report at all — which is why{' '}
               <Mono>sent</Mono> is the last thing an SMTP transport can say for certain, and why the
               return-path <Mono>MX</Mono> record stops being optional on this transport. No MX, no
-              DSN, no bounce data of any kind.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">SES reports only if you tell it to.</strong> Delivery,
-              bounce and complaint notifications need an SNS configuration set. Without one, SES
-              accepts your mail and tells you nothing — and this is the single most common reason a
-              migration to SES appears to “lose” deliverability data. In the provider form it is the{' '}
-              <Mono>configuration_set</Mono> field, marked optional, with a subscription pointed
-              back at this instance; the adapter’s own <Mono>reportsEvents</Mono> is computed from
-              whether that name is set, and is false until it is.
+              DSN, no bounce data of any kind, and only some DSNs arrive at all.
             </p>
             <Callout variant="warn" title="THE SETTINGS CARD IS OPTIMISTIC ABOUT SES">
               The line under each transport in Settings — <em>reports delivery events</em> or{' '}
               <em>no delivery events</em> — comes from the static provider catalog, which lists SES
-              as reporting events. The adapter’s live value is conditional on the configuration set.
-              So an SES transport with no configuration set will describe itself as reporting events
-              on that card while reporting none. The honest answer is in the response from testing
-              the provider, which returns the constructed adapter’s <Mono>reports_events</Mono>{' '}
-              rather than the catalog’s.
+              as reporting events. The adapter’s live value is conditional on the configuration set:
+              its own <Mono>reportsEvents</Mono> is computed from whether that name is set, and is
+              false until it is. So an SES transport with no configuration set will describe itself
+              as reporting events on that card while reporting none. The honest answer is in the
+              response from testing the provider, which returns the constructed adapter’s{' '}
+              <Mono>reports_events</Mono> rather than the catalog’s.
             </Callout>
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              Cloudflare Email Service and Resend both report events by default — Cloudflare over a
-              Queues subscription scoped per sending domain, Resend over its webhooks. Opens and
-              clicks are tracked by MailySend itself either way, since those are your own pixel and
-              your own redirect, so those two charts look the same on all four transports and the
-              delivery-side charts do not. But{' '}
+              <strong className="text-ink">Opens and clicks are the exception.</strong> MailySend
+              tracks those itself either way, since they are your own pixel and your own redirect,
+              so those two charts look the same on all four transports and the delivery-side charts
+              do not. But{' '}
               <a
                 href="/guides/open-rates-and-apple-mpp"
                 className="text-accent underline underline-offset-4"
@@ -148,41 +238,23 @@ function Page() {
               </a>{' '}
               is its own conversation.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">One thing survives every transport: your own id.</strong>{' '}
+            <Callout title="ONE THING SURVIVES EVERY TRANSPORT: YOUR OWN ID">
               The email id is minted before any provider is called and is stamped into the message
               as both <Mono>Message-ID</Mono> and an <Mono>X-MailySend-Id</Mono> header. The
               provider’s own id is recorded next to it for correlation, never as the identity. That
               is what lets a DSN arriving three days later — through a transport you have since
               stopped using — still be matched back to the send it belongs to.
-            </p>
+            </Callout>
           </>
         ),
         'pick-one': (
           <>
-            <Lede>
-              Four questions, in the order that eliminates the most options soonest. Every answer is
-              written out below rather than hidden behind the one you pick.
-            </Lede>
+            <Lede>Four questions, in the order that eliminates the most options soonest.</Lede>
+            <Takeaway>
+              Every answer is written out below rather than hidden behind the one you pick.
+            </Takeaway>
             <ol className="m-0 flex list-none flex-col gap-3 p-0">
-              {[
-                [
-                  'Are you on Cloudflare at all?',
-                  'If not, Cloudflare Email Service is unavailable and the field is SES, Resend, SendGrid, Postmark or your own relay. If yes, it is the default for a reason: no third-party account, no extra credential, and the events come back on a Queues subscription. The domain has to already be on the same Cloudflare account, and onboarding happens in Cloudflare’s dashboard rather than here — it writes every DNS record itself, so there is nothing to copy.',
-                ],
-                [
-                  'Do you send attachments over 5 MiB?',
-                  'Then Cloudflare Email Service is out for those messages — it caps at 5 MiB, and 25 MiB only to verified destinations. SES and Resend accept 40 MB; a raw relay is capped at 25 MiB here whatever your relay would take. Route the heavy sending domain elsewhere rather than capping your whole product, and remember the ceiling is measured after base64.',
-                ],
-                [
-                  'Do you need bounce and complaint data?',
-                  'Everyone does, eventually. That rules out raw SMTP as a primary transport and means configuring SES properly rather than minimally: an SNS configuration set at setup time, not after the first campaign. On SES it also means asking AWS for production access — a new account is in the sandbox, which delivers only to addresses you have verified, at 200 messages a day, and looks exactly like a broken instance until you know that.',
-                ],
-                [
-                  'What does it cost at your volume?',
-                  'Below a few thousand a month this question does not decide anything: the fixed floor dominates and a vendor free tier is genuinely cheaper. Above a hundred thousand it decides everything, and the answer is usually SES by a wide margin. The panel below runs the pricing page’s own functions rather than restating them.',
-                ],
-              ].map(([question, answer], index) => (
+              {QUESTIONS.map(([question, answer], index) => (
                 <li key={question} className="rounded-tile border border-line bg-card p-4">
                   <div className="flex items-baseline gap-2.5">
                     <span className="font-mono text-[11.5px] text-muted-2">
@@ -195,35 +267,75 @@ function Page() {
               ))}
             </ol>
             <VolumeCostPanel />
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">What the curve is made of.</strong> A MailySend
-              deployment on your own Cloudflare account is the Workers Paid plan at $5 a month, the
-              first 3,000 messages included, then $0.35 per further thousand, plus storage, queues
-              and analytics — cents below 20,000 messages, around $1.20 at 100,000, around $9 at a
-              million. Pointing a domain at SES swaps the metered send rate for $0.10 per thousand
-              with no included allowance and keeps the same $5 floor. Resend is a plan ladder rather
-              than a rate: free to 3,000, $20 to 50,000, $90 to 100,000, then roughly $0.65 per
-              thousand. SendGrid flattens to $0.60 per thousand over a floor just under $20. At a
-              million messages a month that is roughly $363 self-hosted, $114 with SES as the
-              transport, $650 on Resend and $600 on SendGrid — which is why the fourth question
-              decides nothing at 5,000 and decides everything at 500,000.
-            </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">What a migration actually breaks.</strong> Four things,
-              in roughly the order they surprise people. The size ceiling moves, so a message that
-              has been sending fine for a year starts failing permanently the day you move from SES
-              to Cloudflare. The DNS record set is rewritten — a domain bound to a transport gets
-              that transport’s rows and nothing else — and rewriting the rows resets the domain to{' '}
-              <Mono>not_started</Mono> and clears its last-verified timestamp, so there is a
-              publish-and-verify step in the middle of the migration whether you planned one or not.
-              The return path changes shape, from <Mono>cf-bounce.yourdomain.com</Mono> to an SES
-              MAIL FROM subdomain to Resend’s <Mono>send.yourdomain.com</Mono>, so bounce collection
-              has to be re-established rather than inherited. And the signature changes hands:
-              Cloudflare and Resend sign with their own keys under their own selectors, SES signs
-              with the key MailySend generated, and a raw relay signs with nothing at all — so
-              MailySend’s own <Mono>ms1</Mono> record has to be published and correct before an SMTP
-              cutover, not after.
-            </p>
+            <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
+              A million messages a month, four ways
+            </h3>
+            <MetricGrid className="my-5" min={140}>
+              <Metric value="$114" label="SES as the transport" size="sm" />
+              <Metric value="$363" label="Self-hosted on Workers" size="sm" />
+              <Metric value="$600" label="SendGrid" size="sm" />
+              <Metric value="$650" label="Resend" size="sm" />
+            </MetricGrid>
+            <FactTable
+              columns={['Path', 'How the price is shaped']}
+              rows={[
+                [
+                  'Self-hosted on Workers',
+                  'Workers Paid at $5 a month, the first 3,000 messages included, then $0.35 per further thousand, plus storage, queues and analytics — cents below 20,000 messages, around $1.20 at 100,000, around $9 at a million.',
+                ],
+                [
+                  'A domain pointed at SES',
+                  'Swaps the metered send rate for $0.10 per thousand with no included allowance, and keeps the same $5 floor.',
+                ],
+                [
+                  'Resend',
+                  'A plan ladder rather than a rate: free to 3,000, $20 to 50,000, $90 to 100,000, then roughly $0.65 per thousand.',
+                ],
+                ['SendGrid', 'Flattens to $0.60 per thousand over a floor just under $20.'],
+              ]}
+              monoFirst={false}
+              caption="Which is why the fourth question decides nothing at 5,000 and decides everything at 500,000."
+            />
+            <h3 className="mt-7 mb-2 text-[15px] font-semibold text-ink">
+              What a migration actually breaks
+            </h3>
+            <FactTable
+              columns={['What moves', 'What happens']}
+              rows={[
+                [
+                  'The size ceiling',
+                  'A message that has been sending fine for a year starts failing permanently the day you move from SES to Cloudflare.',
+                ],
+                [
+                  'The DNS record set',
+                  <>
+                    A domain bound to a transport gets that transport’s rows and nothing else, and
+                    rewriting them resets the domain to <Mono>not_started</Mono> and clears its
+                    last-verified timestamp — so there is a publish-and-verify step in the middle of
+                    the migration whether you planned one or not.
+                  </>,
+                ],
+                [
+                  'The return path',
+                  <>
+                    From <Mono>cf-bounce.yourdomain.com</Mono> to an SES MAIL FROM subdomain to
+                    Resend’s <Mono>send.yourdomain.com</Mono>. Bounce collection has to be
+                    re-established rather than inherited.
+                  </>,
+                ],
+                [
+                  'The signature',
+                  <>
+                    Cloudflare and Resend sign with their own keys under their own selectors, SES
+                    signs with the key MailySend generated, and a raw relay signs with nothing at
+                    all — so MailySend’s own <Mono>ms1</Mono> record has to be published and correct
+                    before an SMTP cutover, not after.
+                  </>,
+                ],
+              ]}
+              monoFirst={false}
+              caption="In roughly the order they surprise people."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">The way to do it is one domain at a time.</strong>{' '}
               Routing is per sending domain, so a migration does not have to be a cutover: publish
@@ -237,16 +349,28 @@ function Page() {
         failover: (
           <>
             <Lede>
-              Failover is genuinely useful and is routinely expected to do something it cannot. It
-              covers a transport being unreachable. It does not cover a transport refusing you.
+              Failover is genuinely useful and is routinely expected to do something it cannot.
             </Lede>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              If SES is returning 5xx because of an outage, moving to a second transport is exactly
-              right and the messages go out. If SES is deferring you because your complaint rate
-              rose overnight, moving to a second transport takes a reputation problem and introduces
-              it to a second sending identity that had nothing wrong with it. You now have two
-              damaged reputations and the same underlying list.
-            </p>
+            <Takeaway>
+              It covers a transport being unreachable. It does not cover a transport refusing you.
+            </Takeaway>
+            <Contrast
+              sides={[
+                {
+                  label: 'SES is returning 5xx because of an outage',
+                  tone: 'good',
+                  points: ['Moving to a second transport is exactly right', 'The messages go out'],
+                },
+                {
+                  label: 'SES is deferring you because your complaint rate rose',
+                  tone: 'bad',
+                  points: [
+                    'Moving to a second transport introduces a reputation problem to a sending identity that had nothing wrong with it',
+                    'You now have two damaged reputations and the same underlying list',
+                  ],
+                },
+              ]}
+            />
             <Callout variant="warn" title="THE RULE">
               Fail over on transport errors. Do not fail over on rejections. A 4xx or 5xx that names
               policy, reputation, or content is a message about you, and the correct response is to
@@ -256,31 +380,40 @@ function Page() {
               <strong className="text-ink">
                 The router enforces that rule rather than trusting it.
               </strong>{' '}
-              Every send error is classified into one of six kinds, and only two of them —{' '}
-              <Mono>transient</Mono> and <Mono>throttled</Mono> — are allowed to reach a second
-              transport. <Mono>permanent</Mono> stops immediately, because a message that will never
-              be accepted as written is not accepted anywhere else either. <Mono>auth</Mono> stops
-              because credentials do not improve with a retry. <Mono>suppressed</Mono> stops and is
-              mirrored inward as a suppression of our own.
+              Every send error is classified into one of six kinds, and only two of them are allowed
+              to reach a second transport.
             </p>
-            <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The sixth kind exists solely to prevent double delivery.
-              </strong>{' '}
+            <FactTable
+              columns={['Classification', 'What the router does', 'Why']}
+              rows={[
+                [
+                  'permanent',
+                  'Stop. No retry, no failover.',
+                  'A message that will never be accepted as written is not accepted anywhere else either.',
+                ],
+                [
+                  'transient',
+                  'Retry here, then a second transport.',
+                  'One of the two kinds that may fail over.',
+                ],
+                ['throttled', 'Wait the indicated delay, then failover is fine.', 'The other one.'],
+                ['auth', 'Stop and alert.', 'Credentials do not improve with a retry.'],
+                ['suppressed', 'Stop.', 'Mirrored inward as a suppression of our own.'],
+                [
+                  'unknown',
+                  'Retry here at most. Never a second transport.',
+                  'The message may already be on the wire.',
+                ],
+              ]}
+            />
+            <Gotcha title="Unknown is the case that most feels like it should fail over">
               An <Mono>unknown</Mono> outcome is a send whose result we never learned: a network
-              failure mid-request, a connection that died after <Mono>DATA</Mono>, a timeout. The
-              message may already be on the wire. Failing over would deliver it twice, so{' '}
-              <Mono>unknown</Mono> never fails over, by design, even though it is the case that most
-              feels like it should. The same reasoning makes provider selection deterministic —{' '}
-              <Mono>hash(email_id)</Mono> over the weight space rather than a random pick — so a
-              retry of the same message always lands on the same transport it may already have
-              reached.
-            </p>
-            <Code>
-              {
-                'permanent   → stop. No retry, no failover.\ntransient   → retry here, then a second transport.\nthrottled   → wait the indicated delay, then failover is fine.\nauth        → stop and alert. A retry cannot help.\nsuppressed  → stop. Mirror the suppression inward.\nunknown     → retry here at most. NEVER a second transport.'
-              }
-            </Code>
+              failure mid-request, a connection that died after <Mono>DATA</Mono>, a timeout.
+              Failing over would deliver it twice. The same reasoning makes provider selection
+              deterministic — <Mono>hash(email_id)</Mono> over the weight space rather than a random
+              pick — so a retry of the same message always lands on the same transport it may
+              already have reached.
+            </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Two attempts, not five.</strong> A routed send tries at
               most two transports by default. A third rarely helps, and every additional attempt
