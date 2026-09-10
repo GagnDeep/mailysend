@@ -177,6 +177,27 @@ This is also why no `database_id` or KV `id` appears in `wrangler.jsonc`. A
 generated id cannot be committed, and a literal placeholder is worse than
 omitting one — it passes JSON validation and fails the deploy.
 
+### When a deploy fails on queue consumers
+
+```
+✘ [ERROR] Trigger configuration for "…" was only partially updated:
+    Queue consumers:
+      - A request to the Cloudflare API (/accounts/…/queues) failed.
+        - An unknown error has occurred [code: 10013]
+```
+
+The script uploaded; only the trigger update failed, and the build is reported
+as failed regardless. The error names neither the queue nor the reason, but the
+list of consumers wrangler prints immediately above it does: whichever declared
+queue is *missing* from that list is the one that failed.
+
+There are two causes, and the build log now names both before the deploy runs.
+The queue does not exist — a build token without `Queues:Edit`, or a creation
+that did not take. Or another Worker already consumes it: a queue has exactly
+one consumer and these names are account-global, so **two MailySend
+deployments on one Cloudflare account collide on every queue.** Deploy the
+second one to a different account, or remove the first Worker's consumers.
+
 ### Analytics Engine is left out unless you ask for it
 
 The dataset bindings are dropped from the generated config, and the deploy is

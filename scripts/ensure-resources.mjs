@@ -53,9 +53,21 @@ const wrangler = async (args) => {
   return stdout
 }
 
+/**
+ * The failure, not the npm preamble.
+ *
+ * `npx` prints its own warnings about this repo's pnpm settings on every
+ * invocation, and they are long enough to fill 240 characters on their own —
+ * so every diagnostic here read "npm warn Unknown project config…" and the
+ * actual Cloudflare error was truncated away entirely.
+ */
 const short = (error) => {
   const text = `${error?.stderr ?? ''}${error?.stdout ?? ''}` || String(error?.message ?? error)
-  return text.replace(/\s+/g, ' ').trim().slice(0, 240)
+  const useful = text
+    .split('\n')
+    .filter((line) => !/^\s*npm\s+(warn|notice)\b/i.test(line))
+    .join('\n')
+  return (useful.trim() || text).replace(/\s+/g, ' ').trim().slice(0, 240)
 }
 
 /** Wrangler prints banners and telemetry notices around its JSON. */
@@ -101,21 +113,96 @@ const queueNames = [
 ].filter((name) => typeof name === 'string' && name.length > 0)
 
 const wantedQueues = [...new Set(queueNames)].sort()
-const existingQueues = new Set(
-  (await list(['queues', 'list', '--json'])).map((q) => q.queue_name ?? q.name),
-)
 
-for (const name of wantedQueues) {
-  if (existingQueues.has(name)) continue
+/**
+ * Whether a queue exists, asked one queue at a time.
+ *
+ * `wrangler queues list` has no `--json` — the flag was passed anyway, so the
+ * command failed on every build with "Unknown argument: json", the existing set
+ * came back empty, and creation was attempted for all twelve queues every time.
+ * That was survivable because "already exists" is swallowed, and it is why it
+ * went unnoticed: the script reported success while knowing nothing.
+ *
+ * `queues info` answers for one queue and, unlike a list, says who consumes it.
+ */
+const queueInfo = async (name) => {
+  try {
+    return await wrangler(['queues', 'info', name])
+  } catch {
+    return null
+  }
+}
+
+const createQueue = async (name) => {
   try {
     await wrangler(['queues', 'create', name])
     console.log(`[resources] + queue ${name}`)
+    return true
   } catch (error) {
     const message = short(error)
-    if (!/already exists/i.test(message)) console.log(`[resources] ! queue ${name}: ${message}`)
+    if (/already exists/i.test(message)) return true
+    console.log(`[resources] ! queue ${name}: ${message}`)
+    return false
   }
 }
-console.log(`[resources] = ${wantedQueues.length} queues`)
+
+const info = new Map()
+for (const name of wantedQueues) info.set(name, await queueInfo(name))
+
+for (const [name, existing] of info) {
+  if (existing) continue
+  // Creation is eventually consistent, so the confirmation is a fresh probe
+  // rather than the create call's own exit status.
+  await createQueue(name)
+  info.set(name, await queueInfo(name))
+}
+
+/**
+ * What `wrangler deploy` is about to do with these, and why it can fail.
+ *
+ * Deploy attaches every consumer this Worker declares. If the queue is missing,
+ * or if another Worker already consumes it — a queue has exactly one consumer,
+ * and these names are account-global, so a second MailySend deployment on one
+ * account collides with the first — the trigger update fails with
+ *
+ *   A request to the Cloudflare API (/accounts/…/queues) failed.
+ *   An unknown error has occurred [code: 10013]
+ *
+ * which names neither the queue nor the reason. The script uploads fine and the
+ * build is reported as failed regardless. Neither case can be fixed from here
+ * without breaking somebody else's deployment, so both are said plainly, with
+ * the queue named, while the log is still in front of whoever ran the build.
+ */
+const declaredConsumers = [...new Set((source.queues?.consumers ?? []).map((c) => c.queue))]
+const scriptName = source.name
+
+for (const queue of declaredConsumers) {
+  const existing = info.get(queue)
+  if (!existing) {
+    console.log(
+      `[resources] ! queue ${queue} does not exist and this Worker consumes it — the deploy will ` +
+        `fail its trigger update with a generic [code: 10013]. Create it with \`npx wrangler ` +
+        `queues create ${queue}\`, or check the build token carries Queues:Edit.`,
+    )
+    continue
+  }
+  // The consumer line names the script; anything else holding it is the other
+  // way this fails, and the only fix is a decision somebody has to make.
+  const other = [...existing.matchAll(/consumer[^\n]*?([\w.-]+)\s*$/gim)]
+    .map((m) => m[1])
+    .find((consumerName) => consumerName && scriptName && consumerName !== scriptName)
+  if (other) {
+    console.log(
+      `[resources] ! queue ${queue} is already consumed by "${other}", not "${scriptName}". A ` +
+        'queue has exactly one consumer and these names are account-global, so two MailySend ' +
+        'deployments on one account collide here. Use a separate Cloudflare account, or remove ' +
+        "the other Worker's consumer.",
+    )
+  }
+}
+
+const missing = wantedQueues.filter((name) => !info.get(name))
+console.log(`[resources] = ${wantedQueues.length - missing.length}/${wantedQueues.length} queues`)
 
 // ---------------------------------------------------------------------------
 // R2. Buckets are addressed by name, so nothing has to be written back.
