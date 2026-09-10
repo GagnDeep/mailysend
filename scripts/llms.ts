@@ -193,7 +193,33 @@ console.log(`llms: wrote ${mapOut} (${statSync(mapOut).size} bytes)`)
  * with no configured host writes a robots.txt with no `Sitemap:` line, rather
  * than pointing crawlers at a 404 the way the committed static file did.
  */
-const hasSitemap = existsSync(join(root, 'sitemap.xml'))
+const sitemapPath = join(root, 'sitemap.xml')
+const hasSitemap = existsSync(sitemapPath)
+
+/**
+ * Correct the sitemap's XML namespace.
+ *
+ * `@tanstack/start-plugin-core` writes `xmlns="https://www.sitemaps.org/..."`.
+ * The sitemap protocol's namespace is the `http://` form, and an XML namespace
+ * is an opaque identifier compared as an exact string — the `https://` spelling
+ * is not a variant of it, it is a different namespace, so a strict parser sees
+ * `<urlset>` in an unknown vocabulary rather than a sitemap. Nothing else in the
+ * file is wrong, which is what makes this worth fixing here rather than
+ * patching a dependency: it is one string, and the check is idempotent, so it
+ * becomes a no-op the day upstream fixes it.
+ */
+if (hasSitemap) {
+  const xml = readFileSync(sitemapPath, 'utf8')
+  const corrected = xml.replace(
+    /xmlns="https:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/,
+    'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"',
+  )
+  if (corrected !== xml) {
+    writeFileSync(sitemapPath, corrected, 'utf8')
+    console.log(`llms: corrected the sitemap namespace in ${sitemapPath}`)
+  }
+}
+
 const robotsOut = join(root, 'robots.txt')
 writeFileSync(robotsOut, robotsTxt(displaySite, hasSitemap ? site : null), 'utf8')
 console.log(`llms: wrote ${robotsOut}${hasSitemap ? ' (with sitemap)' : ' (no sitemap generated)'}`)
