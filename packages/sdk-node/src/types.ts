@@ -91,12 +91,15 @@ export type EmailStatus =
   | 'scheduled'
   | 'sending'
   | 'sent'
-  | 'delivered'
   | 'delivery_delayed'
-  | 'bounced'
-  | 'complained'
-  | 'failed'
+  | 'delivered'
+  /** Engagement is a rung of the ladder, not a separate axis — see STATE_RANK. */
+  | 'opened'
+  | 'clicked'
   | 'canceled'
+  | 'complained'
+  | 'bounced'
+  | 'failed'
 
 export type EmailEventType =
   | 'email.sent'

@@ -82,17 +82,30 @@ export const BatchSendResponse = z.object({
   ),
 })
 
+/**
+ * Every state a message can be in — which means every rung of `STATE_RANK`.
+ *
+ * `opened` and `clicked` were missing, and they are not decorative: the event
+ * ladder maps those events to those states and writes them to `messages.status`
+ * like any other. So the first time anybody opened a message, every endpoint
+ * returning that row started failing the dashboard's own schema, and the logs
+ * page read "Could not load recent activity" — not for the opened message, for
+ * the whole list. `statusesAreTheLadder` in `contracts.test.ts` now holds the
+ * two lists together.
+ */
 export const EmailStatus = z.enum([
   'queued',
   'scheduled',
   'sending',
   'sent',
-  'delivered',
   'delivery_delayed',
-  'bounced',
-  'complained',
-  'failed',
+  'delivered',
+  'opened',
+  'clicked',
   'canceled',
+  'complained',
+  'bounced',
+  'failed',
 ])
 export type EmailStatus = z.infer<typeof EmailStatus>
 

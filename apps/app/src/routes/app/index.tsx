@@ -27,22 +27,24 @@ export const Route = createFileRoute('/app/')({
 })
 
 /**
- * Every `last_event` the API can return has a badge tone, but the two type
- * unions are not the same set — `sent` and `canceled` exist on both, `opened`
- * and `clicked` only on the badge. Mapping explicitly means a status the API
- * adds later renders as `queued` rather than crashing the log.
+ * Every `last_event` the API can return has a badge tone. The badge's union is
+ * the wider of the two — it also covers domains and broadcasts — so the mapping
+ * is explicit, and `Record<EmailStatus, …>` is what makes a new status a
+ * compile error here rather than a silent fallback in the log.
  */
 const STATUS_MAP: Record<EmailStatus, Status> = {
   queued: 'queued',
   scheduled: 'scheduled',
   sending: 'sending',
   sent: 'sent',
-  delivered: 'delivered',
   delivery_delayed: 'pending',
-  bounced: 'bounced',
-  complained: 'complained',
-  failed: 'failed',
+  delivered: 'delivered',
+  opened: 'opened',
+  clicked: 'clicked',
   canceled: 'canceled',
+  complained: 'complained',
+  bounced: 'bounced',
+  failed: 'failed',
 }
 
 export const toBadgeStatus = (value: string): Status =>
