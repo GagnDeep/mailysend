@@ -71,3 +71,69 @@ describe('configure', () => {
     expect(keys?.n).toBe(1)
   })
 })
+
+/**
+ * Actor bindings, on the runtime that does not take names.
+ *
+ * Every actor in MailySend is a singleton for some key, so the codebase
+ * addresses them by a name from `doName()`. The Node registry accepts those
+ * names directly, which is why the whole suite passed while a real
+ * `DurableObjectNamespace` — which wants an id — answered every actor call on
+ * Workers with "parameter 1 is not of type 'DurableObjectId'". A send failed on
+ * that, and its reported reason was a type error about a parameter.
+ */
+describe('actor bindings', () => {
+  /** What Workers hands the app: ids by name, and `get` refusing anything else. */
+  const fakeDoNamespace = () => {
+    const seen: string[] = []
+    return {
+      seen,
+      idFromName(name: string) {
+        seen.push(name)
+        return { __id: name }
+      },
+      get(id: unknown) {
+        if (typeof id !== 'object' || id === null || !('__id' in id)) {
+          throw new TypeError(
+            "Failed to execute 'get' on 'DurableObjectNamespace': parameter 1 is not of type 'DurableObjectId'.",
+          )
+        }
+        return { stub: (id as { __id: string }).__id }
+      },
+    }
+  }
+
+  it('turns a name into an id before reaching a Durable Object namespace', async () => {
+    const ns = fakeDoNamespace()
+    const env = await configure(
+      envFor(sql, { WORKSPACE_HUB: ns as never }),
+      new Request('https://mail.acme.dev/'),
+    )
+
+    expect(() => env.WORKSPACE_HUB.get('WorkspaceHub:ws_default')).not.toThrow()
+    expect(env.WORKSPACE_HUB.get('WorkspaceHub:ws_default')).toEqual({
+      stub: 'WorkspaceHub:ws_default',
+    })
+    expect(ns.seen).toContain('WorkspaceHub:ws_default')
+  })
+
+  it('is idempotent, because configure runs on every request', async () => {
+    const ns = fakeDoNamespace()
+    const env = envFor(sql, { MAILBOX: ns as never })
+    await configure(env, new Request('https://mail.acme.dev/'))
+    const twice = await configure(env, new Request('https://mail.acme.dev/'))
+    expect(twice.MAILBOX.get('Mailbox:ws_default:imb_1')).toEqual({
+      stub: 'Mailbox:ws_default:imb_1',
+    })
+  })
+
+  it('leaves a namespace that already takes names alone', async () => {
+    // The Node registry, and anything else without `idFromName`.
+    const registry = { get: (name: string) => ({ named: name }) }
+    const env = await configure(
+      envFor(sql, { SENDING_DOMAIN: registry as never }),
+      new Request('https://mail.acme.dev/'),
+    )
+    expect(env.SENDING_DOMAIN).toBe(registry)
+  })
+})

@@ -250,6 +250,18 @@ const AddDomainWizard = ({
     onError: (error) => toast.error(errorMessage(error)),
   })
 
+  /**
+   * Whether every record here is one the transport publishes itself.
+   *
+   * The old test was "are there no records at all", which stopped being true
+   * the moment Cloudflare's records were derived whether or not its credentials
+   * were present — so a Cloudflare domain got the copy-these-records
+   * instructions, the nothing-to-copy callout, and a per-row "do not add this
+   * by hand" on all four rows, all at once.
+   */
+  const records = domain?.records ?? []
+  const managed = records.length > 0 && records.every((record) => record.origin === 'observe')
+
   const submitName = () => {
     const candidate = name.trim().toLowerCase()
     // The API validates this too; doing it here as well means the reader is
@@ -271,7 +283,7 @@ const AddDomainWizard = ({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="max-w-[860px]">
+      <DialogContent className="max-h-[85dvh] max-w-[860px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add a sending domain</DialogTitle>
           <DialogDescription>
@@ -326,8 +338,8 @@ const AddDomainWizard = ({
         {step > 0 && domain ? (
           <div className="flex flex-col gap-3">
             <p className="m-0 text-[14px] text-muted">
-              {(domain.records?.length ?? 0) === 0 && identity?.external
-                ? `${domain.name} is set up by the transport itself — there is nothing for you to copy here.`
+              {managed
+                ? `${domain.name} is set up by the transport itself — there is nothing for you to copy here. The records below are listed because we check them.`
                 : step === 1
                   ? `Add these records to the DNS zone for ${domain.name}. Leave them in place — removing one later stops the domain sending.`
                   : 'We resolve each record ourselves. Anything still pending has simply not reached our resolver yet.'}
@@ -358,6 +370,10 @@ const AddDomainWizard = ({
             <DnsRecordTable
               domain={domain}
               verifying={verify.isPending}
+              // The sentence above already says who publishes these, and
+              // saying it twice above one four-row table is most of what made
+              // this screen unreadable.
+              managedNote={!managed}
               onVerify={() => {
                 setStep(2)
                 verify.mutate(domain.id)
@@ -377,7 +393,12 @@ const AddDomainWizard = ({
               </Button>
             </>
           ) : step === 1 ? (
-            <Button onClick={() => setStep(2)}>I've added the records</Button>
+            // "I've added the records" is a lie for a domain whose records
+            // nobody adds by hand. The table's own Check records is the single
+            // verify control; this one only advances.
+            <Button onClick={() => setStep(2)}>
+              {managed ? 'Continue' : "I've added the records"}
+            </Button>
           ) : (
             <>
               {domain ? (

@@ -62,12 +62,19 @@ export const DnsRecordTable = ({
   onVerify,
   verifying,
   zoneFileHref,
+  managedNote = true,
 }: {
   domain: DomainRecord
   onVerify: () => void
   verifying: boolean
   /** When given, offers the whole set as a BIND zone file. */
   zoneFileHref?: string
+  /**
+   * Whether to explain who publishes the `observe` records. The add-domain
+   * wizard says it in its own callout above the table, and hearing it twice
+   * over four rows is most of why that screen read as noise.
+   */
+  managedNote?: boolean
 }) => {
   const records = domain.records ?? []
   // Records the transport publishes itself are shown, because verification
@@ -127,7 +134,7 @@ export const DnsRecordTable = ({
         </div>
       </div>
 
-      {managed.length > 0 ? (
+      {managed.length > 0 && managedNote ? (
         <Callout variant="info" title="Some of these are published for you">
           {managed.length} of these {records.length} records are written by{' '}
           {PROVIDER_LABEL[managed[0]?.provider ?? ''] ?? managed[0]?.provider} itself when you

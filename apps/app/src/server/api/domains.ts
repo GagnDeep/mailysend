@@ -311,9 +311,16 @@ domains.post('/:id/verify', async (c) => {
   // The send path reads the domain from KV; a domain that just became verified
   // must be sendable now, not in five minutes.
   ctx.background(ctx.cache.delete(kvKey.domain(ctx.workspace.id, row.name)))
-  ctx.background(
-    ctx.env.SENDING_DOMAIN.get(doName('SendingDomain', ctx.workspace.id, row.name)).setVerification(
-      {
+  // The check has already been resolved and written by this point, so telling
+  // the actor about it is a courtesy and not part of the answer. It used to be
+  // able to fail the whole request — `.get()` throws synchronously, so it threw
+  // before `background()` was ever called — and a verify that had succeeded
+  // came back as "Something went wrong on our side."
+  try {
+    ctx.background(
+      ctx.env.SENDING_DOMAIN.get(
+        doName('SendingDomain', ctx.workspace.id, row.name),
+      ).setVerification({
         status,
         checkedAt,
         records: checked.map(({ record, status: s }) => ({
@@ -321,9 +328,11 @@ domains.post('/:id/verify', async (c) => {
           record: record.record,
           status: s,
         })),
-      },
-    ),
-  )
+      }),
+    )
+  } catch (err) {
+    console.warn('[domains] could not hand the verification to the actor', err)
+  }
 
   // The whole domain, not just the three fields that changed. A verify is the
   // one call a client makes expecting the object to be usable afterwards, and a

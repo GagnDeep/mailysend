@@ -7,6 +7,7 @@ import {
 } from '@mailysend/core'
 import { migrate } from '@mailysend/db'
 import type { Sql } from '@mailysend/platform'
+import { actorNamespace } from '@mailysend/platform/cloudflare'
 import type { Env } from './env.ts'
 
 /**
@@ -256,11 +257,14 @@ export async function configure(env: Env, request?: Request): Promise<Env> {
   // switch with a mode-derived default rather than a hardcoded rule.
   const landing = env.MS_LANDING ?? (mode === 'single' ? 'app' : 'marketing')
 
+  const actors = adaptActors(env)
+
   try {
     env.MS_SECRET = secret
     env.MS_PUBLIC_URL = publicUrl
     env.MS_MODE = mode
     env.MS_LANDING = landing
+    Object.assign(env, actors)
     return env
   } catch {
     // A frozen env is not something any runtime does today, but a copy is a
@@ -271,8 +275,51 @@ export async function configure(env: Env, request?: Request): Promise<Env> {
       MS_PUBLIC_URL: publicUrl,
       MS_MODE: mode,
       MS_LANDING: landing,
+      ...actors,
     }
   }
+}
+
+/** Every binding the application addresses by name rather than by id. */
+const ACTOR_BINDINGS = [
+  'SENDING_DOMAIN',
+  'BROADCAST',
+  'BROADCAST_COUNTER',
+  'WEBHOOK_ENDPOINT',
+  'SCHEDULE_SHARD',
+  'MAILBOX',
+  'SEGMENT',
+  'AUTOMATION_COHORT',
+  'AUTOMATION_RUN',
+  'WORKSPACE_HUB',
+] as const satisfies readonly (keyof Env)[]
+
+/**
+ * Names into Durable Object ids, on the one runtime that needs it.
+ *
+ * Every actor in MailySend is a singleton for some key — a domain, a mailbox, a
+ * workspace — so the whole codebase addresses them by a name from `doName()`.
+ * The Node registry takes those names directly, which is why the entire test
+ * suite passes; a real `DurableObjectNamespace` does not, and answers
+ * `env.WORKSPACE_HUB.get('WorkspaceHub:ws_…')` with
+ * "parameter 1 is not of type 'DurableObjectId'". `actorNamespace()` was
+ * written for exactly this and had no caller anywhere, so on Workers every
+ * actor call site threw — a failed send whose reason was a type error about a
+ * parameter, reported through the honest failure surface as `unknown`.
+ *
+ * The check is the presence of `idFromName`: a raw namespace has it, an already
+ * wrapped one does not, and the Node registry does not either — so this is safe
+ * to run on every request, which is what `configure()` does.
+ */
+function adaptActors(env: Env): Partial<Env> {
+  const patch: Record<string, unknown> = {}
+  for (const binding of ACTOR_BINDINGS) {
+    const held = env[binding] as { idFromName?: unknown } | undefined
+    if (held && typeof held.idFromName === 'function') {
+      patch[binding] = actorNamespace(held as never)
+    }
+  }
+  return patch as Partial<Env>
 }
 
 /**
