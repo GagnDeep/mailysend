@@ -99,6 +99,70 @@ export async function deliverNow(
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+/**
+ * Messages that were leased and never given a verdict.
+ *
+ * `handleOne` claims a message by setting `status = 'sending'` and a lease, and
+ * every path out of it — sent, failed, refused — clears that lease. A path that
+ * never returns leaves neither: an evicted isolate, a killed process, a
+ * redeploy mid-flight. The row then reads `sending` with no provider and no
+ * error, forever, and it is the one state a reader can do nothing about, since
+ * the message is not sent, not failed and not going to be retried.
+ *
+ * So the minute cron looks for leases that expired without anybody clearing
+ * them. A spooled envelope is still in the bucket under a deterministic key, so
+ * that message is simply delivered again — the lease guard makes a double
+ * delivery impossible if the first one did in fact land. An inline envelope
+ * lived only in the queue message, so there is nothing left to send: it is
+ * failed with a reason that says so, rather than left pretending.
+ *
+ * `grace` is deliberately more than one lease: a slow SMTP conversation that
+ * runs past its lease is still working, and stealing it would be the very
+ * double-send the lease exists to prevent.
+ */
+export async function reclaimStuckSends(env: Env, workspaceId: string): Promise<number> {
+  const sql = tenancyFor(env).db(workspaceId)
+  const grace = Date.now() - LEASE_MS
+  const { results } = await sql
+    .prepare(
+      `SELECT id FROM messages
+         WHERE workspace_id = ? AND state_rank = 20 AND lease_until IS NOT NULL AND lease_until < ?
+         ORDER BY lease_until ASC LIMIT 50`,
+    )
+    .bind(workspaceId, grace)
+    .all<{ id: string }>()
+
+  for (const row of results) {
+    // Clear the lease first, so the redelivery below can claim it — and so two
+    // overlapping cron ticks cannot both pick up the same message.
+    const taken = await sql
+      .prepare(
+        `UPDATE messages SET lease_until = NULL WHERE id = ? AND workspace_id = ?
+           AND state_rank = 20 AND lease_until IS NOT NULL AND lease_until < ?`,
+      )
+      .bind(row.id, workspaceId, grace)
+      .run()
+    if (taken.meta.changes === 0) continue
+
+    const key = r2Key.spool(workspaceId, row.id)
+    const spooled = await env.BUCKET.get(key)
+    if (spooled) {
+      await deliverNow({ kind: 'spooled', email_id: row.id, workspace_id: workspaceId, key }, env)
+      continue
+    }
+    await markFailed(
+      env,
+      { kind: 'spooled', email_id: row.id, workspace_id: workspaceId, key },
+      new SendError(
+        'permanent',
+        'cloudflare',
+        'delivery was interrupted before the transport answered, and the message could not be confirmed either way. Send it again.',
+      ),
+    )
+  }
+  return results.length
+}
+
 async function handleOne(job: SendJob, env: Env): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
 

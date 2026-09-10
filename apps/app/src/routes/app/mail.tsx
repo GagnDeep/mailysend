@@ -583,8 +583,29 @@ function MailScreen() {
           </form>
 
           {q ? (
-            <p className="m-0 px-1 text-[12px] text-muted-2">
-              Operators understood: {SEARCH_OPERATORS.map((op) => op.operator).join(' ')}
+            // What the server actually parsed, not a list of what it could
+            // have. A term the parser did not recognise arrives here as a bare
+            // word, which is visibly different from an operator and is the
+            // whole point of echoing this back.
+            <p className="m-0 flex flex-wrap items-center gap-1 px-1 text-[12px] text-muted-2">
+              {(threads.data?.query ?? []).length > 0 ? (
+                <>
+                  Searching for
+                  {(threads.data?.query ?? []).map((term) => (
+                    <Badge
+                      key={`${term.negated ? '-' : ''}${term.operator ?? ''}:${term.value}`}
+                      size="sm"
+                      variant={term.operator ? 'neutral' : 'outline'}
+                    >
+                      {term.negated ? '-' : ''}
+                      {term.operator ? `${term.operator}:` : ''}
+                      {term.value}
+                    </Badge>
+                  ))}
+                </>
+              ) : (
+                <>Operators understood: {SEARCH_OPERATORS.map((op) => op.operator).join(' ')}</>
+              )}
             </p>
           ) : null}
 

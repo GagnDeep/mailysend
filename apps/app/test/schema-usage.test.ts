@@ -43,14 +43,51 @@ function walk(dir: string): string[] {
 }
 
 /**
- * Template literals are extracted with a scanner rather than a regex, because a
- * regex cannot see nesting: `UPDATE x SET ${keys.map((k) => `${k} = ?`)}` ends
- * at the *inner* backtick under any non-recursive pattern, and the truncated
- * half then fails to parse for a reason that has nothing to do with the schema.
+ * Every string literal in the file, of all three kinds.
+ *
+ * Backticks are extracted with a scanner rather than a regex, because a regex
+ * cannot see nesting: `UPDATE x SET ${keys.map((k) => `${k} = ?`)}` ends at the
+ * *inner* backtick under any non-recursive pattern, and the truncated half then
+ * fails to parse for a reason that has nothing to do with the schema.
+ *
+ * Quoted strings are collected too, and it took a live failure to learn why:
+ * a one-line `'SELECT id FROM segments WHERE workspace_id = ? AND live = 1'`
+ * selected a column that has never existed in any migration. It was invisible
+ * to this test because it needed no interpolation and so was never written in
+ * backticks, and it threw `no such column: live` on every hourly cron tick in
+ * production instead. Comments are skipped, or an apostrophe in prose opens a
+ * string literal that runs to the next one.
  */
 function literals(source: string): string[] {
   const found: string[] = []
   for (let i = 0; i < source.length; i++) {
+    if (source[i] === '/' && source[i + 1] === '/') {
+      i = source.indexOf('\n', i)
+      if (i === -1) break
+      continue
+    }
+    if (source[i] === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      if (end === -1) break
+      i = end + 1
+      continue
+    }
+    if (source[i] === "'" || source[i] === '"') {
+      const quote = source[i]
+      let j = i + 1
+      for (; j < source.length; j++) {
+        if (source[j] === '\\') {
+          j++
+          continue
+        }
+        // Unterminated on this line means it was never a string: a stray
+        // apostrophe the comment skipping above did not cover.
+        if (source[j] === '\n' || source[j] === quote) break
+      }
+      if (source[j] === quote) found.push(source.slice(i + 1, j))
+      i = j
+      continue
+    }
     if (source[i] !== '`') continue
     const stack: Array<'tick' | 'brace'> = ['tick']
     let j = i + 1

@@ -809,6 +809,19 @@ export const MailBulkResult = z.object({
 })
 
 /**
+ * One parsed term of a search, as the server understood it.
+ *
+ * `operator` is null for a bare word, which goes to full-text search; anything
+ * else is one of the operators in `mail-search.ts`.
+ */
+export const MailQueryTerm = z.object({
+  operator: z.string().nullable(),
+  value: z.string(),
+  negated: z.boolean(),
+})
+export type MailQueryTermRecord = z.infer<typeof MailQueryTerm>
+
+/**
  * The thread list carries the parsed query back so the search bar can show what
  * the server actually understood — an operator we silently dropped is how a
  * reader ends up trusting a filtered list that was never filtered.
@@ -818,7 +831,7 @@ export const MailThreadList = z.object({
   data: z.array(MailThread),
   has_more: z.boolean(),
   next_cursor: z.string().nullable().optional(),
-  query: z.array(z.string()).optional(),
+  query: z.array(MailQueryTerm).optional(),
 })
 export type MailThreadListRecord = z.infer<typeof MailThreadList>
 

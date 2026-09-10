@@ -711,3 +711,123 @@ describe('immediate sending', () => {
     expect(body.data.map((t) => t.subject)).toContain('No queue here')
   })
 })
+
+/**
+ * The response the browser is actually given, checked against the schema the
+ * browser actually parses it with.
+ *
+ * The thread list echoes the parsed query back, and the client's schema said
+ * `string[]` while the server had always sent `{operator, value, negated}[]`.
+ * Zod rejected the whole response, so clicking any mailbox in the rail — which
+ * is just `mailbox:<id>` in the search box — replaced the conversation list
+ * with "Could not load your conversations". Typechecking cannot see across the
+ * wire; this can.
+ */
+describe('the wire format the dashboard parses', () => {
+  it('returns a thread list the client schema accepts, query and all', async () => {
+    const { MailThreadList } = await import('../src/lib/api-client.ts')
+    const listHarness = await harness()
+    const userId = await claimFor(listHarness)
+    const listCookie = await sessionFor(listHarness, userId)
+    await verifiedDomain(listHarness, 'acme.dev')
+
+    const created = await listHarness.fetch('/v1/inbound/mailboxes', {
+      method: 'POST',
+      cookie: listCookie,
+      body: JSON.stringify({ address: 'support@acme.dev' }),
+    })
+    expect(created.status).toBeLessThan(300)
+    const mailbox = (await created.json()) as { id: string }
+
+    // Exactly what the rail puts in the search box when a mailbox is clicked.
+    const res = await listHarness.fetch(
+      `/v1/mail/threads?q=${encodeURIComponent(`mailbox:${mailbox.id} -is:read urgent`)}`,
+      { cookie: listCookie },
+    )
+    expect(res.status).toBe(200)
+    const parsed = MailThreadList.safeParse(await res.json())
+    expect(parsed.error?.issues ?? []).toEqual([])
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.query).toEqual([
+      { operator: 'mailbox', value: mailbox.id, negated: false },
+      { operator: 'is', value: 'read', negated: true },
+      { operator: null, value: 'urgent', negated: false },
+    ])
+  })
+})
+
+/**
+ * The guarantee behind inline sending: no path leaves a message at `sending`.
+ *
+ * The lease is what makes redelivery safe, and it is also what a dead worker
+ * leaves behind — a row claimed by nobody, past `queued`, short of `failed`,
+ * with no provider and no error. This is the sweep that ends that state, one
+ * way or the other.
+ */
+describe('sends whose worker died', () => {
+  const stuck = async (h: Harness, cookie: string) => {
+    const res = await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        from: 'team@acme.dev',
+        to: ['someone@example.com'],
+        subject: 'Held',
+        text: 'Leased and abandoned.',
+        immediate: false,
+      }),
+    })
+    const { id } = (await res.json()) as { id: string }
+    // Exactly what `handleOne` writes when it claims a message, with a lease
+    // that has since expired and no verdict after it.
+    await h.sql
+      .prepare(
+        `UPDATE messages SET status = 'sending', state_rank = 20, lease_until = ? WHERE id = ?`,
+      )
+      .bind(Date.now() - 10 * 60_000, id)
+      .run()
+    return id
+  }
+
+  it('fails an abandoned send whose envelope is gone, with a reason', async () => {
+    const { reclaimStuckSends } = await import('../src/server/send/consumer.ts')
+    const h2 = await harness()
+    const userId = await claimFor(h2)
+    const cookie = await sessionFor(h2, userId)
+    await verifiedDomain(h2, 'acme.dev')
+    const id = await stuck(h2, cookie)
+
+    await reclaimStuckSends(h2.env, 'ws_default')
+
+    const row = await h2.sql
+      .prepare('SELECT status, error_message, lease_until FROM messages WHERE id = ?')
+      .bind(id)
+      .first<{ status: string; error_message: string; lease_until: number | null }>()
+    expect(row?.status).toBe('failed')
+    expect(row?.error_message).toMatch(/interrupted/i)
+    expect(row?.lease_until).toBeNull()
+  })
+
+  it('leaves a lease that has not expired alone', async () => {
+    const { reclaimStuckSends } = await import('../src/server/send/consumer.ts')
+    const h2 = await harness()
+    const userId = await claimFor(h2)
+    const cookie = await sessionFor(h2, userId)
+    await verifiedDomain(h2, 'acme.dev')
+    const id = await stuck(h2, cookie)
+    // A slow SMTP conversation, still in progress. Stealing it is the double
+    // send the lease exists to prevent.
+    await h2.sql
+      .prepare('UPDATE messages SET lease_until = ? WHERE id = ?')
+      .bind(Date.now() + 60_000, id)
+      .run()
+
+    await reclaimStuckSends(h2.env, 'ws_default')
+
+    const row = await h2.sql
+      .prepare('SELECT status FROM messages WHERE id = ?')
+      .bind(id)
+      .first<{ status: string }>()
+    expect(row?.status).toBe('sending')
+  })
+})

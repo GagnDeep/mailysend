@@ -1,6 +1,7 @@
-import { DEFAULT_WORKSPACE, doName, monthKey, r2Key } from '@mailysend/core'
+import { DEFAULT_WORKSPACE, monthKey, r2Key } from '@mailysend/core'
 import { tenancyFor } from './context.ts'
 import type { Env } from './env.ts'
+import { reclaimStuckSends } from './send/consumer.ts'
 
 /**
  * Scheduled maintenance.
@@ -16,7 +17,12 @@ export async function runCron(cron: string, env: Env): Promise<void> {
       await sweepExpired(env)
       break
     case '0 * * * *':
-      await hourlySegmentSweep(env)
+      // Nothing hourly of our own. `SegmentActor` arms its own alarm on the
+      // hour boundary and re-arms it after each firing, on Workers and on Node
+      // alike — the cron task that used to be here duplicated that, called a
+      // `sweep()` the actor does not have, and selected a `segments.live`
+      // column that has never existed, so every hourly tick since the first
+      // deploy has thrown `no such column: live` and done nothing else.
       break
     case '0 3 * * *':
       await dailyMaintenance(env)
@@ -38,6 +44,12 @@ export async function runCron(cron: string, env: Env): Promise<void> {
 async function sweepExpired(env: Env): Promise<void> {
   const sql = tenancyFor(env).db(DEFAULT_WORKSPACE)
   const now = new Date().toISOString()
+  // Sends whose worker died holding the lease. Not an expiry like the rest of
+  // this function, but it belongs on the same minute tick: a message stuck at
+  // `sending` is invisible to every other mechanism we have.
+  await reclaimStuckSends(env, DEFAULT_WORKSPACE).catch((err) => {
+    console.error('[cron] could not reclaim stuck sends', err)
+  })
   await sql.batch([
     sql.prepare('DELETE FROM idempotency_keys WHERE expires_at < ?').bind(now),
     sql
@@ -64,27 +76,6 @@ async function sweepExpired(env: Env): Promise<void> {
     // 9am" mean 9am.
     sql.prepare('UPDATE mail_threads SET snoozed_until = NULL WHERE snoozed_until <= ?').bind(now),
   ])
-}
-
-/**
- * The hourly segment boundary sweep.
- *
- * This is the mechanism that makes `last_open < 30d` actually live. Nothing
- * writes to a contact when a relative window expires, so a write-driven delta
- * cannot see it — but only contacts whose timestamp falls in the hour that just
- * expired can have flipped, and that is one indexed range scan per window
- * rather than a table scan.
- */
-async function hourlySegmentSweep(env: Env): Promise<void> {
-  const sql = tenancyFor(env).db(DEFAULT_WORKSPACE)
-  const { results } = await sql
-    .prepare('SELECT id FROM segments WHERE workspace_id = ? AND live = 1')
-    .bind(DEFAULT_WORKSPACE)
-    .all<{ id: string }>()
-  for (const segment of results) {
-    const actor = env.SEGMENT.get(doName('Segment', DEFAULT_WORKSPACE, segment.id))
-    await actor.sweep()
-  }
 }
 
 async function dailyMaintenance(env: Env): Promise<void> {
