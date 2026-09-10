@@ -65,7 +65,7 @@ if you would rather be explicit.
 | 🎨 **Templates** | Handlebars, MJML, a restricted JSX AST compiler, versioning with diff and rollback |
 | 🔗 **Webhooks** | HMAC-signed, retried on a queue then a durable tail, every attempt's response stored, replayable |
 | 🔐 **Auth** | Passkeys and single-use recovery codes for the dashboard, Cloudflare Access when you have it, a CLI device flow, hashed API keys for the API, RBAC, invites, audit log — and no password store anywhere |
-| 🚀 **SEO built in** | 14 prerendered marketing pages, JSON-LD, OG images, `sitemap.xml`, `robots.txt`, `llms.txt` |
+| 🚀 **SEO built in** | 42 prerendered pages (marketing, docs and 26 guides), JSON-LD, OG images, `sitemap.xml`, `robots.txt`, `llms.txt` |
 
 ---
 

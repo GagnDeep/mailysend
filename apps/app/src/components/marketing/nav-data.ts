@@ -58,6 +58,7 @@ export const PRODUCT_GROUP: NavGroup = {
 
 export const FLAT_LINKS: NavLink[] = [
   { label: 'Docs', href: '/docs' },
+  { label: 'Guides', href: '/guides' },
   { label: 'Cost', href: '/pricing' },
   { label: 'Compare', href: '/compare' },
   { label: 'Resources', href: '/resources' },
@@ -105,12 +106,33 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
       { label: 'Migration guide', href: '/compare#migrate' },
     ],
   },
+  /**
+   * Hand-written on purpose, unlike the page lists in `content/site-map.ts`.
+   * This is editorial curation — four flagship guides out of twenty-six, chosen
+   * because they are the ones people arrive looking for — and half of these
+   * entries are `#anchor` links rather than pages, which a generated list
+   * cannot express.
+   *
+   * It used to promise an "Engineering blog" at `/resources#blog`, which was
+   * three teaser cards with no page behind any of them. That link is now the
+   * guides index, which is the thing it was always pretending to be.
+   */
+  {
+    title: 'GUIDES',
+    links: [
+      { label: 'All guides', href: '/guides' },
+      { label: 'SPF, DKIM & DMARC', href: '/guides/spf-dkim-dmarc' },
+      { label: 'Why email goes to spam', href: '/guides/why-email-goes-to-spam' },
+      { label: 'Read a bounce', href: '/guides/read-a-bounce' },
+      { label: 'What 100k emails costs', href: '/guides/what-100k-emails-costs' },
+      { label: 'Migrate from Resend', href: '/guides/migrate-from-resend' },
+    ],
+  },
   {
     title: 'RESOURCES',
     links: [
       { label: 'Deliverability glossary', href: '/resources#glossary' },
       { label: 'Changelog', href: '/resources#changelog' },
-      { label: 'Engineering blog', href: '/resources#blog' },
       { label: 'Security & compliance', href: '/resources#security' },
       { label: 'Sitemap', href: '/resources#sitemap' },
     ],

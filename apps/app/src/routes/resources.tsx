@@ -17,7 +17,9 @@ import {
   DEPLOY_DURATION_LONG,
   DeployTerminal,
 } from '~/components/marketing/deploy'
+import { GuideCard } from '~/components/marketing/guide-card.tsx'
 import { PageShell, Section } from '~/components/marketing/page-shell'
+import { GUIDES, PUBLIC_PAGES } from '~/content/site-map.ts'
 import { breadcrumbSchema, DEPLOY_URL, pageHead, REPO_URL } from '~/seo'
 import { VERSION } from '~/version'
 
@@ -181,48 +183,6 @@ const GLOSSARY: { term: string; body: ReactNode }[] = [
   },
 ]
 
-/**
- * The notes are teasers: a section label, a headline and a summary, with no
- * body, author or publication date anywhere on the artboard. `BlogPosting`
- * requires a `datePublished`, and inventing one to satisfy a validator is
- * exactly the kind of structured data that earns a manual action — so these
- * render as cards and emit no schema until the posts themselves exist.
- */
-const NOTES: { section: string; title: string; body: ReactNode }[] = [
-  {
-    section: 'ARCHITECTURE',
-    title: 'Why every mailbox is its own Durable Object',
-    body: (
-      <>
-        Threading, search and attachment state per mailbox, with SQLite inside the object — and what
-        that means for isolation and cost.
-      </>
-    ),
-  },
-  {
-    section: 'DELIVERABILITY',
-    title: 'Reading DMARC reports so you never have to',
-    body: (
-      <>
-        Parsing aggregate XML at the edge, spotting unaligned third-party senders, and turning it
-        into one number.
-      </>
-    ),
-  },
-  {
-    section: 'COST',
-    title: 'A million emails for the price of a dinner',
-    body: (
-      <>
-        Every Cloudflare line item at three volumes, and the four habits that keep the bill boring.{' '}
-        <a href="/stack" className="font-semibold text-accent hover:text-ink">
-          The numbers →
-        </a>
-      </>
-    ),
-  },
-]
-
 const SECURITY: { term: string; body: ReactNode }[] = [
   {
     term: 'Data path',
@@ -294,27 +254,6 @@ const DEPENDENCIES = [
   'Queues · DO · D1 · R2',
   'Workflows',
   'SDK registries',
-]
-
-const SITEMAP = [
-  { href: '/', label: 'Home', blurb: 'What it is, in three lines of code' },
-  { href: '/docs', label: 'Docs', blurb: 'Quickstart, full API, SDKs, providers' },
-  { href: '/analytics', label: 'Analytics', blurb: 'Placement, DMARC, exports, alerts' },
-  { href: '/stack', label: 'Stack & cost', blurb: 'Eleven Cloudflare products, priced' },
-  { href: '/pricing', label: 'What it costs', blurb: 'No plans — the calculator' },
-  { href: '/use-cases', label: 'Use cases', blurb: 'OTPs, receipts, drips, inbound, agents' },
-  {
-    href: '/compare',
-    label: 'Compare & migrate',
-    blurb: 'Resend, SES, SendGrid, Postmark, Mailgun',
-  },
-  { href: '/dashboard-tour', label: 'Product tour', blurb: 'Six dashboard screens' },
-  { href: '/resources', label: 'Resources', blurb: 'Deploy guide, changelog, glossary, status' },
-  { href: '/sign-in', label: 'Sign in', blurb: 'Cloudflare Access or a one-time code' },
-  { href: '/setup', label: 'Setup', blurb: 'Claim your instance after the deploy' },
-  { href: '/legal/privacy', label: 'Privacy', blurb: 'What we hold, and what we cannot see' },
-  { href: '/legal/terms', label: 'Terms', blurb: 'MIT, as-is, and acceptable use' },
-  { href: '/legal/dpa', label: 'DPA', blurb: 'Roles, sub-processors, transfers' },
 ]
 
 export const Route = createFileRoute('/resources')({
@@ -471,19 +410,29 @@ function ResourcesPage() {
         </dl>
       </Section>
 
+      {/*
+        This section was three teaser cards with a title, a paragraph and no
+        page behind any of them, and the footer linked to it as an "Engineering
+        blog". The guides are the thing it was pretending to be, so it now shows
+        six of them and points at the index for the rest.
+      */}
       <Section id="blog" className="scroll-mt-24 py-16 sm:py-20">
-        <h2 className="ms-display-2 m-0">Engineering notes</h2>
-        <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-3">
-          {NOTES.map((note) => (
-            <article key={note.title} className="rounded-tile border border-line bg-card p-6">
-              <Eyebrow>{note.section}</Eyebrow>
-              <h3 className="mt-3 mb-2 text-[18px] font-semibold -tracking-[0.015em] text-ink">
-                {note.title}
-              </h3>
-              <p className="m-0 text-[14.5px] leading-[1.65] text-muted">{note.body}</p>
-            </article>
+        <SectionHeader
+          title="Guides"
+          align="start"
+          lede="Task-shaped, and several of them run the product's own code in the page rather than describing what it would do."
+        />
+        <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {GUIDES.slice(0, 6).map((item) => (
+            <GuideCard key={item.slug} guide={item} />
           ))}
         </div>
+        <a
+          href="/guides"
+          className="mt-6 inline-block text-[15px] font-semibold text-accent underline underline-offset-4"
+        >
+          All {GUIDES.length} guides →
+        </a>
       </Section>
 
       <Section id="security" tone="card" className="scroll-mt-24 py-16 sm:py-20">
@@ -537,12 +486,22 @@ function ResourcesPage() {
           align="start"
           lede="No dead ends. If you ever feel lost, this is the map."
         />
+        {/*
+          Driven by `content/site-map.ts`, which is the same list that decides
+          what gets prerendered and what appears in sitemap.xml. This used to be
+          a fourteen-entry literal that had already fallen behind the fifteen
+          routes the build produced.
+
+          The twenty-six guides are deliberately not dumped into this grid — a
+          forty-one-card wall is not a map. They get one entry pointing at their
+          own index, which is organised by track.
+        */}
         <nav aria-label="All pages" className="mt-10">
           <ul className="grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
-            {SITEMAP.map((page) => (
-              <li key={page.href}>
+            {PUBLIC_PAGES.map((page) => (
+              <li key={page.path}>
                 <a
-                  href={page.href}
+                  href={page.path}
                   className="block rounded-tile border border-line bg-paper p-4 no-underline transition-colors duration-[0.18s] hover:border-ink"
                 >
                   <span className="block text-[15px] font-semibold text-ink">{page.label}</span>

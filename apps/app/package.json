@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 8917",
-    "build": "vite build && tsx ../../scripts/llms-full.ts .output/client",
-    "build:node": "MS_TARGET=node vite build && tsx ../../scripts/llms-full.ts .output/client",
-    "build:cf": "MS_TARGET=cloudflare vite build && tsx ../../scripts/llms-full.ts .output-cf/client",
+    "build": "vite build && tsx ../../scripts/llms.ts .output/client",
+    "build:node": "MS_TARGET=node vite build && tsx ../../scripts/llms.ts .output/client",
+    "build:cf": "MS_TARGET=cloudflare vite build && tsx ../../scripts/llms.ts .output-cf/client",
     "start": "node node-server.mjs",
     "preview": "pnpm run build:cf && wrangler dev -c .output-cf/server/wrangler.json",
     "deploy:cf": "pnpm run build:cf && wrangler deploy -c .output-cf/server/wrangler.json",

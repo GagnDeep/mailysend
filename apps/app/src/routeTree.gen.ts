@@ -36,6 +36,33 @@ import { Route as AppPreferencesRouteImport } from './routes/app/preferences'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AppSuppressionsRouteImport } from './routes/app/suppressions'
 import { Route as AppTeamRouteImport } from './routes/app/team'
+import { Route as GuidesIndexRouteImport } from './routes/guides/index'
+import { Route as GuidesApiKeysAndEnvironmentsRouteImport } from './routes/guides/api-keys-and-environments'
+import { Route as GuidesAutomationsInstanceVsCohortRouteImport } from './routes/guides/automations-instance-vs-cohort'
+import { Route as GuidesBatchAndScheduleRouteImport } from './routes/guides/batch-and-schedule'
+import { Route as GuidesBroadcastsAtScaleRouteImport } from './routes/guides/broadcasts-at-scale'
+import { Route as GuidesChooseASendingTransportRouteImport } from './routes/guides/choose-a-sending-transport'
+import { Route as GuidesClaimYourInstanceRouteImport } from './routes/guides/claim-your-instance'
+import { Route as GuidesDebugA550RejectionRouteImport } from './routes/guides/debug-a-550-rejection'
+import { Route as GuidesDeployToCloudflareRouteImport } from './routes/guides/deploy-to-cloudflare'
+import { Route as GuidesDmarcFromNoneToRejectRouteImport } from './routes/guides/dmarc-from-none-to-reject'
+import { Route as GuidesInboxPlacementVsDeliveryRouteImport } from './routes/guides/inbox-placement-vs-delivery'
+import { Route as GuidesMcpAgentInboxRouteImport } from './routes/guides/mcp-agent-inbox'
+import { Route as GuidesMigrateFromResendRouteImport } from './routes/guides/migrate-from-resend'
+import { Route as GuidesOpenRatesAndAppleMppRouteImport } from './routes/guides/open-rates-and-apple-mpp'
+import { Route as GuidesReadABounceRouteImport } from './routes/guides/read-a-bounce'
+import { Route as GuidesReceiveEmailRouteImport } from './routes/guides/receive-email'
+import { Route as GuidesSegmentsQueryLanguageRouteImport } from './routes/guides/segments-query-language'
+import { Route as GuidesSelfHostOnANodeServerRouteImport } from './routes/guides/self-host-on-a-node-server'
+import { Route as GuidesSendYourFirstEmailRouteImport } from './routes/guides/send-your-first-email'
+import { Route as GuidesSpfDkimDmarcRouteImport } from './routes/guides/spf-dkim-dmarc'
+import { Route as GuidesTemplatesHandlebarsMjmlRouteImport } from './routes/guides/templates-handlebars-mjml'
+import { Route as GuidesUnsubscribeAndPreferencesRouteImport } from './routes/guides/unsubscribe-and-preferences'
+import { Route as GuidesVerifyASendingDomainRouteImport } from './routes/guides/verify-a-sending-domain'
+import { Route as GuidesWarmUpASendingDomainRouteImport } from './routes/guides/warm-up-a-sending-domain'
+import { Route as GuidesWebhooksEndToEndRouteImport } from './routes/guides/webhooks-end-to-end'
+import { Route as GuidesWhat100kEmailsCostsRouteImport } from './routes/guides/what-100k-emails-costs'
+import { Route as GuidesWhyEmailGoesToSpamRouteImport } from './routes/guides/why-email-goes-to-spam'
 import { Route as LegalDpaRouteImport } from './routes/legal/dpa'
 import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
@@ -191,6 +218,158 @@ const AppTeamRoute = AppTeamRouteImport.update({
   path: '/team',
   getParentRoute: () => AppRoute,
 } as any)
+const GuidesIndexRoute = GuidesIndexRouteImport.update({
+  id: '/guides/',
+  path: '/guides/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesApiKeysAndEnvironmentsRoute =
+  GuidesApiKeysAndEnvironmentsRouteImport.update({
+    id: '/guides/api-keys-and-environments',
+    path: '/guides/api-keys-and-environments',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesAutomationsInstanceVsCohortRoute =
+  GuidesAutomationsInstanceVsCohortRouteImport.update({
+    id: '/guides/automations-instance-vs-cohort',
+    path: '/guides/automations-instance-vs-cohort',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesBatchAndScheduleRoute = GuidesBatchAndScheduleRouteImport.update({
+  id: '/guides/batch-and-schedule',
+  path: '/guides/batch-and-schedule',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesBroadcastsAtScaleRoute = GuidesBroadcastsAtScaleRouteImport.update({
+  id: '/guides/broadcasts-at-scale',
+  path: '/guides/broadcasts-at-scale',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesChooseASendingTransportRoute =
+  GuidesChooseASendingTransportRouteImport.update({
+    id: '/guides/choose-a-sending-transport',
+    path: '/guides/choose-a-sending-transport',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesClaimYourInstanceRoute = GuidesClaimYourInstanceRouteImport.update({
+  id: '/guides/claim-your-instance',
+  path: '/guides/claim-your-instance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesDebugA550RejectionRoute =
+  GuidesDebugA550RejectionRouteImport.update({
+    id: '/guides/debug-a-550-rejection',
+    path: '/guides/debug-a-550-rejection',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesDeployToCloudflareRoute =
+  GuidesDeployToCloudflareRouteImport.update({
+    id: '/guides/deploy-to-cloudflare',
+    path: '/guides/deploy-to-cloudflare',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesDmarcFromNoneToRejectRoute =
+  GuidesDmarcFromNoneToRejectRouteImport.update({
+    id: '/guides/dmarc-from-none-to-reject',
+    path: '/guides/dmarc-from-none-to-reject',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesInboxPlacementVsDeliveryRoute =
+  GuidesInboxPlacementVsDeliveryRouteImport.update({
+    id: '/guides/inbox-placement-vs-delivery',
+    path: '/guides/inbox-placement-vs-delivery',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesMcpAgentInboxRoute = GuidesMcpAgentInboxRouteImport.update({
+  id: '/guides/mcp-agent-inbox',
+  path: '/guides/mcp-agent-inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesMigrateFromResendRoute = GuidesMigrateFromResendRouteImport.update({
+  id: '/guides/migrate-from-resend',
+  path: '/guides/migrate-from-resend',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesOpenRatesAndAppleMppRoute =
+  GuidesOpenRatesAndAppleMppRouteImport.update({
+    id: '/guides/open-rates-and-apple-mpp',
+    path: '/guides/open-rates-and-apple-mpp',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesReadABounceRoute = GuidesReadABounceRouteImport.update({
+  id: '/guides/read-a-bounce',
+  path: '/guides/read-a-bounce',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesReceiveEmailRoute = GuidesReceiveEmailRouteImport.update({
+  id: '/guides/receive-email',
+  path: '/guides/receive-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesSegmentsQueryLanguageRoute =
+  GuidesSegmentsQueryLanguageRouteImport.update({
+    id: '/guides/segments-query-language',
+    path: '/guides/segments-query-language',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesSelfHostOnANodeServerRoute =
+  GuidesSelfHostOnANodeServerRouteImport.update({
+    id: '/guides/self-host-on-a-node-server',
+    path: '/guides/self-host-on-a-node-server',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesSendYourFirstEmailRoute =
+  GuidesSendYourFirstEmailRouteImport.update({
+    id: '/guides/send-your-first-email',
+    path: '/guides/send-your-first-email',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesSpfDkimDmarcRoute = GuidesSpfDkimDmarcRouteImport.update({
+  id: '/guides/spf-dkim-dmarc',
+  path: '/guides/spf-dkim-dmarc',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesTemplatesHandlebarsMjmlRoute =
+  GuidesTemplatesHandlebarsMjmlRouteImport.update({
+    id: '/guides/templates-handlebars-mjml',
+    path: '/guides/templates-handlebars-mjml',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesUnsubscribeAndPreferencesRoute =
+  GuidesUnsubscribeAndPreferencesRouteImport.update({
+    id: '/guides/unsubscribe-and-preferences',
+    path: '/guides/unsubscribe-and-preferences',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesVerifyASendingDomainRoute =
+  GuidesVerifyASendingDomainRouteImport.update({
+    id: '/guides/verify-a-sending-domain',
+    path: '/guides/verify-a-sending-domain',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesWarmUpASendingDomainRoute =
+  GuidesWarmUpASendingDomainRouteImport.update({
+    id: '/guides/warm-up-a-sending-domain',
+    path: '/guides/warm-up-a-sending-domain',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesWebhooksEndToEndRoute = GuidesWebhooksEndToEndRouteImport.update({
+  id: '/guides/webhooks-end-to-end',
+  path: '/guides/webhooks-end-to-end',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesWhat100kEmailsCostsRoute =
+  GuidesWhat100kEmailsCostsRouteImport.update({
+    id: '/guides/what-100k-emails-costs',
+    path: '/guides/what-100k-emails-costs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const GuidesWhyEmailGoesToSpamRoute =
+  GuidesWhyEmailGoesToSpamRouteImport.update({
+    id: '/guides/why-email-goes-to-spam',
+    path: '/guides/why-email-goes-to-spam',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const LegalDpaRoute = LegalDpaRouteImport.update({
   id: '/legal/dpa',
   path: '/legal/dpa',
@@ -316,10 +495,37 @@ export interface FileRoutesByFullPath {
   '/app/settings': typeof AppSettingsRoute
   '/app/suppressions': typeof AppSuppressionsRoute
   '/app/team': typeof AppTeamRoute
+  '/guides/api-keys-and-environments': typeof GuidesApiKeysAndEnvironmentsRoute
+  '/guides/automations-instance-vs-cohort': typeof GuidesAutomationsInstanceVsCohortRoute
+  '/guides/batch-and-schedule': typeof GuidesBatchAndScheduleRoute
+  '/guides/broadcasts-at-scale': typeof GuidesBroadcastsAtScaleRoute
+  '/guides/choose-a-sending-transport': typeof GuidesChooseASendingTransportRoute
+  '/guides/claim-your-instance': typeof GuidesClaimYourInstanceRoute
+  '/guides/debug-a-550-rejection': typeof GuidesDebugA550RejectionRoute
+  '/guides/deploy-to-cloudflare': typeof GuidesDeployToCloudflareRoute
+  '/guides/dmarc-from-none-to-reject': typeof GuidesDmarcFromNoneToRejectRoute
+  '/guides/inbox-placement-vs-delivery': typeof GuidesInboxPlacementVsDeliveryRoute
+  '/guides/mcp-agent-inbox': typeof GuidesMcpAgentInboxRoute
+  '/guides/migrate-from-resend': typeof GuidesMigrateFromResendRoute
+  '/guides/open-rates-and-apple-mpp': typeof GuidesOpenRatesAndAppleMppRoute
+  '/guides/read-a-bounce': typeof GuidesReadABounceRoute
+  '/guides/receive-email': typeof GuidesReceiveEmailRoute
+  '/guides/segments-query-language': typeof GuidesSegmentsQueryLanguageRoute
+  '/guides/self-host-on-a-node-server': typeof GuidesSelfHostOnANodeServerRoute
+  '/guides/send-your-first-email': typeof GuidesSendYourFirstEmailRoute
+  '/guides/spf-dkim-dmarc': typeof GuidesSpfDkimDmarcRoute
+  '/guides/templates-handlebars-mjml': typeof GuidesTemplatesHandlebarsMjmlRoute
+  '/guides/unsubscribe-and-preferences': typeof GuidesUnsubscribeAndPreferencesRoute
+  '/guides/verify-a-sending-domain': typeof GuidesVerifyASendingDomainRoute
+  '/guides/warm-up-a-sending-domain': typeof GuidesWarmUpASendingDomainRoute
+  '/guides/webhooks-end-to-end': typeof GuidesWebhooksEndToEndRoute
+  '/guides/what-100k-emails-costs': typeof GuidesWhat100kEmailsCostsRoute
+  '/guides/why-email-goes-to-spam': typeof GuidesWhyEmailGoesToSpamRoute
   '/legal/dpa': typeof LegalDpaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/app/': typeof AppIndexRoute
+  '/guides/': typeof GuidesIndexRoute
   '/app/audiences/$audienceId': typeof AppAudiencesAudienceIdRoute
   '/app/automations/$automationId': typeof AppAutomationsAutomationIdRoute
   '/app/broadcasts/$broadcastId': typeof AppBroadcastsBroadcastIdRoute
@@ -363,10 +569,37 @@ export interface FileRoutesByTo {
   '/app/settings': typeof AppSettingsRoute
   '/app/suppressions': typeof AppSuppressionsRoute
   '/app/team': typeof AppTeamRoute
+  '/guides/api-keys-and-environments': typeof GuidesApiKeysAndEnvironmentsRoute
+  '/guides/automations-instance-vs-cohort': typeof GuidesAutomationsInstanceVsCohortRoute
+  '/guides/batch-and-schedule': typeof GuidesBatchAndScheduleRoute
+  '/guides/broadcasts-at-scale': typeof GuidesBroadcastsAtScaleRoute
+  '/guides/choose-a-sending-transport': typeof GuidesChooseASendingTransportRoute
+  '/guides/claim-your-instance': typeof GuidesClaimYourInstanceRoute
+  '/guides/debug-a-550-rejection': typeof GuidesDebugA550RejectionRoute
+  '/guides/deploy-to-cloudflare': typeof GuidesDeployToCloudflareRoute
+  '/guides/dmarc-from-none-to-reject': typeof GuidesDmarcFromNoneToRejectRoute
+  '/guides/inbox-placement-vs-delivery': typeof GuidesInboxPlacementVsDeliveryRoute
+  '/guides/mcp-agent-inbox': typeof GuidesMcpAgentInboxRoute
+  '/guides/migrate-from-resend': typeof GuidesMigrateFromResendRoute
+  '/guides/open-rates-and-apple-mpp': typeof GuidesOpenRatesAndAppleMppRoute
+  '/guides/read-a-bounce': typeof GuidesReadABounceRoute
+  '/guides/receive-email': typeof GuidesReceiveEmailRoute
+  '/guides/segments-query-language': typeof GuidesSegmentsQueryLanguageRoute
+  '/guides/self-host-on-a-node-server': typeof GuidesSelfHostOnANodeServerRoute
+  '/guides/send-your-first-email': typeof GuidesSendYourFirstEmailRoute
+  '/guides/spf-dkim-dmarc': typeof GuidesSpfDkimDmarcRoute
+  '/guides/templates-handlebars-mjml': typeof GuidesTemplatesHandlebarsMjmlRoute
+  '/guides/unsubscribe-and-preferences': typeof GuidesUnsubscribeAndPreferencesRoute
+  '/guides/verify-a-sending-domain': typeof GuidesVerifyASendingDomainRoute
+  '/guides/warm-up-a-sending-domain': typeof GuidesWarmUpASendingDomainRoute
+  '/guides/webhooks-end-to-end': typeof GuidesWebhooksEndToEndRoute
+  '/guides/what-100k-emails-costs': typeof GuidesWhat100kEmailsCostsRoute
+  '/guides/why-email-goes-to-spam': typeof GuidesWhyEmailGoesToSpamRoute
   '/legal/dpa': typeof LegalDpaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/app': typeof AppIndexRoute
+  '/guides': typeof GuidesIndexRoute
   '/app/audiences/$audienceId': typeof AppAudiencesAudienceIdRoute
   '/app/automations/$automationId': typeof AppAutomationsAutomationIdRoute
   '/app/broadcasts/$broadcastId': typeof AppBroadcastsBroadcastIdRoute
@@ -412,10 +645,37 @@ export interface FileRoutesById {
   '/app/settings': typeof AppSettingsRoute
   '/app/suppressions': typeof AppSuppressionsRoute
   '/app/team': typeof AppTeamRoute
+  '/guides/api-keys-and-environments': typeof GuidesApiKeysAndEnvironmentsRoute
+  '/guides/automations-instance-vs-cohort': typeof GuidesAutomationsInstanceVsCohortRoute
+  '/guides/batch-and-schedule': typeof GuidesBatchAndScheduleRoute
+  '/guides/broadcasts-at-scale': typeof GuidesBroadcastsAtScaleRoute
+  '/guides/choose-a-sending-transport': typeof GuidesChooseASendingTransportRoute
+  '/guides/claim-your-instance': typeof GuidesClaimYourInstanceRoute
+  '/guides/debug-a-550-rejection': typeof GuidesDebugA550RejectionRoute
+  '/guides/deploy-to-cloudflare': typeof GuidesDeployToCloudflareRoute
+  '/guides/dmarc-from-none-to-reject': typeof GuidesDmarcFromNoneToRejectRoute
+  '/guides/inbox-placement-vs-delivery': typeof GuidesInboxPlacementVsDeliveryRoute
+  '/guides/mcp-agent-inbox': typeof GuidesMcpAgentInboxRoute
+  '/guides/migrate-from-resend': typeof GuidesMigrateFromResendRoute
+  '/guides/open-rates-and-apple-mpp': typeof GuidesOpenRatesAndAppleMppRoute
+  '/guides/read-a-bounce': typeof GuidesReadABounceRoute
+  '/guides/receive-email': typeof GuidesReceiveEmailRoute
+  '/guides/segments-query-language': typeof GuidesSegmentsQueryLanguageRoute
+  '/guides/self-host-on-a-node-server': typeof GuidesSelfHostOnANodeServerRoute
+  '/guides/send-your-first-email': typeof GuidesSendYourFirstEmailRoute
+  '/guides/spf-dkim-dmarc': typeof GuidesSpfDkimDmarcRoute
+  '/guides/templates-handlebars-mjml': typeof GuidesTemplatesHandlebarsMjmlRoute
+  '/guides/unsubscribe-and-preferences': typeof GuidesUnsubscribeAndPreferencesRoute
+  '/guides/verify-a-sending-domain': typeof GuidesVerifyASendingDomainRoute
+  '/guides/warm-up-a-sending-domain': typeof GuidesWarmUpASendingDomainRoute
+  '/guides/webhooks-end-to-end': typeof GuidesWebhooksEndToEndRoute
+  '/guides/what-100k-emails-costs': typeof GuidesWhat100kEmailsCostsRoute
+  '/guides/why-email-goes-to-spam': typeof GuidesWhyEmailGoesToSpamRoute
   '/legal/dpa': typeof LegalDpaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/app/': typeof AppIndexRoute
+  '/guides/': typeof GuidesIndexRoute
   '/app/audiences/$audienceId': typeof AppAudiencesAudienceIdRoute
   '/app/automations/$automationId': typeof AppAutomationsAutomationIdRoute
   '/app/broadcasts/$broadcastId': typeof AppBroadcastsBroadcastIdRoute
@@ -462,10 +722,37 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/app/suppressions'
     | '/app/team'
+    | '/guides/api-keys-and-environments'
+    | '/guides/automations-instance-vs-cohort'
+    | '/guides/batch-and-schedule'
+    | '/guides/broadcasts-at-scale'
+    | '/guides/choose-a-sending-transport'
+    | '/guides/claim-your-instance'
+    | '/guides/debug-a-550-rejection'
+    | '/guides/deploy-to-cloudflare'
+    | '/guides/dmarc-from-none-to-reject'
+    | '/guides/inbox-placement-vs-delivery'
+    | '/guides/mcp-agent-inbox'
+    | '/guides/migrate-from-resend'
+    | '/guides/open-rates-and-apple-mpp'
+    | '/guides/read-a-bounce'
+    | '/guides/receive-email'
+    | '/guides/segments-query-language'
+    | '/guides/self-host-on-a-node-server'
+    | '/guides/send-your-first-email'
+    | '/guides/spf-dkim-dmarc'
+    | '/guides/templates-handlebars-mjml'
+    | '/guides/unsubscribe-and-preferences'
+    | '/guides/verify-a-sending-domain'
+    | '/guides/warm-up-a-sending-domain'
+    | '/guides/webhooks-end-to-end'
+    | '/guides/what-100k-emails-costs'
+    | '/guides/why-email-goes-to-spam'
     | '/legal/dpa'
     | '/legal/privacy'
     | '/legal/terms'
     | '/app/'
+    | '/guides/'
     | '/app/audiences/$audienceId'
     | '/app/automations/$automationId'
     | '/app/broadcasts/$broadcastId'
@@ -509,10 +796,37 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/app/suppressions'
     | '/app/team'
+    | '/guides/api-keys-and-environments'
+    | '/guides/automations-instance-vs-cohort'
+    | '/guides/batch-and-schedule'
+    | '/guides/broadcasts-at-scale'
+    | '/guides/choose-a-sending-transport'
+    | '/guides/claim-your-instance'
+    | '/guides/debug-a-550-rejection'
+    | '/guides/deploy-to-cloudflare'
+    | '/guides/dmarc-from-none-to-reject'
+    | '/guides/inbox-placement-vs-delivery'
+    | '/guides/mcp-agent-inbox'
+    | '/guides/migrate-from-resend'
+    | '/guides/open-rates-and-apple-mpp'
+    | '/guides/read-a-bounce'
+    | '/guides/receive-email'
+    | '/guides/segments-query-language'
+    | '/guides/self-host-on-a-node-server'
+    | '/guides/send-your-first-email'
+    | '/guides/spf-dkim-dmarc'
+    | '/guides/templates-handlebars-mjml'
+    | '/guides/unsubscribe-and-preferences'
+    | '/guides/verify-a-sending-domain'
+    | '/guides/warm-up-a-sending-domain'
+    | '/guides/webhooks-end-to-end'
+    | '/guides/what-100k-emails-costs'
+    | '/guides/why-email-goes-to-spam'
     | '/legal/dpa'
     | '/legal/privacy'
     | '/legal/terms'
     | '/app'
+    | '/guides'
     | '/app/audiences/$audienceId'
     | '/app/automations/$automationId'
     | '/app/broadcasts/$broadcastId'
@@ -557,10 +871,37 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/app/suppressions'
     | '/app/team'
+    | '/guides/api-keys-and-environments'
+    | '/guides/automations-instance-vs-cohort'
+    | '/guides/batch-and-schedule'
+    | '/guides/broadcasts-at-scale'
+    | '/guides/choose-a-sending-transport'
+    | '/guides/claim-your-instance'
+    | '/guides/debug-a-550-rejection'
+    | '/guides/deploy-to-cloudflare'
+    | '/guides/dmarc-from-none-to-reject'
+    | '/guides/inbox-placement-vs-delivery'
+    | '/guides/mcp-agent-inbox'
+    | '/guides/migrate-from-resend'
+    | '/guides/open-rates-and-apple-mpp'
+    | '/guides/read-a-bounce'
+    | '/guides/receive-email'
+    | '/guides/segments-query-language'
+    | '/guides/self-host-on-a-node-server'
+    | '/guides/send-your-first-email'
+    | '/guides/spf-dkim-dmarc'
+    | '/guides/templates-handlebars-mjml'
+    | '/guides/unsubscribe-and-preferences'
+    | '/guides/verify-a-sending-domain'
+    | '/guides/warm-up-a-sending-domain'
+    | '/guides/webhooks-end-to-end'
+    | '/guides/what-100k-emails-costs'
+    | '/guides/why-email-goes-to-spam'
     | '/legal/dpa'
     | '/legal/privacy'
     | '/legal/terms'
     | '/app/'
+    | '/guides/'
     | '/app/audiences/$audienceId'
     | '/app/automations/$automationId'
     | '/app/broadcasts/$broadcastId'
@@ -593,9 +934,36 @@ export interface RootRouteChildren {
   SignUpRoute: typeof SignUpRoute
   StackRoute: typeof StackRoute
   UseCasesRoute: typeof UseCasesRoute
+  GuidesApiKeysAndEnvironmentsRoute: typeof GuidesApiKeysAndEnvironmentsRoute
+  GuidesAutomationsInstanceVsCohortRoute: typeof GuidesAutomationsInstanceVsCohortRoute
+  GuidesBatchAndScheduleRoute: typeof GuidesBatchAndScheduleRoute
+  GuidesBroadcastsAtScaleRoute: typeof GuidesBroadcastsAtScaleRoute
+  GuidesChooseASendingTransportRoute: typeof GuidesChooseASendingTransportRoute
+  GuidesClaimYourInstanceRoute: typeof GuidesClaimYourInstanceRoute
+  GuidesDebugA550RejectionRoute: typeof GuidesDebugA550RejectionRoute
+  GuidesDeployToCloudflareRoute: typeof GuidesDeployToCloudflareRoute
+  GuidesDmarcFromNoneToRejectRoute: typeof GuidesDmarcFromNoneToRejectRoute
+  GuidesInboxPlacementVsDeliveryRoute: typeof GuidesInboxPlacementVsDeliveryRoute
+  GuidesMcpAgentInboxRoute: typeof GuidesMcpAgentInboxRoute
+  GuidesMigrateFromResendRoute: typeof GuidesMigrateFromResendRoute
+  GuidesOpenRatesAndAppleMppRoute: typeof GuidesOpenRatesAndAppleMppRoute
+  GuidesReadABounceRoute: typeof GuidesReadABounceRoute
+  GuidesReceiveEmailRoute: typeof GuidesReceiveEmailRoute
+  GuidesSegmentsQueryLanguageRoute: typeof GuidesSegmentsQueryLanguageRoute
+  GuidesSelfHostOnANodeServerRoute: typeof GuidesSelfHostOnANodeServerRoute
+  GuidesSendYourFirstEmailRoute: typeof GuidesSendYourFirstEmailRoute
+  GuidesSpfDkimDmarcRoute: typeof GuidesSpfDkimDmarcRoute
+  GuidesTemplatesHandlebarsMjmlRoute: typeof GuidesTemplatesHandlebarsMjmlRoute
+  GuidesUnsubscribeAndPreferencesRoute: typeof GuidesUnsubscribeAndPreferencesRoute
+  GuidesVerifyASendingDomainRoute: typeof GuidesVerifyASendingDomainRoute
+  GuidesWarmUpASendingDomainRoute: typeof GuidesWarmUpASendingDomainRoute
+  GuidesWebhooksEndToEndRoute: typeof GuidesWebhooksEndToEndRoute
+  GuidesWhat100kEmailsCostsRoute: typeof GuidesWhat100kEmailsCostsRoute
+  GuidesWhyEmailGoesToSpamRoute: typeof GuidesWhyEmailGoesToSpamRoute
   LegalDpaRoute: typeof LegalDpaRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalTermsRoute: typeof LegalTermsRoute
+  GuidesIndexRoute: typeof GuidesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -788,6 +1156,195 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/team'
       preLoaderRoute: typeof AppTeamRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/guides/': {
+      id: '/guides/'
+      path: '/guides'
+      fullPath: '/guides/'
+      preLoaderRoute: typeof GuidesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/api-keys-and-environments': {
+      id: '/guides/api-keys-and-environments'
+      path: '/guides/api-keys-and-environments'
+      fullPath: '/guides/api-keys-and-environments'
+      preLoaderRoute: typeof GuidesApiKeysAndEnvironmentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/automations-instance-vs-cohort': {
+      id: '/guides/automations-instance-vs-cohort'
+      path: '/guides/automations-instance-vs-cohort'
+      fullPath: '/guides/automations-instance-vs-cohort'
+      preLoaderRoute: typeof GuidesAutomationsInstanceVsCohortRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/batch-and-schedule': {
+      id: '/guides/batch-and-schedule'
+      path: '/guides/batch-and-schedule'
+      fullPath: '/guides/batch-and-schedule'
+      preLoaderRoute: typeof GuidesBatchAndScheduleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/broadcasts-at-scale': {
+      id: '/guides/broadcasts-at-scale'
+      path: '/guides/broadcasts-at-scale'
+      fullPath: '/guides/broadcasts-at-scale'
+      preLoaderRoute: typeof GuidesBroadcastsAtScaleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/choose-a-sending-transport': {
+      id: '/guides/choose-a-sending-transport'
+      path: '/guides/choose-a-sending-transport'
+      fullPath: '/guides/choose-a-sending-transport'
+      preLoaderRoute: typeof GuidesChooseASendingTransportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/claim-your-instance': {
+      id: '/guides/claim-your-instance'
+      path: '/guides/claim-your-instance'
+      fullPath: '/guides/claim-your-instance'
+      preLoaderRoute: typeof GuidesClaimYourInstanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/debug-a-550-rejection': {
+      id: '/guides/debug-a-550-rejection'
+      path: '/guides/debug-a-550-rejection'
+      fullPath: '/guides/debug-a-550-rejection'
+      preLoaderRoute: typeof GuidesDebugA550RejectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/deploy-to-cloudflare': {
+      id: '/guides/deploy-to-cloudflare'
+      path: '/guides/deploy-to-cloudflare'
+      fullPath: '/guides/deploy-to-cloudflare'
+      preLoaderRoute: typeof GuidesDeployToCloudflareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/dmarc-from-none-to-reject': {
+      id: '/guides/dmarc-from-none-to-reject'
+      path: '/guides/dmarc-from-none-to-reject'
+      fullPath: '/guides/dmarc-from-none-to-reject'
+      preLoaderRoute: typeof GuidesDmarcFromNoneToRejectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/inbox-placement-vs-delivery': {
+      id: '/guides/inbox-placement-vs-delivery'
+      path: '/guides/inbox-placement-vs-delivery'
+      fullPath: '/guides/inbox-placement-vs-delivery'
+      preLoaderRoute: typeof GuidesInboxPlacementVsDeliveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/mcp-agent-inbox': {
+      id: '/guides/mcp-agent-inbox'
+      path: '/guides/mcp-agent-inbox'
+      fullPath: '/guides/mcp-agent-inbox'
+      preLoaderRoute: typeof GuidesMcpAgentInboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/migrate-from-resend': {
+      id: '/guides/migrate-from-resend'
+      path: '/guides/migrate-from-resend'
+      fullPath: '/guides/migrate-from-resend'
+      preLoaderRoute: typeof GuidesMigrateFromResendRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/open-rates-and-apple-mpp': {
+      id: '/guides/open-rates-and-apple-mpp'
+      path: '/guides/open-rates-and-apple-mpp'
+      fullPath: '/guides/open-rates-and-apple-mpp'
+      preLoaderRoute: typeof GuidesOpenRatesAndAppleMppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/read-a-bounce': {
+      id: '/guides/read-a-bounce'
+      path: '/guides/read-a-bounce'
+      fullPath: '/guides/read-a-bounce'
+      preLoaderRoute: typeof GuidesReadABounceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/receive-email': {
+      id: '/guides/receive-email'
+      path: '/guides/receive-email'
+      fullPath: '/guides/receive-email'
+      preLoaderRoute: typeof GuidesReceiveEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/segments-query-language': {
+      id: '/guides/segments-query-language'
+      path: '/guides/segments-query-language'
+      fullPath: '/guides/segments-query-language'
+      preLoaderRoute: typeof GuidesSegmentsQueryLanguageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/self-host-on-a-node-server': {
+      id: '/guides/self-host-on-a-node-server'
+      path: '/guides/self-host-on-a-node-server'
+      fullPath: '/guides/self-host-on-a-node-server'
+      preLoaderRoute: typeof GuidesSelfHostOnANodeServerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/send-your-first-email': {
+      id: '/guides/send-your-first-email'
+      path: '/guides/send-your-first-email'
+      fullPath: '/guides/send-your-first-email'
+      preLoaderRoute: typeof GuidesSendYourFirstEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/spf-dkim-dmarc': {
+      id: '/guides/spf-dkim-dmarc'
+      path: '/guides/spf-dkim-dmarc'
+      fullPath: '/guides/spf-dkim-dmarc'
+      preLoaderRoute: typeof GuidesSpfDkimDmarcRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/templates-handlebars-mjml': {
+      id: '/guides/templates-handlebars-mjml'
+      path: '/guides/templates-handlebars-mjml'
+      fullPath: '/guides/templates-handlebars-mjml'
+      preLoaderRoute: typeof GuidesTemplatesHandlebarsMjmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/unsubscribe-and-preferences': {
+      id: '/guides/unsubscribe-and-preferences'
+      path: '/guides/unsubscribe-and-preferences'
+      fullPath: '/guides/unsubscribe-and-preferences'
+      preLoaderRoute: typeof GuidesUnsubscribeAndPreferencesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/verify-a-sending-domain': {
+      id: '/guides/verify-a-sending-domain'
+      path: '/guides/verify-a-sending-domain'
+      fullPath: '/guides/verify-a-sending-domain'
+      preLoaderRoute: typeof GuidesVerifyASendingDomainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/warm-up-a-sending-domain': {
+      id: '/guides/warm-up-a-sending-domain'
+      path: '/guides/warm-up-a-sending-domain'
+      fullPath: '/guides/warm-up-a-sending-domain'
+      preLoaderRoute: typeof GuidesWarmUpASendingDomainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/webhooks-end-to-end': {
+      id: '/guides/webhooks-end-to-end'
+      path: '/guides/webhooks-end-to-end'
+      fullPath: '/guides/webhooks-end-to-end'
+      preLoaderRoute: typeof GuidesWebhooksEndToEndRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/what-100k-emails-costs': {
+      id: '/guides/what-100k-emails-costs'
+      path: '/guides/what-100k-emails-costs'
+      fullPath: '/guides/what-100k-emails-costs'
+      preLoaderRoute: typeof GuidesWhat100kEmailsCostsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/why-email-goes-to-spam': {
+      id: '/guides/why-email-goes-to-spam'
+      path: '/guides/why-email-goes-to-spam'
+      fullPath: '/guides/why-email-goes-to-spam'
+      preLoaderRoute: typeof GuidesWhyEmailGoesToSpamRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/legal/dpa': {
       id: '/legal/dpa'
@@ -1007,9 +1564,37 @@ const rootRouteChildren: RootRouteChildren = {
   SignUpRoute: SignUpRoute,
   StackRoute: StackRoute,
   UseCasesRoute: UseCasesRoute,
+  GuidesApiKeysAndEnvironmentsRoute: GuidesApiKeysAndEnvironmentsRoute,
+  GuidesAutomationsInstanceVsCohortRoute:
+    GuidesAutomationsInstanceVsCohortRoute,
+  GuidesBatchAndScheduleRoute: GuidesBatchAndScheduleRoute,
+  GuidesBroadcastsAtScaleRoute: GuidesBroadcastsAtScaleRoute,
+  GuidesChooseASendingTransportRoute: GuidesChooseASendingTransportRoute,
+  GuidesClaimYourInstanceRoute: GuidesClaimYourInstanceRoute,
+  GuidesDebugA550RejectionRoute: GuidesDebugA550RejectionRoute,
+  GuidesDeployToCloudflareRoute: GuidesDeployToCloudflareRoute,
+  GuidesDmarcFromNoneToRejectRoute: GuidesDmarcFromNoneToRejectRoute,
+  GuidesInboxPlacementVsDeliveryRoute: GuidesInboxPlacementVsDeliveryRoute,
+  GuidesMcpAgentInboxRoute: GuidesMcpAgentInboxRoute,
+  GuidesMigrateFromResendRoute: GuidesMigrateFromResendRoute,
+  GuidesOpenRatesAndAppleMppRoute: GuidesOpenRatesAndAppleMppRoute,
+  GuidesReadABounceRoute: GuidesReadABounceRoute,
+  GuidesReceiveEmailRoute: GuidesReceiveEmailRoute,
+  GuidesSegmentsQueryLanguageRoute: GuidesSegmentsQueryLanguageRoute,
+  GuidesSelfHostOnANodeServerRoute: GuidesSelfHostOnANodeServerRoute,
+  GuidesSendYourFirstEmailRoute: GuidesSendYourFirstEmailRoute,
+  GuidesSpfDkimDmarcRoute: GuidesSpfDkimDmarcRoute,
+  GuidesTemplatesHandlebarsMjmlRoute: GuidesTemplatesHandlebarsMjmlRoute,
+  GuidesUnsubscribeAndPreferencesRoute: GuidesUnsubscribeAndPreferencesRoute,
+  GuidesVerifyASendingDomainRoute: GuidesVerifyASendingDomainRoute,
+  GuidesWarmUpASendingDomainRoute: GuidesWarmUpASendingDomainRoute,
+  GuidesWebhooksEndToEndRoute: GuidesWebhooksEndToEndRoute,
+  GuidesWhat100kEmailsCostsRoute: GuidesWhat100kEmailsCostsRoute,
+  GuidesWhyEmailGoesToSpamRoute: GuidesWhyEmailGoesToSpamRoute,
   LegalDpaRoute: LegalDpaRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalTermsRoute: LegalTermsRoute,
+  GuidesIndexRoute: GuidesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,206 +1,22 @@
-import {
-  Button,
-  Callout,
-  Card,
-  cn,
-  Input,
-  Label,
-  MonoChip,
-  StepCard,
-  Terminal,
-} from '@mailysend/ui'
+import { Button, Callout, Card, Input, Label, MonoChip, StepCard, Terminal } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { OWNERSHIP_BADGE } from '~/components/marketing/claims.ts'
 import { DEPLOY_DURATION_LONG } from '~/components/marketing/deploy.tsx'
 import { PageShell } from '~/components/marketing/page-shell.tsx'
-import type { TechArticleEntry } from '~/seo'
+import {
+  AnchorSection,
+  Code,
+  Com,
+  Endpoint,
+  Key,
+  Lede,
+  Mono,
+  Str,
+} from '~/components/marketing/prose.tsx'
+import { DOC_GROUP_ORDER, DOC_SECTIONS } from '~/content/doc-sections.ts'
 import { breadcrumbSchema, DEPLOY_URL, pageHead, techArticleSchemas } from '~/seo'
-
-/**
- * Every section of the page, once.
- *
- * The sidebar, the `?q=` filter and the `TechArticle` JSON-LD all read this
- * array, so a section can never appear in the navigation and be missing from
- * the structured data, or vice versa.
- */
-interface DocSection extends TechArticleEntry {
-  /** The sidebar label, which the artboard abbreviates for the long headings. */
-  navLabel: string
-  group: string
-}
-
-const DOC_SECTIONS: DocSection[] = [
-  {
-    anchor: 'intro',
-    group: 'START',
-    navLabel: 'Introduction',
-    headline: 'Introduction',
-    description:
-      'A Resend-compatible email platform on Cloudflare Workers: one REST API for transactional sends, broadcasts, automations, inbound mail and analytics, MIT licensed.',
-  },
-  {
-    anchor: 'quickstart',
-    group: 'START',
-    navLabel: 'Quickstart',
-    headline: 'Quickstart',
-    description: 'Install the SDK, send your first email, and tail the delivery log.',
-  },
-  {
-    anchor: 'domains',
-    group: 'START',
-    navLabel: 'Domains & DNS',
-    headline: 'Domains & DNS',
-    description:
-      'Publish SPF, DKIM and DMARC records for a sending domain — written and verified automatically on Cloudflare DNS.',
-  },
-  {
-    anchor: 'auth',
-    group: 'START',
-    navLabel: 'Authentication',
-    headline: 'Authentication',
-    description: 'API keys scoped by permission, domain and environment.',
-  },
-  {
-    anchor: 'api',
-    group: 'SENDING',
-    navLabel: 'Emails API',
-    headline: 'Emails API',
-    description:
-      'Send, read, reschedule and cancel email through /v1/emails, including the full request body reference.',
-  },
-  {
-    anchor: 'batch',
-    group: 'SENDING',
-    navLabel: 'Batch & schedule',
-    headline: 'Batch & scheduling',
-    description:
-      'Fan out up to 100 messages per call through Cloudflare Queues, and hold scheduled mail in a Durable Object alarm.',
-  },
-  {
-    anchor: 'attachments',
-    group: 'SENDING',
-    navLabel: 'Attachments',
-    headline: 'Attachments',
-    description:
-      'Attach base64 content or a URL fetched at send time, with the per-transport size ceiling for each provider.',
-  },
-  {
-    anchor: 'idempotency',
-    group: 'SENDING',
-    navLabel: 'Idempotency & tags',
-    headline: 'Idempotency & tags',
-    description:
-      'Deduplicate retries with an Idempotency-Key for 24 hours, and slice every chart and log by indexed tags.',
-  },
-  {
-    anchor: 'templates',
-    group: 'SENDING',
-    navLabel: 'Templates (JSX)',
-    headline: 'Templates (JSX, MJML, Handlebars)',
-    description:
-      'Version server-side templates and send by template_id, or render React locally and send HTML.',
-  },
-  {
-    anchor: 'audiences',
-    group: 'MARKETING',
-    navLabel: 'Audiences & contacts',
-    headline: 'Audiences & contacts',
-    description:
-      'Contacts in D1 with arbitrary custom fields, and live segments defined as saved filters.',
-  },
-  {
-    anchor: 'broadcasts',
-    group: 'MARKETING',
-    navLabel: 'Broadcasts',
-    headline: 'Broadcasts',
-    description:
-      'Create broadcasts in the API or the visual editor, with live counts, pause/resume, throttling and per-link click maps.',
-  },
-  {
-    anchor: 'automations',
-    group: 'MARKETING',
-    navLabel: 'Automations',
-    headline: 'Automations',
-    description:
-      'Drip sequences, welcome flows and win-backs on Cloudflare Workflows: durable steps, waits measured in days, branching on your own events.',
-  },
-  {
-    anchor: 'inbound',
-    group: 'RECEIVE & REACT',
-    navLabel: 'Inbound email',
-    headline: 'Inbound email',
-    description:
-      'Inbound mail parsed to JSON with headers, bodies, attachments in R2, spam score and thread identity.',
-  },
-  {
-    anchor: 'webhooks',
-    group: 'RECEIVE & REACT',
-    navLabel: 'Webhooks',
-    headline: 'Webhooks',
-    description:
-      'HMAC-signed events retried with exponential backoff for 24 hours and replayable from the dashboard.',
-  },
-  {
-    anchor: 'suppressions',
-    group: 'RECEIVE & REACT',
-    navLabel: 'Suppressions',
-    headline: 'Suppressions',
-    description:
-      'Automatic per-workspace suppression of hard bounces and complaints, with an explicit 422 on a suppressed send.',
-  },
-  {
-    anchor: 'analytics',
-    group: 'RECEIVE & REACT',
-    navLabel: 'Analytics API',
-    headline: 'Analytics API',
-    description:
-      'Query the same Analytics Engine data the dashboard charts, grouped by tag, template, domain, provider or country.',
-  },
-  {
-    anchor: 'providers',
-    group: 'PLATFORM',
-    navLabel: 'Providers: CF, SES, Resend',
-    headline: 'Providers: Cloudflare, Amazon SES, Resend',
-    description:
-      'Choose the wire that carries the mail per domain — Cloudflare Email Service, Amazon SES or Resend — with automatic failover.',
-  },
-  {
-    anchor: 'smtp',
-    group: 'PLATFORM',
-    navLabel: 'SMTP relay',
-    headline: 'SMTP relay',
-    description:
-      'An SMTP front door for Rails, Django, Laravel, WordPress and anything legacy, with the same logs and webhooks as API sends.',
-  },
-  {
-    anchor: 'sdks',
-    group: 'PLATFORM',
-    navLabel: 'SDKs & CLI',
-    headline: 'SDKs & CLI',
-    description:
-      'A first-party Node/TypeScript SDK with a Resend-compatible shim, plus the OpenAPI document every other language generates a client from.',
-  },
-  {
-    anchor: 'mcp',
-    group: 'PLATFORM',
-    navLabel: 'MCP & agents',
-    headline: 'MCP & agents',
-    description:
-      'An MCP endpoint with nine tools, where every agent send is attributed and requires an explicit confirmation step.',
-  },
-  {
-    anchor: 'errors',
-    group: 'PLATFORM',
-    navLabel: 'Errors & rate limits',
-    headline: 'Errors & rate limits',
-    description:
-      'Typed errors that name the fix, and a default limit of 10 requests per second per key with a burst of 50.',
-  },
-]
-
-const GROUP_ORDER = ['START', 'SENDING', 'MARKETING', 'RECEIVE & REACT', 'PLATFORM']
 
 export const Route = createFileRoute('/docs')({
   /**
@@ -226,86 +42,6 @@ export const Route = createFileRoute('/docs')({
     }),
   component: DocsPage,
 })
-
-/* Syntax colouring for the dark samples. Three roles is all the artboard uses. */
-const Str = ({ children }: { children: ReactNode }) => (
-  <span className="text-code-green">{children}</span>
-)
-const Key = ({ children }: { children: ReactNode }) => (
-  <span className="text-accent-on-dark">{children}</span>
-)
-const Com = ({ children }: { children: ReactNode }) => (
-  <span className="text-on-dark-5">{children}</span>
-)
-
-/** The plain dark code block — `Terminal` is for `$` commands, this is for source. */
-const Code = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn('overflow-x-auto rounded-tile bg-ink p-[18px]', className)}>
-    <pre className="m-0 whitespace-pre font-mono text-[12.5px] leading-[1.8] text-on-dark">
-      {children}
-    </pre>
-  </div>
-)
-
-const Mono = ({ children }: { children: ReactNode }) => (
-  <span className="font-mono text-[0.92em] text-ink">{children}</span>
-)
-
-const Lede = ({ children }: { children: ReactNode }) => (
-  <p className="mt-0 mb-4 text-[16.5px] leading-[1.7] text-muted">{children}</p>
-)
-
-const methodTone = {
-  POST: 'text-positive',
-  GET: 'text-accent',
-  PATCH: 'text-muted',
-  DEL: 'text-warning',
-} as const
-
-const Endpoint = ({
-  method,
-  path,
-  note,
-  tone,
-}: {
-  method: string
-  path: string
-  note?: ReactNode
-  tone?: keyof typeof methodTone
-}) => (
-  <div className="flex flex-wrap items-baseline gap-3 font-mono text-[13px]">
-    <span className={cn('min-w-[48px] font-bold', methodTone[tone ?? (method as 'POST')])}>
-      {method}
-    </span>
-    <span>{path}</span>
-    {note ? <span className="font-sans text-[14px] text-muted-2">{note}</span> : null}
-  </div>
-)
-
-/** A section heading plus its `<section>` wrapper, so every anchor is uniform. */
-const DocSectionShell = ({
-  anchor,
-  heading,
-  badge,
-  children,
-}: {
-  anchor: string
-  heading: string
-  badge?: string
-  children: ReactNode
-}) => (
-  <section id={anchor} className="min-w-0 scroll-mt-[92px]">
-    <h2 className="ms-display-3 mt-0 mb-3 flex flex-wrap items-center gap-3">
-      {heading}
-      {badge ? (
-        <MonoChip tone="accent" size="sm" className="tracking-[0.1em]">
-          {badge}
-        </MonoChip>
-      ) : null}
-    </h2>
-    {children}
-  </section>
-)
 
 const DNS_RECORDS = [
   ['TXT', 'send.yourdomain.com', 'v=spf1 include:spf.mailysend.com ~all'],
@@ -413,7 +149,7 @@ function DocsSidebar() {
           ) : null}
         </div>
 
-        {GROUP_ORDER.map((group) => {
+        {DOC_GROUP_ORDER.map((group) => {
           const items = matches.filter((section) => section.group === group)
           if (items.length === 0) return null
           return (
@@ -459,7 +195,7 @@ function DocsPage() {
         <DocsSidebar />
 
         <article className="flex min-w-0 flex-col gap-11">
-          <DocSectionShell anchor="intro" heading="Introduction">
+          <AnchorSection anchor="intro" heading="Introduction">
             <Lede>
               MailySend is a Resend-compatible email platform that runs on Cloudflare Workers. One
               REST API covers transactional sends, marketing broadcasts, automations, inbound mail
@@ -479,9 +215,9 @@ function DocsPage() {
                 </Card>
               ))}
             </div>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="quickstart" heading="Quickstart">
+          <AnchorSection anchor="quickstart" heading="Quickstart">
             <Lede>Three minutes from zero to a delivered email.</Lede>
             <div className="flex flex-col gap-3.5">
               <StepCard step={1} title="Install the SDK" variant="rule">
@@ -525,9 +261,9 @@ function DocsPage() {
                 />
               </StepCard>
             </div>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="domains" heading="Domains & DNS">
+          <AnchorSection anchor="domains" heading="Domains & DNS">
             <Lede>
               Add a domain, then publish three records. If the domain is on Cloudflare DNS we write
               them for you and verify in seconds; anywhere else, copy them into your provider and
@@ -559,9 +295,9 @@ function DocsPage() {
               an optional custom return-path. DMARC reports are parsed for you — see{' '}
               <a href="/analytics#dmarc">DMARC analytics</a>.
             </p>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="auth" heading="Authentication">
+          <AnchorSection anchor="auth" heading="Authentication">
             <Lede>
               Keys are scoped by permission, domain and environment. A leaked <Mono>send-only</Mono>{' '}
               key can’t read your logs or export contacts.
@@ -577,9 +313,9 @@ function DocsPage() {
               <Str>"dom_9f2"</Str>
               {" }'"}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="api" heading="Emails API">
+          <AnchorSection anchor="api" heading="Emails API">
             <div className="mb-4 flex flex-col gap-2">
               <Endpoint method="POST" path="/v1/emails" note="Send one email" />
               <Endpoint method="POST" path="/v1/emails/batch" note="Up to 100 per call" />
@@ -618,9 +354,9 @@ function DocsPage() {
                 </div>
               </div>
             </Card>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="batch" heading="Batch & scheduling">
+          <AnchorSection anchor="batch" heading="Batch & scheduling">
             <Lede>
               Batch sends fan out through Cloudflare Queues, so one slow recipient domain never
               blocks the rest. Scheduled mail is held in a Durable Object alarm — cancel or
@@ -643,9 +379,9 @@ function DocsPage() {
               <Str>'2026-09-10T09:00:00Z'</Str>
               {' });'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="attachments" heading="Attachments">
+          <AnchorSection anchor="attachments" heading="Attachments">
             <Lede>
               Pass base64 content, or a URL we fetch at send time. Files land in R2 in your own
               bucket when self-hosting.
@@ -685,9 +421,9 @@ function DocsPage() {
               <Str>'text/plain'</Str>
               {' },\n]'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="idempotency" heading="Idempotency & tags">
+          <AnchorSection anchor="idempotency" heading="Idempotency & tags">
             <Lede>
               Send <Mono>Idempotency-Key</Mono> and a retry inside 24 hours returns the original
               email instead of a duplicate. Tags are indexed, so every chart and log filter can
@@ -706,9 +442,9 @@ function DocsPage() {
               <Str>'pro'</Str>
               {' },\n]'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="templates" heading="Templates (JSX, MJML, Handlebars)">
+          <AnchorSection anchor="templates" heading="Templates (JSX, MJML, Handlebars)">
             <Lede>
               Store templates server-side, version every change, and send by{' '}
               <Mono>template_id</Mono> — so marketing can fix a typo without a deploy. Or render
@@ -725,9 +461,9 @@ function DocsPage() {
               {'>Verify</Button>\n  </Html>\n);\n\n'}
               <Com>$ npx mailysend templates push # versioned, instant rollback</Com>
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="audiences" heading="Audiences & contacts">
+          <AnchorSection anchor="audiences" heading="Audiences & contacts">
             <Lede>
               Contacts live in D1 with arbitrary custom fields. Segments are saved SQL-ish filters
               that stay live — <Mono>plan = 'pro' AND last_open &lt; 30d</Mono>.
@@ -742,9 +478,9 @@ function DocsPage() {
                 note="· GDPR erase, cascades everywhere"
               />
             </div>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="broadcasts" heading="Broadcasts">
+          <AnchorSection anchor="broadcasts" heading="Broadcasts">
             <Lede>
               Create in the API or the visual editor — either one is editable in both places. A
               broadcast’s progress lives in a Durable Object, so you get live counts, pause/resume,
@@ -765,14 +501,14 @@ function DocsPage() {
                 ', split: 0.2 },\n});\nawait ms.broadcasts.send(b.id, { throttle_per_minute: 5000 });'
               }
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
           {/*
             The artboard badged this section `RESEND DOESN'T`. Resend ships
             automations now, so the badge was simply false — and the claim was
             never the point. What is durable is where the workflow runs.
           */}
-          <DocSectionShell anchor="automations" heading="Automations" badge={OWNERSHIP_BADGE}>
+          <AnchorSection anchor="automations" heading="Automations" badge={OWNERSHIP_BADGE}>
             <Lede>
               Drip sequences, welcome flows and win-backs run on Cloudflare Workflows: durable
               steps, waits measured in days, branching on your own events. No external
@@ -794,9 +530,9 @@ function DocsPage() {
               <Str>'tpl_nudge'</Str>
               {' }] } },\n  ],\n});'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="inbound" heading="Inbound email">
+          <AnchorSection anchor="inbound" heading="Inbound email">
             <Lede>
               Point a catch-all rule at MailySend and inbound mail arrives as parsed JSON: headers,
               text, HTML, attachments in R2, spam score, and the thread it belongs to.
@@ -826,9 +562,9 @@ function DocsPage() {
               <Str>"inb/5Nq/photo.png"</Str>
               {' }]\n}'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="webhooks" heading="Webhooks">
+          <AnchorSection anchor="webhooks" heading="Webhooks">
             <Lede>
               Signed with an HMAC timestamp, retried with exponential backoff for 24 hours, and
               replayable from the dashboard. Every attempt keeps its response code and body so you
@@ -843,18 +579,18 @@ function DocsPage() {
                 </li>
               ))}
             </ul>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="suppressions" heading="Suppressions">
+          <AnchorSection anchor="suppressions" heading="Suppressions">
             <Lede>
               Hard bounces and complaints are suppressed automatically in KV, per workspace, within
               milliseconds — and a suppressed send returns a clear{' '}
               <Mono>422 suppressed_recipient</Mono> instead of silently vanishing. Import your
               existing list on day one so you never re-mail a dead address.
             </Lede>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="analytics" heading="Analytics API">
+          <AnchorSection anchor="analytics" heading="Analytics API">
             <Lede>
               Query the same Analytics Engine data the dashboard charts, grouped by tag, template,
               domain, recipient provider or country — and export raw events to R2 or your warehouse.
@@ -879,9 +615,9 @@ function DocsPage() {
               <Mono>250</Mono> means accepted, not inboxed.{' '}
               <a href="/analytics">See what the analytics look like →</a>
             </p>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="providers" heading="Providers: Cloudflare, Amazon SES, Resend">
+          <AnchorSection anchor="providers" heading="Providers: Cloudflare, Amazon SES, Resend">
             <Lede>
               MailySend separates the API you code against from the wire that carries the mail.
               Cloudflare Email Service is the default. Point a domain at Amazon SES for the cheapest
@@ -933,9 +669,9 @@ function DocsPage() {
               percentage by percentage, then flip to Cloudflare when the charts look boring.{' '}
               <a href="/compare#migrate">Migration guide →</a>
             </p>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="smtp" heading="SMTP relay">
+          <AnchorSection anchor="smtp" heading="SMTP relay">
             <div className="rounded-tile border border-line bg-card p-[18px] font-mono text-[13px] leading-[2] text-ink">
               <div>
                 host<span className="text-muted-2"> ····· </span>smtp.mailysend.com
@@ -968,9 +704,9 @@ function DocsPage() {
               plainly: those sends bypass MailySend entirely, so they will <strong>not</strong>{' '}
               appear in your logs, analytics or webhooks.
             </Callout>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="sdks" heading="SDKs & CLI">
+          <AnchorSection anchor="sdks" heading="SDKs & CLI">
             <Lede>
               One first-party SDK — Node and TypeScript, MIT, with a Resend-compatible shim — and
               the OpenAPI document every other language generates from, served by your own
@@ -1006,9 +742,9 @@ function DocsPage() {
                 { kind: 'command', text: 'npx mailysend deploy --domain acme.dev   # self-host' },
               ]}
             />
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="mcp" heading="MCP & agents">
+          <AnchorSection anchor="mcp" heading="MCP & agents">
             <Lede>
               Your workspace exposes an MCP endpoint at <Mono>/mcp</Mono> with nine tools: search
               threads, read a message, reply, send, look up delivery status, list domains, read
@@ -1034,9 +770,9 @@ function DocsPage() {
               <Str>"Bearer ms_live_…"</Str>
               {' }\n    }\n  }\n}'}
             </Code>
-          </DocSectionShell>
+          </AnchorSection>
 
-          <DocSectionShell anchor="errors" heading="Errors & rate limits">
+          <AnchorSection anchor="errors" heading="Errors & rate limits">
             <Lede>
               Errors are typed, human-readable, and always name the fix. Default limit is 10
               requests/second per key, burst 50 — raised on request, and never applied to inbound.
@@ -1064,7 +800,7 @@ function DocsPage() {
                 </tbody>
               </table>
             </div>
-          </DocSectionShell>
+          </AnchorSection>
 
           <section className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-line bg-card p-[26px]">
             <div className="min-w-0">

@@ -310,6 +310,22 @@ what `mailysend.com` builds with, and the only build allowed to publish
 no sitemap rather than one pointing crawlers at somebody else's site — the
 runtime `MS_LANDING` is a separate decision and can still be `app`.
 
+**The build reads `.env` at the repository root**, because for the life of the
+site it did not, and that is why `sitemap.xml` never existed. `MS_PUBLIC_URL`
+lived in the `.env` the process manager loads at *run* time; nothing put it in
+the shell during `pnpm build:node`, so the host resolved to `undefined`, the
+sitemap was silently disabled, and `robots.txt` advertised a URL that returned
+404. Both halves of the build now read the same file — `vite.config.ts` to
+enable the sitemap, and `scripts/llms.ts`, which runs as a separate process, to
+write the same host into `robots.txt`. Only absent keys are filled in, so an
+explicit shell variable still wins.
+
+`robots.txt`, `llms.txt` and `llms-full.txt` are **generated** into the build
+output rather than committed under `public/`. They used to be static files with
+`https://mailysend.com` typed through them, which a self-hosted deployment then
+shipped verbatim. A build that produced no sitemap now writes a `robots.txt`
+with no `Sitemap:` line at all, rather than advertising one that is not there.
+
 The root `build` script is an alias for `build:cf`, so the build command works
 whether Cloudflare guesses `pnpm build` or you set it explicitly.
 

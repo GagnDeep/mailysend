@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { loadDotEnv } from '../../scripts/load-dotenv.ts'
+import { PRERENDER_PAGES } from './src/content/site-map.ts'
 
 /**
  * One config, two deployment targets.
@@ -17,6 +19,9 @@ import { defineConfig } from 'vite'
  * The application code is identical; only the platform bindings differ, and
  * those are resolved through @mailysend/platform rather than imported directly.
  */
+// Must run before anything below reads `process.env`.
+loadDotEnv(new URL('../../', import.meta.url))
+
 /**
  * Prerendering boots the server to render each page, and the Node runtime
  * refuses to start in production without a signing secret — correctly, because
@@ -72,28 +77,17 @@ const outDir = target === 'cloudflare' ? '.output-cf' : '.output'
 /**
  * Routes that prerender to static HTML at build time.
  *
- * Everything public is on this list: marketing and docs are the acquisition
+ * The list itself lives in `src/content/site-map.ts`, which joins the hand-
+ * written public pages with the guides manifest. It used to be a literal here,
+ * a second literal in `scripts/llms-full.ts`, a third in `routes/resources.tsx`
+ * and a fourth typed out as absolute URLs in `public/llms.txt` — and the four
+ * had already drifted, with only three of them aware that `/setup` exists.
+ *
+ * Everything public is on it: marketing, docs and guides are the acquisition
  * surface, and static HTML is what makes them fast enough for good Core Web
  * Vitals and legible to crawlers and LLM retrievers that do not execute JS.
  * The dashboard is deliberately absent — it is per-user and must not be cached.
  */
-const PRERENDER_ROUTES = [
-  '/',
-  '/docs',
-  '/analytics',
-  '/stack',
-  '/pricing',
-  '/use-cases',
-  '/compare',
-  '/dashboard-tour',
-  '/resources',
-  '/sign-in',
-  '/sign-up',
-  '/setup',
-  '/legal/privacy',
-  '/legal/terms',
-  '/legal/dpa',
-]
 
 export default defineConfig({
   cacheDir,
@@ -165,14 +159,7 @@ export default defineConfig({
         failOnError: true,
         concurrency: 4,
       },
-      pages: PRERENDER_ROUTES.map((path) => ({
-        path,
-        prerender: { enabled: true },
-        sitemap: {
-          priority: path === '/' ? 1 : path === '/docs' ? 0.9 : 0.7,
-          changefreq: 'weekly',
-        },
-      })),
+      pages: PRERENDER_PAGES,
       // A self-hosted build must never publish `mailysend.com` as its own
       // canonical host: the sitemap it ships would point every crawler at
       // somebody else's site. So the literal belongs to the marketing build

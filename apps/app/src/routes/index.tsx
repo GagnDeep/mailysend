@@ -28,8 +28,27 @@ import {
 } from '~/components/marketing/deploy'
 import type { FaqItem } from '~/components/marketing/faq'
 import { Faq, toFaqEntries } from '~/components/marketing/faq'
+import { GuideCard } from '~/components/marketing/guide-card.tsx'
 import { PageShell, Section } from '~/components/marketing/page-shell'
+import { GUIDES } from '~/content/site-map.ts'
 import { DEPLOY_URL, faqPageSchema, pageHead, softwareApplicationSchema } from '~/seo'
+
+/**
+ * Six guides on the home page, chosen by search intent rather than by track.
+ *
+ * Hand-picked, and deliberately not `GUIDES.slice(0, 6)`: manifest order is the
+ * reading order for someone who has already decided to use MailySend, which is
+ * the opposite of who lands here. Adding a guide to the manifest should not
+ * silently rearrange the home page.
+ */
+const FEATURED_GUIDES = [
+  'deploy-to-cloudflare',
+  'send-your-first-email',
+  'spf-dkim-dmarc',
+  'why-email-goes-to-spam',
+  'what-100k-emails-costs',
+  'migrate-from-resend',
+]
 
 /**
  * The artboards colour exactly three things inside a code block: string
@@ -981,6 +1000,39 @@ function HomePage() {
         </div>
       </Section>
 
+      <Section id="guides" innerClassName="pt-2 pb-16">
+        <SectionHeader
+          eyebrow="GUIDES"
+          title={
+            <>
+              {GUIDES.length} guides that
+              <br />
+              run the real code.
+            </>
+          }
+        />
+        <p className="mt-4 mb-[30px] max-w-[64ch] text-[17px] text-muted">
+          Task-shaped, not reference. Where a guide explains a rule the product enforces — how a
+          bounce is classified, what a segment compiles to, what a hundred thousand emails cost —
+          the page imports the same function the product calls, so the answer on the page is the
+          answer your instance gives.
+        </p>
+        <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3">
+          {FEATURED_GUIDES.map((slug) => {
+            const guide = GUIDES.find((entry) => entry.slug === slug)
+            return guide ? <GuideCard key={slug} guide={guide} /> : null
+          })}
+        </div>
+        <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Button asChild>
+            <a href="/guides">All {GUIDES.length} guides</a>
+          </Button>
+          <a href="/docs" className="text-[14.5px] font-semibold no-underline">
+            Or the API reference →
+          </a>
+        </div>
+      </Section>
+
       <Section id="faq" width="prose" innerClassName="pt-2 pb-[72px]">
         <Eyebrow wide>QUESTIONS</Eyebrow>
         <h2 className="ms-display-2 mt-3.5 mb-7">Straight answers, including the awkward ones</h2>
@@ -1016,9 +1068,7 @@ function HomePage() {
             </>
           }
           footnote={
-            <span className="font-mono">
-              npm i mailysend · pip install mailysend · go get mailysend
-            </span>
+            <span className="font-mono">npm i mailysend · or any Resend client, repointed</span>
           }
         />
       </Section>
