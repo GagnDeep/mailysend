@@ -119,11 +119,39 @@ function DomainDetail() {
     mutationFn: () => api.verifyDomain(domainId),
     onSuccess: (verified) => {
       queryClient.setQueryData(qk.domain(environment, domainId), verified)
-      toast[verified.status === 'verified' ? 'success' : 'message'](
-        verified.status === 'verified'
-          ? 'Every record resolves. This domain can send.'
-          : 'Not verified yet — the table shows which records are still outstanding.',
-      )
+      const errored = verified.checked?.errored ?? 0
+      if (verified.status === 'verified') {
+        toast.success('Every record resolves. This domain can send.')
+      } else if (errored > 0) {
+        // A resolver that would not answer is not a customer who got it wrong,
+        // and reporting it as "records outstanding" sent people to re-check a
+        // zone that was already correct.
+        toast.message(
+          `${errored} of ${verified.checked?.total ?? errored} records could not be checked`,
+          {
+            description:
+              verified.checked?.first_error ??
+              'The DNS resolver did not answer. Nothing here says your zone is wrong.',
+          },
+        )
+      } else {
+        toast.message('Not verified yet — the table shows which records are still outstanding.')
+      }
+      // The transport's own view of the domain, now that verify asks for it.
+      // The hand-off link used to appear only after pressing "Set up with this
+      // transport", which is the one button a reader stuck on an empty record
+      // table has no reason to press.
+      if (verified.identity) {
+        setIdentity(
+          (current) =>
+            ({
+              object: 'domain_identity' as const,
+              provider: current?.provider ?? domain?.provider ?? null,
+              records: current?.records ?? [],
+              ...verified.identity,
+            }) as DomainIdentityRecord,
+        )
+      }
     },
     onError: (error) => toast.error(errorMessage(error)),
     onSettled: () => {
@@ -166,7 +194,11 @@ function DomainDetail() {
   const automate = useMutation({
     mutationFn: () => api.automateDomainDns(domainId),
     onSuccess: (result) => {
-      toast.success(result.detail)
+      // Writing nothing is not a success. This transport publishes its own
+      // records, and the old copy — "Every record was written" — was a green
+      // toast for a no-op.
+      if (result.nothing_to_write) toast.message(result.detail)
+      else toast.success(result.detail)
       attempt.current = 0
       verify.mutate()
     },
@@ -300,6 +332,26 @@ function DomainDetail() {
             transports that each want an apex SPF record cannot both have one — so the includes are
             merged into a single record instead.
           </p>
+
+          {/* After a few unattended re-checks the poll is no longer news, and a
+              reader watching an empty table needs the transport's own flow
+              rather than another countdown. */}
+          {!settled && attempt.current >= 3 && identity?.external ? (
+            <Callout variant="info" title="Still nothing after several checks">
+              Nothing has resolved after {attempt.current} checks. This transport publishes its own
+              records, so the setup finishes on its side rather than in your zone file.
+              <span className="mt-2 block">
+                <a
+                  className="text-accent underline-offset-2 hover:underline"
+                  href={identity.external.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {identity.external.label} →
+                </a>
+              </span>
+            </Callout>
+          ) : null}
 
           {identity ? (
             <Callout

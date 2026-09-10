@@ -133,7 +133,30 @@ inbound.post('/mailboxes', async (c) => {
     })
     .parse(await c.req.json())
 
-  const address = body.address.toLowerCase()
+  const address = body.address.trim().toLowerCase()
+  const [local, domain, ...rest] = address.split('@')
+  if (!local || !domain || rest.length > 0 || !/^[^\s@]+\.[^\s@]+$/.test(domain)) {
+    throw apiError('validation_error', {
+      message: 'A mailbox is one whole address — a local part, an @, and a domain.',
+      param: 'address',
+    })
+  }
+
+  // The domain has to be one this workspace owns. Without this check the
+  // endpoint accepted any domain at all, and a mailbox on somebody else's
+  // domain is a row that can never receive anything and, worse, appeared in the
+  // From picker as a sendable identity.
+  const owned = await ctx.sql
+    .prepare('SELECT id, status FROM domains WHERE workspace_id = ? AND name = ?')
+    .bind(ctx.workspace.id, domain)
+    .first<{ id: string; status: string }>()
+  if (!owned) {
+    throw apiError('validation_error', {
+      message: `${domain} is not a domain in this workspace. Add it under Domains first — a mailbox can only exist on a domain you control.`,
+      param: 'address',
+    })
+  }
+
   const existing = await ctx.sql
     .prepare('SELECT id FROM inbound_mailboxes WHERE workspace_id = ? AND address = ?')
     .bind(ctx.workspace.id, address)
@@ -172,7 +195,11 @@ inbound.post('/mailboxes', async (c) => {
     forward_webhook_id: body.forward_webhook_id ?? null,
     agent_enabled: Boolean(body.agent_enabled),
     created_at: now,
-    note: "Mail reaches this address once the domain's MX records point at MailySend.",
+    domain_status: owned.status,
+    note:
+      owned.status === 'verified'
+        ? "Mail reaches this address once the domain's MX records point at MailySend."
+        : `${domain} is not verified yet, so nothing will arrive here until it is.`,
   })
 })
 

@@ -1,6 +1,6 @@
-import { Toaster, TooltipProvider } from '@mailysend/ui'
+import { cn, Toaster, TooltipProvider } from '@mailysend/ui'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useRouterState } from '@tanstack/react-router'
 import { useState } from 'react'
 import { AppSidebar } from '~/components/app/app-sidebar.tsx'
 import { AppTopbar } from '~/components/app/app-topbar.tsx'
@@ -29,6 +29,20 @@ function AppLayout() {
   // silently throws away every cache entry mid-navigation.
   const [queryClient] = useState(createQueryClient)
 
+  /**
+   * Whether the matched route wants the whole viewport.
+   *
+   * Read off the deepest match's `staticData` rather than the pathname, so a
+   * screen declares its own shape next to its own code instead of the shell
+   * keeping a list of exceptions that goes stale.
+   */
+  const fullBleed = useRouterState({
+    select: (state) =>
+      state.matches.some(
+        (match) => (match.staticData as { fullBleed?: boolean } | undefined)?.fullBleed,
+      ),
+  })
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={200}>
@@ -41,9 +55,9 @@ function AppLayout() {
               >
                 Skip to content
               </a>
-              <div className="flex min-h-screen bg-paper">
-                <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-tint lg:block">
-                  <div className="flex h-[57px] items-center gap-2.5 border-b border-line px-5">
+              <div className={cn('flex bg-paper', fullBleed ? 'h-screen' : 'min-h-screen')}>
+                <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-tint lg:flex">
+                  <div className="flex h-[57px] shrink-0 items-center gap-2.5 border-b border-line px-5">
                     <span className="grid size-[22px] place-items-center rounded-[7px] bg-accent font-mono text-[11px] font-bold text-white">
                       M
                     </span>
@@ -56,11 +70,21 @@ function AppLayout() {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <AppTopbar />
                   <EnvironmentBanner />
-                  <main id="app-main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-                    <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-6">
+                  {/* A mail client is an application, not a document: it wants
+                      the whole viewport and three panes that scroll on their
+                      own. Every other screen keeps the reading measure. A route
+                      opts out with `staticData.fullBleed`. */}
+                  {fullBleed ? (
+                    <main id="app-main" className="min-h-0 min-w-0 flex-1">
                       <Outlet />
-                    </div>
-                  </main>
+                    </main>
+                  ) : (
+                    <main id="app-main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+                      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-6">
+                        <Outlet />
+                      </div>
+                    </main>
+                  )}
                 </div>
               </div>
               <Toaster />

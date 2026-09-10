@@ -1,5 +1,12 @@
+import { DEFAULT_WORKSPACE } from '@mailysend/core'
+import { SmtpSession } from '@mailysend/providers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { decryptCredentials } from '../src/server/services/providers.ts'
+import {
+  buildProviderFor,
+  buildRouter,
+  decryptCredentials,
+  resolveDefaultProvider,
+} from '../src/server/services/providers.ts'
 import { claimFor, type Harness, harness, sessionFor } from './harness.ts'
 
 /**
@@ -212,5 +219,97 @@ describe('a domain’s records come from its bound transport', () => {
     expect(spf[0]?.value).toContain('amazonses.com')
     expect(spf[0]?.value).toContain('_spf.mx.cloudflare.net')
     expect(spf[0]?.provider).toBe('all')
+  })
+})
+
+/**
+ * The default transport, and what happens when it is not there.
+ *
+ * `buildProvider('cloudflare', …)` was the one branch with no null guard, so
+ * `buildRouter` always handed back a Cloudflare provider even with no binding,
+ * no account id and no token. That made `router.providers.length === 0`
+ * unreachable — the honest "nothing is configured" error could never fire — and
+ * pushed every such send into an `auth` failure raised deep inside the adapter,
+ * a kind that retries zero times and explains nothing.
+ */
+describe('the default transport', () => {
+  it('stands up no provider at all when the deployment supplies nothing', async () => {
+    const bare = await harness()
+    const router = await buildRouter(bare.sql, DEFAULT_WORKSPACE, bare.env)
+    expect(router.providers).toHaveLength(0)
+    await expect(resolveDefaultProvider(bare.env)).resolves.toBeNull()
+  })
+
+  it('is Cloudflare as soon as the deployment can stand it up', async () => {
+    const bound = await harness({
+      CLOUDFLARE_ACCOUNT_ID: 'acct_1',
+      CLOUDFLARE_API_TOKEN: 'tok_1',
+    } as never)
+    await expect(resolveDefaultProvider(bound.env)).resolves.toBe('cloudflare')
+    const router = await buildRouter(bound.sql, DEFAULT_WORKSPACE, bound.env)
+    expect(router.providers.map((p) => p.name)).toContain('cloudflare')
+  })
+
+  it('honours MS_DEFAULT_PROVIDER over Cloudflare when that one can be built', async () => {
+    const bound = await harness({ MS_DEFAULT_PROVIDER: 'resend', RESEND_API_KEY: 're_x' } as never)
+    await expect(resolveDefaultProvider(bound.env)).resolves.toBe('resend')
+  })
+
+  it('reports the default on GET /v1/providers so the screen need not guess', async () => {
+    const bound = await harness({
+      CLOUDFLARE_ACCOUNT_ID: 'acct_1',
+      CLOUDFLARE_API_TOKEN: 'tok_1',
+    } as never)
+    const boundCookie = await sessionFor(bound, await claimFor(bound))
+    const body = (await (await bound.fetch('/v1/providers', { cookie: boundCookie })).json()) as {
+      default_provider: string | null
+    }
+    expect(body.default_provider).toBe('cloudflare')
+  })
+
+  it('publishes Cloudflare records for a domain even before the binding exists', async () => {
+    // The zone has to be right *before* the credentials arrive, not after: a
+    // record list that appears only once a token is saved is a record list
+    // nobody publishes in time for their first send.
+    const created = (await (
+      await h.fetch('/v1/domains', {
+        method: 'POST',
+        cookie,
+        body: JSON.stringify({ name: 'preboot.dev' }),
+      })
+    ).json()) as { records: { value: string }[] }
+    expect(created.records.some((r) => r.value.includes('_spf.mx.cloudflare.net'))).toBe(true)
+  })
+})
+
+describe('SMTP credentials', () => {
+  it('reads the field names the catalog actually declares', async () => {
+    // The catalog offers `username` and `password`; `buildProvider` read `user`
+    // and `pass`, so anything saved through the Settings form was stored,
+    // decrypted, and then ignored in favour of the environment. The proof has
+    // to be the bytes the relay would see, not a field on the object, so this
+    // watches the session the adapter opens.
+    await put('smtp', {
+      credentials: { username: 'relay-user', password: 'relay-pass' },
+      config: { host: 'smtp.example.com', port: '587' },
+      enabled: true,
+    })
+    const connect = vi
+      .spyOn(SmtpSession, 'connect')
+      .mockRejectedValue(new Error('not dialling anything in a test'))
+
+    const provider = await buildProviderFor(h.sql, DEFAULT_WORKSPACE, 'smtp', h.env)
+    expect(provider).not.toBeNull()
+    await provider?.verify?.()
+
+    expect(connect).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        host: 'smtp.example.com',
+        port: 587,
+        auth: { user: 'relay-user', pass: 'relay-pass' },
+      }),
+    )
+    connect.mockRestore()
   })
 })

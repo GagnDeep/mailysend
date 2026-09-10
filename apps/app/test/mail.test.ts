@@ -311,6 +311,100 @@ describe('sending from the mail surface', () => {
   })
 })
 
+describe('identities', () => {
+  /**
+   * The From menu used to be a template string: `mail@` concatenated onto the
+   * first verified domain. It offered an address nobody had created and never
+   * offered the mailboxes somebody had. These assertions are about the list
+   * being derived from the data.
+   */
+  it('lists real mailboxes ahead of the synthetic domain address', async () => {
+    await verifiedDomain(h, 'beta.dev')
+    await addMailbox('support@acme.dev')
+
+    const res = await h.fetch('/v1/mail/identities', { cookie })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      data: { address: string; source: string; can_receive_replies: boolean }[]
+      sendable_domains: { name: string }[]
+    }
+
+    expect(body.data.map((i) => i.address)).toEqual(['support@acme.dev', 'hello@beta.dev'])
+    expect(body.data[0]?.source).toBe('mailbox')
+    // The distinction the old picker could not express: sending from an address
+    // with no mailbox behind it works, and the reply goes nowhere.
+    expect(body.data[0]?.can_receive_replies).toBe(true)
+    expect(body.data[1]?.can_receive_replies).toBe(false)
+    expect(body.sendable_domains.map((d) => d.name).sort()).toEqual(['acme.dev', 'beta.dev'])
+    expect(body.data.some((i) => i.address.startsWith('mail@'))).toBe(false)
+  })
+
+  it('offers nothing for a domain that is not verified', async () => {
+    await h.sql.prepare("UPDATE domains SET status = 'pending' WHERE name = 'acme.dev'").run()
+    const res = await h.fetch('/v1/mail/identities', { cookie })
+    const body = (await res.json()) as { data: unknown[]; sendable_domains: unknown[] }
+    expect(body.data).toHaveLength(0)
+    expect(body.sendable_domains).toHaveLength(0)
+  })
+
+  it('accepts a send from a local part nobody created a mailbox for', async () => {
+    // The gate is the domain, not the local part. A person who verified a
+    // domain may send as any address on it; the warning about replies going
+    // nowhere is advisory, and lives in the composer.
+    const res = await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        from: 'invoices-q3@acme.dev',
+        to: ['ana@example.com'],
+        subject: 'Invoice',
+        text: 'Attached.',
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const sent = await h.fetch('/v1/mail/threads?folder=sent', { cookie })
+    const body = (await sent.json()) as { data: { subject: string }[] }
+    expect(body.data).toHaveLength(1)
+  })
+
+  it('refuses a send from a domain the workspace has not verified', async () => {
+    const res = await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        from: 'anyone@somebody-elses.dev',
+        to: ['ana@example.com'],
+        subject: 'Nope',
+        text: 'Nope.',
+      }),
+    })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+  })
+
+  it('carries an explicit reply-to over the minted thread token', async () => {
+    await addMailbox()
+    await deliver({ raw: mime({ messageId: '<one@example.com>' }) })
+    const threadId = (await listThreads()).data[0]!.id
+
+    await h.fetch('/v1/mail/send', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        thread_id: threadId,
+        from: 'support@acme.dev',
+        to: ['ana@example.com'],
+        text: 'Write to the other desk instead.',
+        reply_to: ['billing@acme.dev'],
+      }),
+    })
+
+    const detail = await h.fetch(`/v1/mail/threads/${threadId}`, { cookie })
+    const body = (await detail.json()) as { messages: { reply_to: string | null }[] }
+    expect(body.messages[1]?.reply_to).toBe('billing@acme.dev')
+  })
+})
+
 describe('organising', () => {
   it('archives and restores a conversation', async () => {
     await addMailbox()

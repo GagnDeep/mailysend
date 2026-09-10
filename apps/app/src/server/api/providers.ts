@@ -3,7 +3,12 @@ import { newId } from '@mailysend/core'
 import { z } from 'zod'
 import { requireRole, requireScope } from '../auth.ts'
 import type { Ctx } from '../context.ts'
-import { buildProviderFor, decryptCredentials, encryptCredentials } from '../services/providers.ts'
+import {
+  buildProviderFor,
+  decryptCredentials,
+  encryptCredentials,
+  resolveDefaultProvider,
+} from '../services/providers.ts'
 import { type App, createRouter, json, withContext } from './base.ts'
 
 /**
@@ -206,6 +211,14 @@ providers.get('/', async (c) => {
     environment_fallback: data.every((row) => !row.enabled)
       ? NAMES.filter((name) => environmentSupplies(name, ctx))
       : [],
+    /**
+     * The transport a send would actually leave through if nothing here is
+     * enabled — Cloudflare Email unless the deployment names another. Computed
+     * from the same order the router uses rather than restated, so the screen
+     * cannot drift from the behaviour it describes. `null` means this deployment
+     * can stand up no transport at all, and only Test mode will send.
+     */
+    default_provider: await resolveDefaultProvider(ctx.env),
   })
 })
 

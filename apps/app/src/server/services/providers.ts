@@ -57,14 +57,23 @@ async function buildProvider(
   env: Env,
 ): Promise<Provider | null> {
   switch (name) {
-    case 'cloudflare':
+    case 'cloudflare': {
+      const accountId = credentials.account_id ?? env.CLOUDFLARE_ACCOUNT_ID
+      const apiToken = credentials.api_token ?? env.CLOUDFLARE_API_TOKEN
+      // Without a binding and without REST credentials there is no transport
+      // here, only the shape of one. Returning a provider anyway made
+      // `router.providers.length === 0` unreachable, so "nothing is configured"
+      // surfaced as an `auth` failure from deep inside the adapter — a kind that
+      // never retries and never explains itself.
+      if (!env.SEND_EMAIL && !(accountId && apiToken)) return null
       return new CloudflareProvider({
         // The binding is strictly better than REST when it exists: no HTTP hop,
         // no token to leak, and it is the design's central performance claim.
         ...(env.SEND_EMAIL ? { binding: env.SEND_EMAIL } : {}),
-        accountId: credentials.account_id ?? env.CLOUDFLARE_ACCOUNT_ID,
-        apiToken: credentials.api_token ?? env.CLOUDFLARE_API_TOKEN,
+        accountId,
+        apiToken,
       })
+    }
 
     case 'ses': {
       const accessKeyId = credentials.access_key_id ?? env.SES_ACCESS_KEY_ID
@@ -93,8 +102,13 @@ async function buildProvider(
           | 'tls'
           | 'starttls'
           | 'none',
-        user: credentials.user ?? env.SMTP_USER,
-        pass: credentials.pass ?? env.SMTP_PASS,
+        // The catalog the Settings form is built from calls these `username`
+        // and `password`; this read used to call them `user` and `pass`, so
+        // credentials saved through the UI were stored, decrypted, and ignored
+        // in favour of the environment. Both spellings are accepted on read so
+        // rows written before the fix keep working.
+        user: credentials.username ?? credentials.user ?? env.SMTP_USER,
+        pass: credentials.password ?? credentials.pass ?? env.SMTP_PASS,
         ehloName: (config.ehlo as string) ?? new URL(env.MS_PUBLIC_URL).hostname,
         connect: await resolveConnect(),
       })
@@ -128,6 +142,59 @@ export async function buildProviderFor(
   return buildProvider(name, credentials, config, env)
 }
 
+/**
+ * A provider built for its `dnsRecords` alone, with no credentials.
+ *
+ * The record set a domain needs is a statement about where its mail will go,
+ * not about which secrets happen to be present right now: a fresh deployment
+ * that has not yet been given a `send_email` binding still needs Cloudflare's
+ * SPF and MX in the zone before its first send, and computing the records from
+ * the live router alone meant they appeared only *after* the credentials did —
+ * exactly the wrong order.
+ *
+ * Never used to send. `buildProvider`'s null guard stays as it is, and this is
+ * the one caller that deliberately goes around it.
+ */
+export function recordsOnlyProvider(name: ProviderRow['provider']): Provider | null {
+  switch (name) {
+    case 'cloudflare':
+      return new CloudflareProvider({})
+    default:
+      return null
+  }
+}
+
+/**
+ * The order the environment fallback is tried in, Cloudflare first.
+ *
+ * Exported because the Transports screen has to be able to say which transport
+ * a workspace that has configured nothing will actually send through. An
+ * operator who cannot see the default cannot tell a working default from a
+ * silent one.
+ */
+export function fallbackOrder(env: Env): ProviderRow['provider'][] {
+  return [
+    ...new Set<ProviderRow['provider']>([
+      env.MS_DEFAULT_PROVIDER ?? 'cloudflare',
+      'cloudflare',
+      'ses',
+      'resend',
+      'smtp',
+    ]),
+  ]
+}
+
+/**
+ * The transport a workspace with no `provider_configs` rows would send through
+ * right now, or `null` when this deployment can stand none of them up.
+ */
+export async function resolveDefaultProvider(env: Env): Promise<ProviderRow['provider'] | null> {
+  for (const name of fallbackOrder(env)) {
+    if (await buildProvider(name, {}, {}, env)) return name
+  }
+  return null
+}
+
 export async function buildRouter(
   sql: Sql,
   workspaceId: string,
@@ -154,14 +221,8 @@ export async function buildRouter(
   if (entries.length === 0) {
     // Nothing configured. Fall back to whatever the environment offers, in the
     // order the product recommends, so a fresh deployment can send on first run.
-    const fallbackOrder: ProviderRow['provider'][] = [
-      env.MS_DEFAULT_PROVIDER ?? 'cloudflare',
-      'ses',
-      'resend',
-      'smtp',
-    ]
     let priority = 10
-    for (const name of [...new Set(fallbackOrder)]) {
+    for (const name of fallbackOrder(env)) {
       const provider = await buildProvider(name, {}, {}, env)
       if (provider) {
         entries.push({ provider, priority, weight: 100, enabled: true })

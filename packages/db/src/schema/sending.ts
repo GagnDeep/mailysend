@@ -89,6 +89,12 @@ export const domainDnsRecords = sqliteTable(
     status: text('status').notNull().default('not_started'),
     /** What resolved at this name last time we looked, verbatim. */
     found: text('found'),
+    /**
+     * Why the last lookup could not be made — a resolver outage, or the zone's
+     * own nameservers failing. Stored beside `status = 'error'` so a domain can
+     * say "could not be checked" instead of quietly reporting the previous pass.
+     */
+    error: text('error'),
     lastCheckedAt: text('last_checked_at'),
     /**
      * Set only when *we* wrote the record through an API token. It is what
@@ -208,6 +214,13 @@ export const messageEvents = sqliteTable(
     bounceClass: text('bounce_class'),
     smtpCode: text('smtp_code'),
     smtpResponse: text('smtp_response'),
+    /**
+     * The provider's own words about a failure — an SMTP transcript line, an API
+     * error body, or the message of the exception that ended the send. Without
+     * it a failed message's timeline says only "failed", which is the state the
+     * reader could already see.
+     */
+    diagnostic: text('diagnostic'),
     ip: text('ip'),
     userAgent: text('user_agent'),
     geoCountry: text('geo_country'),

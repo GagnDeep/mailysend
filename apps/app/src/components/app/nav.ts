@@ -1,4 +1,5 @@
 import {
+  AtSign,
   BarChart3,
   Braces,
   Contact2,
@@ -147,6 +148,13 @@ export const NAV: NavGroup[] = [
         icon: Inbox,
         chord: 'i',
         keywords: 'inbox threads replies mailbox compose send receive',
+      },
+      {
+        to: '/app/mailboxes',
+        label: 'Mailboxes',
+        icon: AtSign,
+        chord: 'e',
+        keywords: 'inbox address receiving forward webhook agent identity from',
       },
     ],
   },

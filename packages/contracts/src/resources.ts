@@ -26,7 +26,14 @@ export const DnsRecord = z.object({
   type: z.string(),
   ttl: z.string().default('Auto'),
   priority: z.number().int().optional(),
-  status: z.enum(['not_started', 'pending', 'verified', 'failed']),
+  /**
+   * `error` means the lookup did not happen — the resolver was unreachable, or
+   * the zone's nameservers failed to answer. It is not `failed`, which is the
+   * actionable case of a record that exists and disagrees, and it is emphatically
+   * not `verified`: returning the previous status on a resolver exception is how
+   * a domain whose every record errored still reported itself verified.
+   */
+  status: z.enum(['not_started', 'pending', 'verified', 'failed', 'error']),
   /** Which transport needs this record. The union is rendered per provider. */
   provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp', 'all']).default('all'),
   /** Human explanation shown under the row — the design's setup screen shows one per record. */
@@ -41,6 +48,10 @@ export const DnsRecord = z.object({
   match: z.enum(['exact', 'include', 'prefix']).default('exact'),
   /** What actually resolved, so a failed row can show the difference. */
   found: z.string().nullable().optional(),
+  /** Why the lookup could not be made, when `status` is `error`. */
+  error: z.string().nullable().optional(),
+  /** The value we asked for, so the row can show found against expected. */
+  expected: z.string().nullable().optional(),
   /** When the resolver last looked. Null means never checked, not "failed". */
   last_checked_at: IsoDate.nullable().optional(),
 })
@@ -83,6 +94,28 @@ export const Domain = z.object({
   last_verified_at: IsoDate.nullable().optional(),
   /** The transport the records were derived from. Null = the workspace default. */
   provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp']).nullable().optional(),
+  /**
+   * How much of the last verification actually happened. Present on a verify
+   * response only. Without it a check that could reach the resolver for two of
+   * six records was indistinguishable from one that checked all six and found
+   * four missing — the same `pending`, and no reason to suspect the network.
+   */
+  checked: z
+    .object({
+      total: z.number().int(),
+      resolved: z.number().int(),
+      errored: z.number().int(),
+      first_error: z.string().nullable().optional(),
+    })
+    .optional(),
+  /** What the transport itself says, where it has an identity API to ask. */
+  identity: z
+    .object({
+      status: z.string(),
+      detail: z.string().nullable().optional(),
+      external: z.object({ url: z.string(), label: z.string() }).nullable().optional(),
+    })
+    .optional(),
 })
 
 export const CreateDomainRequest = z.object({

@@ -248,7 +248,7 @@ logs.get('/:id', async (c) => {
       ? ctx.sql
           .prepare(
             `SELECT event_id, type, recipient, provider, occurred_at, bounce_class, smtp_code,
-                    smtp_response, ip, user_agent, geo_country, link_url, audience_class
+                    smtp_response, diagnostic, ip, user_agent, geo_country, link_url, audience_class
                FROM message_events WHERE workspace_id = ? AND message_id = ?
               ORDER BY occurred_at ASC, event_id ASC LIMIT 500`,
           )
@@ -326,6 +326,7 @@ interface EventRow {
   bounce_class: string | null
   smtp_code: string | null
   smtp_response: string | null
+  diagnostic: string | null
   ip: string | null
   user_agent: string | null
   geo_country: string | null

@@ -407,6 +407,60 @@ contacts.post('/', create)
 contacts.get('/', list)
 
 /**
+ * `GET /v1/contacts/search?q=` — address lookahead for the composer.
+ *
+ * Contacts were only reachable per audience, which is the right shape for the
+ * marketing screens and the wrong shape for a To field: a person typing a name
+ * does not know or care which audience the address is filed under. This crosses
+ * audiences, matches on address or either name, and returns a handful.
+ *
+ * `q` is bound, never interpolated, and its LIKE wildcards are escaped so a
+ * typed `%` cannot widen its own pattern.
+ */
+contacts.get('/search', async (c) => {
+  const ctx = c.get('ctx')
+  requireScope(ctx.actor, 'contacts:read')
+  const q = (c.req.query('q') ?? '').trim()
+  if (q.length < 2) {
+    return json({ object: 'list', data: [], has_more: false, next_cursor: null })
+  }
+  const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`
+  const rows = await ctx.sql
+    .prepare(
+      `SELECT id, audience_id, email, first_name, last_name
+         FROM contacts
+        WHERE workspace_id = ?
+          AND unsubscribed = 0
+          AND (email LIKE ? ESCAPE '\\'
+               OR first_name LIKE ? ESCAPE '\\'
+               OR last_name LIKE ? ESCAPE '\\')
+        ORDER BY last_send_at DESC, email
+        LIMIT 8`,
+    )
+    .bind(ctx.workspace.id, like, like, like)
+    .all<{
+      id: string
+      audience_id: string
+      email: string
+      first_name: string | null
+      last_name: string | null
+    }>()
+
+  return json({
+    object: 'list',
+    data: rows.results.map((row) => ({
+      object: 'contact_suggestion' as const,
+      id: row.id,
+      audience_id: row.audience_id,
+      email: row.email,
+      name: [row.first_name, row.last_name].filter(Boolean).join(' ') || null,
+    })),
+    has_more: false,
+    next_cursor: null,
+  })
+})
+
+/**
  * `POST /v1/contacts/import` — CSV or JSON, up to 10,000 rows.
  *
  * A rejected import is useless feedback: the caller has a spreadsheet, not a

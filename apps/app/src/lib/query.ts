@@ -56,6 +56,12 @@ export const qk = {
   mailThread: (env: Environment, id: string) => [env, 'mail', 'thread', id] as const,
   mailCounts: (env: Environment) => [env, 'mail', 'counts'] as const,
   mailLabels: (env: Environment) => [env, 'mail', 'labels'] as const,
+  /**
+   * Environment-scoped like every other key. The composer's From list used a
+   * bare `['mail','from-domains']`, so switching environments served the other
+   * environment's identities out of cache.
+   */
+  mailIdentities: (env: Environment) => [env, 'mail', 'identities'] as const,
   mailDrafts: (env: Environment) => [env, 'mail', 'drafts'] as const,
   mailHeaders: (env: Environment, id: string) => [env, 'mail', 'headers', id] as const,
   mailRaw: (env: Environment, id: string) => [env, 'mail', 'raw', id] as const,
@@ -112,7 +118,22 @@ export const createQueryClient = (): QueryClient =>
 
 /** Human-readable failure text for an error boundary or an inline banner. */
 export const errorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError) return error.message
+  if (error instanceof ApiClientError) {
+    // The server's own words where it sent any. Where it did not, the status is
+    // still more use than a shrug: a reader who is told "502" knows to try
+    // again and a reader told "Something went wrong" does not.
+    const detail = error.body?.message
+    if (detail) return error.code ? `${detail} (${error.code})` : detail
+    if (error.status === 0 || error.status >= 500) {
+      return `The server did not complete that request (${error.status || 'no response'}). Nothing was changed — try again.`
+    }
+    return error.message
+  }
+  // A `fetch` that rejects is the browser reporting no network, a blocked
+  // request or a dead origin, and its own message says none of that.
+  if (error instanceof TypeError) {
+    return 'Could not reach the server. Check the connection and try again.'
+  }
   if (error instanceof Error) return error.message
   return 'Something went wrong.'
 }

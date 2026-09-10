@@ -4,7 +4,12 @@ import type { DnsRequirement, Provider } from '@mailysend/providers'
 import { z } from 'zod'
 import { requireRole, requireScope } from '../auth.ts'
 import type { Ctx } from '../context.ts'
-import { buildProviderFor, buildRouter, decryptCredentials } from '../services/providers.ts'
+import {
+  buildProviderFor,
+  buildRouter,
+  decryptCredentials,
+  recordsOnlyProvider,
+} from '../services/providers.ts'
 import { type App, createRouter, json, page, parseLimit, withContext } from './base.ts'
 
 /**
@@ -239,7 +244,7 @@ domains.post('/:id/verify', async (c) => {
   const stored = await ctx.sql
     .prepare(
       `SELECT id, record, name, value, priority, provider, purpose, origin, match_mode, status,
-              found, last_checked_at
+              found, error, last_checked_at
          FROM domain_dns_records WHERE workspace_id = ? AND domain_id = ?`,
     )
     .bind(ctx.workspace.id, row.id)
@@ -250,17 +255,45 @@ domains.post('/:id/verify', async (c) => {
     stored.results.map(async (record) => ({ record, ...(await checkRecord(record)) })),
   )
 
+  /**
+   * What the transport itself thinks, asked fresh.
+   *
+   * `ProviderIdentity.status()` has existed since identity was written and had
+   * no caller anywhere, so a Cloudflare domain — which publishes its own records
+   * and reports its own onboarding state — could only ever be judged by resolver
+   * lookups against records Cloudflare had not written yet. Best-effort: a
+   * transport that will not answer must not fail a verify.
+   */
+  let identity: { status: string; detail: string | null; external: unknown } | null = null
+  try {
+    const provider = row.provider
+      ? await buildProviderFor(ctx.sql, ctx.workspace.id, row.provider as Provider['name'], ctx.env)
+      : (await buildRouter(ctx.sql, ctx.workspace.id, ctx.env)).providers[0]
+    if (provider?.identity) {
+      const state = await provider.identity.status(row.name)
+      identity = {
+        status: state.status,
+        detail: state.detail ?? null,
+        external: state.external ?? null,
+      }
+    }
+  } catch (err) {
+    console.warn('[domains] the transport would not report its identity state', err)
+  }
+
   await ctx.sql.batch(
-    checked.map(({ record, status, found }) =>
+    checked.map(({ record, status, found, error }) =>
       ctx.sql
         .prepare(
-          'UPDATE domain_dns_records SET status = ?, found = ?, last_checked_at = ? WHERE id = ?',
+          `UPDATE domain_dns_records
+              SET status = ?, found = ?, error = ?, last_checked_at = ? WHERE id = ?`,
         )
-        .bind(status, found, checkedAt, record.id),
+        .bind(status, found, error ?? null, checkedAt, record.id),
     ),
   )
 
   const status = rollUpStatus(checked.map((r) => r.status))
+  const errored = checked.filter((r) => r.status === 'error')
   await ctx.sql
     .prepare(
       `UPDATE domains SET status = ?, updated_at = ?${status === 'verified' ? ', last_verified_at = ?' : ''}
@@ -301,10 +334,23 @@ domains.post('/:id/verify', async (c) => {
       status,
       last_verified_at: status === 'verified' ? checkedAt : row.last_verified_at,
     }),
-    records: checked.map(({ record, status: s, found }) =>
-      fromDnsRow({ ...record, status: s, found, last_checked_at: checkedAt }),
+    records: checked.map(({ record, status: s, found, error }) =>
+      fromDnsRow({ ...record, status: s, found, error: error ?? null, last_checked_at: checkedAt }),
     ),
     ...readiness(checked.map(({ record, status: s, found }) => ({ ...record, status: s, found }))),
+    /**
+     * How much of this answer is actually an answer. A verify that could look up
+     * two of six records used to be indistinguishable from one that looked up
+     * all six — the screen said `pending` either way and the reader had no
+     * reason to suspect the resolver rather than their own zone.
+     */
+    ...(identity ? { identity } : {}),
+    checked: {
+      total: checked.length,
+      resolved: checked.length - errored.length,
+      errored: errored.length,
+      ...(errored.length > 0 ? { first_error: errored[0]?.error ?? null } : {}),
+    },
   })
 })
 
@@ -325,8 +371,13 @@ function readiness(
     found?: string | null
   }[],
 ) {
-  const verified = (predicate: (r: (typeof records)[number]) => boolean) =>
-    records.some((r) => predicate(r) && r.status === 'verified')
+  // `every` over the matching rows, not `some`: a domain with two DKIM records
+  // where one passes and one fails is not a domain with working DKIM, and
+  // reporting it ready is how a half-published key reaches production.
+  const verified = (predicate: (r: (typeof records)[number]) => boolean) => {
+    const matching = records.filter(predicate)
+    return matching.length > 0 && matching.every((r) => r.status === 'verified')
+  }
   const dmarc = records.find((r) => r.name.startsWith('_dmarc.'))
   return {
     dkim_ready: verified((r) => r.name.includes('._domainkey.')),
@@ -465,6 +516,23 @@ domains.post('/:id/dns', async (c) => {
     .bind(ctx.workspace.id, row.id)
     .all<{ id: string; record: string; name: string; value: string; priority: number | null }>()
 
+  if (records.results.length === 0) {
+    // Every Cloudflare record is `observe` — the transport publishes its own —
+    // so this endpoint wrote nothing and still answered "Every record was
+    // written", which the screen toasted as a success. There was no work here
+    // and saying so is the honest answer.
+    return json({
+      object: 'domain_dns_automation',
+      domain_id: row.id,
+      zone_id: zoneId,
+      written: [],
+      refused: [],
+      nothing_to_write: true,
+      detail:
+        'There are no records for us to write: this transport publishes its own, and we only check them. Finish the setup with the transport itself.',
+    })
+  }
+
   const now = new Date().toISOString()
   const written: string[] = []
   const refused: { name: string; detail: string }[] = []
@@ -509,6 +577,7 @@ domains.post('/:id/dns', async (c) => {
     zone_id: zoneId,
     written,
     refused,
+    nothing_to_write: false,
     detail:
       refused.length === 0
         ? 'Every record was written. DNS still has to propagate before verification passes.'
@@ -687,7 +756,19 @@ async function requiredRecords(
     : router.providers
   // A domain bound to a transport the workspace has since turned off would
   // otherwise silently produce no records at all.
-  const active = chosen.length > 0 ? chosen : router.providers
+  let active = chosen.length > 0 ? chosen : router.providers
+
+  // Cloudflare is the default transport, so its records belong in the zone
+  // whether or not this deployment can currently stand it up — see
+  // `recordsOnlyProvider`. Without this, adding a domain before adding the
+  // binding produced a record list that silently omitted the transport the mail
+  // was actually going to leave through.
+  if (!opts.provider || opts.provider === 'cloudflare') {
+    if (!active.some((p) => p.name === 'cloudflare')) {
+      const cloudflare = recordsOnlyProvider('cloudflare')
+      if (cloudflare) active = [...active, cloudflare]
+    }
+  }
 
   const union = new Map<string, { requirement: DnsRequirement; providers: Set<Provider['name']> }>()
 
@@ -779,6 +860,16 @@ const dnsRecordId = (domainId: string, r: RequiredRecord): string => {
 
 async function writeRecords(ctx: Ctx, domainId: string, records: RequiredRecord[]): Promise<void> {
   const statements = [
+    // Every row is about to be re-inserted as `not_started`, so the domain's own
+    // `verified` is now a claim about records that no longer exist. Leaving it
+    // set is exactly the "it still says verified but the table below says
+    // otherwise" the reader was looking at.
+    ctx.sql
+      .prepare(
+        `UPDATE domains SET status = 'not_started', last_verified_at = NULL, updated_at = ?
+          WHERE id = ? AND workspace_id = ?`,
+      )
+      .bind(new Date().toISOString(), domainId, ctx.workspace.id),
     ctx.sql
       .prepare('DELETE FROM domain_dns_records WHERE workspace_id = ? AND domain_id = ?')
       .bind(ctx.workspace.id, domainId),
@@ -827,16 +918,33 @@ const unquoteTxt = (data: string): string =>
 const canonical = (value: string): string =>
   value.replace(/\s+/g, '').replace(/\.$/, '').toLowerCase()
 
+/** The DoH `Status` values that mean the lookup itself did not succeed. */
+const DOH_STATUS: Record<number, string> = {
+  1: 'the resolver rejected the query (FORMERR)',
+  2: "the domain's nameservers failed to answer (SERVFAIL)",
+  4: 'the resolver does not implement this query type',
+  5: 'the query was refused',
+}
+
 async function resolve(name: string, type: keyof typeof DNS_TYPES): Promise<DohAnswer[]> {
   const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`
   const response = await fetch(url, { headers: { accept: 'application/dns-json' } })
-  if (!response.ok) return []
-  const body = (await response.json()) as { Answer?: DohAnswer[] }
+  // A non-200 used to become `[]`, which is the same value as "nothing is
+  // published" — so an outage at the resolver read as a customer who had not
+  // added the record yet. It throws now, and `checkRecord` reports `error`.
+  if (!response.ok) {
+    throw new Error(`the DNS resolver answered ${response.status}`)
+  }
+  const body = (await response.json()) as { Answer?: DohAnswer[]; Status?: number }
+  // Likewise NXDOMAIN (3) is a real answer — the name does not exist — while
+  // SERVFAIL and friends mean we learned nothing at all.
+  const failure = body.Status !== undefined ? DOH_STATUS[body.Status] : undefined
+  if (failure) throw new Error(failure)
   return (body.Answer ?? []).filter((a) => a.type === DNS_TYPES[type])
 }
 
 interface CheckResult {
-  status: 'verified' | 'pending' | 'failed'
+  status: 'verified' | 'pending' | 'failed' | 'error'
   /**
    * What actually resolved, verbatim.
    *
@@ -846,16 +954,24 @@ interface CheckResult {
    * than not.
    */
   found: string | null
+  /** Why the lookup could not be made, when `status` is `error`. */
+  error?: string | null
 }
 
 async function checkRecord(record: DnsRow): Promise<CheckResult> {
   let answers: DohAnswer[]
   try {
     answers = await resolve(record.name, record.record as keyof typeof DNS_TYPES)
-  } catch {
-    // A resolver hiccup is not evidence the customer did anything wrong, so it
-    // must not flip a verified record to failed.
-    return { status: record.status === 'verified' ? 'verified' : 'pending', found: null }
+  } catch (err) {
+    // A resolver hiccup is still not evidence the customer did anything wrong —
+    // but returning the record's *previous* `verified` laundered an error into a
+    // pass, and a domain whose every row errored rolled up to `verified`. The
+    // honest answer is that we do not know, and `error` is how that is said.
+    return {
+      status: 'error',
+      found: null,
+      error: err instanceof Error ? err.message : String(err),
+    }
   }
 
   // Nothing published yet, or still propagating. `failed` is reserved for a
@@ -873,18 +989,36 @@ async function checkRecord(record: DnsRow): Promise<CheckResult> {
       : raw
   const seen = (relevant.length > 0 ? relevant : raw).join(' | ')
 
+  const mode = record.match_mode ?? 'exact'
+
   if (record.record === 'MX') {
-    // An MX answer is `<priority> <exchange>`; only the exchange is ours to check.
-    const ok = found.some((f) => f.split(' ').pop()?.endsWith(wanted) || f.endsWith(wanted))
+    // An MX answer is `<priority> <exchange>`. `canonical()` strips whitespace,
+    // so splitting the canonical form on a space could never work — the raw
+    // answer is where the exchange still is. A provider's `prefix` MX (a route
+    // that lands on `<anything>.mx.cloudflare.net`) was dead for the same
+    // reason: this branch ran before `match_mode` was read at all.
+    const exchanges = raw.map((value) => canonical(value.trim().split(/\s+/).pop() ?? value))
+    const ok =
+      mode === 'prefix'
+        ? exchanges.some((exchange) => exchange.endsWith(wanted) || wanted.endsWith(exchange))
+        : exchanges.some((exchange) => exchange === wanted || exchange.endsWith(`.${wanted}`))
     return { status: ok ? 'verified' : 'failed', found: seen }
   }
 
-  const mode = record.match_mode ?? 'exact'
   if (mode === 'include') {
     // SPF is one record per name, so a customer merging our include into their
     // existing record is doing the right thing — match on the include, not
     // equality. Every include we asked for has to be there.
-    const includes = [...wanted.matchAll(/include:[^\s~+?-]+/g)].map((m) => m[0])
+    // Splitting on whitespace rather than a character class: the class excluded
+    // `-`, so `include:smtp-relay.example.com` was truncated to `include:smtp`
+    // and then substring-matched against the published record — a hyphenated
+    // include always passed, whatever was actually there. `canonical()` has
+    // already removed the whitespace, so the split is on the original value.
+    const includes = record.value
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((token) => token.startsWith('include:'))
+      .map((token) => token.replace(/\.$/, ''))
     const ok =
       includes.length > 0 && includes.every((include) => found.some((f) => f.includes(include)))
     return { status: ok ? 'verified' : 'failed', found: seen }
@@ -900,6 +1034,9 @@ async function checkRecord(record: DnsRow): Promise<CheckResult> {
 
 const rollUpStatus = (statuses: string[]): 'verified' | 'pending' | 'failed' | 'not_started' => {
   if (statuses.length === 0) return 'not_started'
+  // A row we could not check is not a row that passed. `verified` requires that
+  // every record was actually looked up and actually agreed — anything less is
+  // still `pending`, which is the state that keeps the reader checking.
   if (statuses.every((s) => s === 'verified')) return 'verified'
   if (statuses.includes('failed')) return 'failed'
   return 'pending'
@@ -938,6 +1075,8 @@ interface DnsRow {
   status: string
   /** What last resolved at this name, so a failure can show the difference. */
   found: string | null
+  /** Why the last lookup could not be made, when `status` is `error`. */
+  error?: string | null
   last_checked_at: string | null
 }
 
@@ -981,6 +1120,7 @@ const toDnsRecord = (
   status: string,
   lastCheckedAt: string | null,
   found: string | null = null,
+  error: string | null = null,
 ) => ({
   record: r.record,
   name: r.name,
@@ -996,6 +1136,9 @@ const toDnsRecord = (
   status,
   /** What resolved, so the screen can show found against expected. */
   found,
+  /** `dns-records.tsx` has read both of these since it was written. */
+  expected: r.value,
+  error,
   last_checked_at: lastCheckedAt,
 })
 
@@ -1014,6 +1157,7 @@ const fromDnsRow = (row: DnsRow) =>
     row.status,
     row.last_checked_at,
     row.found,
+    row.error ?? null,
   )
 
 export { domains }

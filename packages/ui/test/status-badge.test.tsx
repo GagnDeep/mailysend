@@ -25,6 +25,7 @@ const ALL_STATUSES: Status[] = [
   'verified',
   'pending',
   'not_started',
+  'error',
   'temporary_failure',
   'revoked',
   'expired',

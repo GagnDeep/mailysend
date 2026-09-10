@@ -28,6 +28,7 @@ import { Route as AppApiKeysRouteImport } from './routes/app/api-keys'
 import { Route as AppInboundRouteImport } from './routes/app/inbound'
 import { Route as AppLogsRouteImport } from './routes/app/logs'
 import { Route as AppMailRouteImport } from './routes/app/mail'
+import { Route as AppMailboxesRouteImport } from './routes/app/mailboxes'
 import { Route as AppPlacementRouteImport } from './routes/app/placement'
 import { Route as AppPreferencesRouteImport } from './routes/app/preferences'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
@@ -146,6 +147,11 @@ const AppLogsRoute = AppLogsRouteImport.update({
 const AppMailRoute = AppMailRouteImport.update({
   id: '/mail',
   path: '/mail',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMailboxesRoute = AppMailboxesRouteImport.update({
+  id: '/mailboxes',
+  path: '/mailboxes',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPlacementRoute = AppPlacementRouteImport.update({
@@ -290,6 +296,7 @@ export interface FileRoutesByFullPath {
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
+  '/app/mailboxes': typeof AppMailboxesRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -334,6 +341,7 @@ export interface FileRoutesByTo {
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
+  '/app/mailboxes': typeof AppMailboxesRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -380,6 +388,7 @@ export interface FileRoutesById {
   '/app/inbound': typeof AppInboundRoute
   '/app/logs': typeof AppLogsRoute
   '/app/mail': typeof AppMailRoute
+  '/app/mailboxes': typeof AppMailboxesRoute
   '/app/placement': typeof AppPlacementRoute
   '/app/preferences': typeof AppPreferencesRoute
   '/app/settings': typeof AppSettingsRoute
@@ -427,6 +436,7 @@ export interface FileRouteTypes {
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
+    | '/app/mailboxes'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -471,6 +481,7 @@ export interface FileRouteTypes {
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
+    | '/app/mailboxes'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -516,6 +527,7 @@ export interface FileRouteTypes {
     | '/app/inbound'
     | '/app/logs'
     | '/app/mail'
+    | '/app/mailboxes'
     | '/app/placement'
     | '/app/preferences'
     | '/app/settings'
@@ -697,6 +709,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMailRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/mailboxes': {
+      id: '/app/mailboxes'
+      path: '/mailboxes'
+      fullPath: '/app/mailboxes'
+      preLoaderRoute: typeof AppMailboxesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/placement': {
       id: '/app/placement'
       path: '/placement'
@@ -874,6 +893,7 @@ interface AppRouteChildren {
   AppInboundRoute: typeof AppInboundRoute
   AppLogsRoute: typeof AppLogsRoute
   AppMailRoute: typeof AppMailRoute
+  AppMailboxesRoute: typeof AppMailboxesRoute
   AppPlacementRoute: typeof AppPlacementRoute
   AppPreferencesRoute: typeof AppPreferencesRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -904,6 +924,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInboundRoute: AppInboundRoute,
   AppLogsRoute: AppLogsRoute,
   AppMailRoute: AppMailRoute,
+  AppMailboxesRoute: AppMailboxesRoute,
   AppPlacementRoute: AppPlacementRoute,
   AppPreferencesRoute: AppPreferencesRoute,
   AppSettingsRoute: AppSettingsRoute,

@@ -29,6 +29,8 @@ export type Status =
   | 'verified'
   | 'pending'
   | 'not_started'
+  /** The check did not happen — distinct from failing it. */
+  | 'error'
   | 'temporary_failure'
   | 'revoked'
   | 'expired'
@@ -60,6 +62,8 @@ export const statusToTone: Record<Status, StatusTone> = {
   verified: 'positive',
   pending: 'warning',
   not_started: 'neutral',
+  // Warning, not danger: nothing is known to be wrong, only unknown.
+  error: 'warning',
   temporary_failure: 'warning',
   revoked: 'danger',
   expired: 'warning',

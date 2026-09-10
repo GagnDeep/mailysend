@@ -1,5 +1,6 @@
 import {
   Button,
+  Callout,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -133,6 +134,12 @@ function EmailDetail() {
   const message = email.data
   const recipient = bareAddress(message.to[0] ?? '')
   const cancellable = CANCELLABLE.has(message.last_event)
+  // `messages.error_message` has been written on every failure since sending was
+  // built, and returned by the API as `error`, and shown nowhere — which is why
+  // a failed send read as "failed / unassigned" with no cause anywhere on the
+  // screen. It is the first thing on the page now, because it is the only thing
+  // the reader came here for.
+  const failure = message.last_event === 'failed' ? (message.error ?? null) : null
 
   return (
     <>
@@ -178,6 +185,26 @@ function EmailDetail() {
         }
       />
 
+      {message.last_event === 'failed' ? (
+        <Callout variant="warn" title="This message was not sent">
+          {failure ? (
+            <>
+              <p className="m-0 font-mono text-[12.5px] leading-relaxed">{failure}</p>
+              {failure.startsWith('permanent:') ? (
+                <p className="m-0 mt-2 text-[13px]">
+                  A permanent failure is not retried. Fix the cause and send again.
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="m-0 text-[13px]">
+              No reason was recorded. The send never reached a transport — check Settings →
+              Transports.
+            </p>
+          )}
+        </Callout>
+      ) : null}
+
       <PageSection title="Envelope">
         <div className="rounded-tile border border-line-soft bg-card px-4 py-2">
           <KeyValueList>
@@ -191,12 +218,22 @@ function EmailDetail() {
               label="Scheduled"
               value={message.scheduled_at ? dateTime(message.scheduled_at) : 'not scheduled'}
             />
-            <KeyValue label="Provider" value={message.provider ?? 'unassigned'} mono />
+            <KeyValue
+              label="Provider"
+              // "unassigned" reads like a bug when a message is merely queued.
+              // The two cases are different and now say so.
+              value={
+                message.provider ??
+                (message.last_event === 'failed' ? 'not routed' : 'not assigned yet')
+              }
+              mono
+            />
             <KeyValue
               label="Provider message id"
               value={message.provider_message_id ?? 'not assigned yet'}
               mono
             />
+            {failure ? <KeyValue label="Failure" value={failure} mono /> : null}
             <KeyValue
               label="Tags"
               value={

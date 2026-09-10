@@ -219,7 +219,18 @@ export const DnsRecordTable = ({
                       </TableCell>
                     ) : null}
                     <TableCell className="min-w-[240px]">
-                      <StatusBadge status={record.status} size="sm" />
+                      <StatusBadge
+                        status={record.status}
+                        size="sm"
+                        label={record.status === 'error' ? 'not checked' : undefined}
+                      />
+                      {record.status === 'error' ? (
+                        <span className="mt-1.5 block text-[12.5px] leading-snug text-muted">
+                          This record could not be looked up
+                          {detail.error ? `: ${detail.error}` : ''}. Nothing here says your zone is
+                          wrong — only that we did not get an answer. Check again in a moment.
+                        </span>
+                      ) : null}
                       {record.status === 'failed' ? (
                         <span className="mt-1.5 block text-[12.5px] leading-snug text-muted">
                           {found ? (

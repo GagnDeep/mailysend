@@ -14,7 +14,10 @@ export const AppSidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     to === '/app' ? pathname === '/app' || pathname === '/app/' : pathname.startsWith(to)
 
   return (
-    <nav aria-label="Dashboard" className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-4">
+    <nav
+      aria-label="Dashboard"
+      className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-3 py-4"
+    >
       {NAV.map((group) => (
         <div key={group.label}>
           <h2 className="ms-eyebrow px-2.5 pb-2 text-[10.5px] text-muted-2">{group.label}</h2>

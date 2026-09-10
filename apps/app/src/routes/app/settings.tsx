@@ -462,6 +462,8 @@ function ProviderPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
   const configured = useQuery({ queryKey: qk.providers(), queryFn: () => api.listProviders() })
 
   const fallback = configured.data?.environment_fallback ?? []
+  const defaultProvider = configured.data?.default_provider ?? null
+  const anyEnabled = (configured.data?.data ?? []).some((row) => row.enabled)
 
   return (
     <PageSection
@@ -475,6 +477,28 @@ function ProviderPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
           was deployed with. That is a working setup, not a broken one — configure a transport below
           only when you want this workspace to differ from the deployment.
         </Callout>
+      ) : null}
+
+      {/* The default was real all along and invisible: Cloudflare heads the
+          router's fallback order, and nothing on this screen said so. A `null`
+          here is the case worth shouting about — no transport can be stood up
+          at all, and only Test mode will send. */}
+      {!anyEnabled ? (
+        defaultProvider ? (
+          <Callout variant="info" title="Default transport">
+            With nothing configured, this workspace sends over{' '}
+            <strong>{providerLabel(defaultProvider)}</strong>. Cloudflare Email is the default
+            whenever this deployment can stand it up, which is what makes a one-click install able
+            to send on its first run.
+          </Callout>
+        ) : (
+          <Callout variant="warn" title="No transport can be used">
+            Nothing is configured here and this deployment supplies no credentials either — no
+            <code> send_email</code> binding, no Cloudflare account id and token, no SES, Resend or
+            SMTP. Live sends will fail with "no sending provider is configured". Test mode still
+            works, because it never touches a transport.
+          </Callout>
+        )
       ) : null}
 
       {catalog.isLoading ? (

@@ -131,6 +131,13 @@ export const Email = z.object({
   // message genuinely has no provider yet.
   provider: z.string().nullable().optional(),
   provider_message_id: z.string().nullable().optional(),
+  /**
+   * Why a failed send failed, in the provider's or the router's own words,
+   * prefixed with the failure kind. Present only on `failed`. The value has been
+   * stored and returned since sending was written; nothing rendered it, which is
+   * why a failure looked like a status with no cause.
+   */
+  error: z.string().nullable().optional(),
   opens: z.number().int().optional(),
   clicks: z.number().int().optional(),
 })

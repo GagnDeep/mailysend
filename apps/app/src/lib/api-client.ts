@@ -723,6 +723,38 @@ export const MailCounts = z.object({
 })
 export type MailCountsRecord = z.infer<typeof MailCounts>
 
+/**
+ * One address this workspace can send as. `source` says where it came from and
+ * `can_receive_replies` says whether anything is listening behind it — the two
+ * facts the old hardcoded `mail@domain` string could not carry.
+ */
+export const ContactSuggestion = z.object({
+  object: z.literal('contact_suggestion'),
+  id: z.string(),
+  audience_id: z.string(),
+  email: z.string(),
+  name: z.string().nullable(),
+})
+export type ContactSuggestionRecord = z.infer<typeof ContactSuggestion>
+
+export const MailIdentity = z.object({
+  object: z.literal('mail_identity'),
+  address: z.string(),
+  name: z.string().nullable().optional(),
+  domain: z.string(),
+  domain_id: z.string().nullable().optional(),
+  domain_status: z.string(),
+  source: z.enum(['mailbox', 'domain', 'test']),
+  can_receive_replies: z.boolean(),
+})
+export type MailIdentityRecord = z.infer<typeof MailIdentity>
+
+export const MailIdentityList = z.object({
+  object: z.literal('list'),
+  data: z.array(MailIdentity),
+  sendable_domains: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+})
+
 export const MailLabel = z.object({
   object: z.literal('mail_label'),
   id: z.string(),
@@ -861,6 +893,8 @@ export const createApiClient = (scope: RequestScope) => {
           zone_id: z.string(),
           written: z.array(z.string()),
           refused: z.array(z.object({ name: z.string(), detail: z.string() })),
+          /** True when this transport publishes its own records and we wrote none. */
+          nothing_to_write: z.boolean().default(false),
           detail: z.string(),
         }),
         {},
@@ -887,6 +921,12 @@ export const createApiClient = (scope: RequestScope) => {
     createAudience: (body: { name: string }) => post('/audiences', Audience, body),
     deleteAudience: (id: string) => del(`/audiences/${id}`, deleted),
 
+    /**
+     * Address lookahead across every audience, for the composer's recipient
+     * field. The per-audience list is the wrong shape there: a person typing a
+     * name has no idea which audience the address is filed under.
+     */
+    searchContacts: (q: string) => get('/contacts/search', list(ContactSuggestion), { q }),
     listContacts: (audienceId: string, params: ListParams & Record<string, unknown> = {}) =>
       get(`/audiences/${audienceId}/contacts`, list(Contact), params),
     getContact: (audienceId: string, id: string) =>
@@ -1031,6 +1071,7 @@ export const createApiClient = (scope: RequestScope) => {
       return MailUpload.parse(await response.json())
     },
     sendMail: (body: Record<string, unknown>) => post('/mail/send', MailSendResult, body),
+    listMailIdentities: () => get('/mail/identities', MailIdentityList),
     listMailLabels: () => get('/mail/labels', list(MailLabel)),
     createMailLabel: (body: { name: string; colour?: string }) =>
       post('/mail/labels', MailLabel, body),
@@ -1063,6 +1104,12 @@ export const createApiClient = (scope: RequestScope) => {
         '/providers',
         listResponse(ProviderConfig).extend({
           environment_fallback: z.array(ProviderName).default([]),
+          /**
+           * What a send would actually leave through with nothing enabled here.
+           * Computed server-side from the router's own order rather than guessed
+           * from the fallback list, so the screen cannot drift from the code.
+           */
+          default_provider: ProviderName.nullable().default(null),
         }),
       ),
     providerCatalog: () => get('/providers/catalog', list(ProviderCatalogEntry)),

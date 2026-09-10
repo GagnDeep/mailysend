@@ -86,7 +86,12 @@ const TimelineRow = ({ event }: { event: EmailTimelineEventRecord }) => {
         ) : null}
       </div>
 
-      {event.type === 'bounced' && (event.bounce_class || event.diagnostic) ? (
+      {/* A failure explains itself here for the same reason a bounce does: the
+          timeline is where a reader looks after seeing a status they did not
+          expect. `failed` used to be the one event type that arrived with a
+          diagnostic and rendered none of it. */}
+      {(event.type === 'bounced' || event.type === 'failed') &&
+      (event.bounce_class || event.diagnostic) ? (
         <div className="flex flex-col gap-1 pl-[18px]">
           {event.bounce_class ? (
             <span className="font-mono text-[11.5px] text-warning">class {event.bounce_class}</span>

@@ -352,9 +352,9 @@ export async function consumeEvents(
           .prepare(
             `INSERT OR IGNORE INTO message_events
                (event_id, workspace_id, message_id, type, recipient, occurred_at, provider,
-                audience_class, link_url, bounce_class, smtp_code, smtp_response, ip, user_agent,
-                geo_country, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                audience_class, link_url, bounce_class, smtp_code, smtp_response, diagnostic,
+                ip, user_agent, geo_country, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             event.event_id,
@@ -369,6 +369,7 @@ export async function consumeEvents(
             event.bounce_class ?? null,
             event.smtp_code ?? null,
             event.smtp_response ?? null,
+            event.diagnostic ?? null,
             event.ip ?? null,
             event.user_agent ?? null,
             event.geo_country ?? null,

@@ -110,15 +110,11 @@ async function handleOne(job: SendJob, env: Env): Promise<void> {
   }
 
   // --- send ----------------------------------------------------------------
-  const router = await buildRouter(sql, job.workspace_id, env)
-  if (router.providers.length === 0) {
-    throw new SendError(
-      'permanent',
-      'cloudflare',
-      'no sending provider is configured for this workspace',
-    )
-  }
-
+  // Test mode is settled before any transport is built. A brand-new instance has
+  // no binding, no credentials and no verified domain, and a test send there has
+  // to work anyway — it is the only way to see the product function at all. If
+  // the router were built first, "no sending provider is configured" would fire
+  // on a send that was never going to touch a provider.
   if (envelope.environment === 'test') {
     // Test-mode traffic must produce a complete, inspectable timeline without
     // ever reaching a real mailbox — otherwise "test" means "untested".
@@ -137,6 +133,17 @@ async function handleOne(job: SendJob, env: Env): Promise<void> {
       console.warn('[send] test-mode loopback failed', err)
     })
     return
+  }
+
+  const router = await buildRouter(sql, job.workspace_id, env)
+  if (router.providers.length === 0) {
+    throw new SendError(
+      'permanent',
+      'cloudflare',
+      'No sending provider is configured. Cloudflare Email is used by default, ' +
+        'but this deployment has no send_email binding and no CLOUDFLARE_ACCOUNT_ID / ' +
+        'CLOUDFLARE_API_TOKEN — add one in Settings → Transports, or send in Test mode.',
+    )
   }
 
   try {
@@ -432,13 +439,19 @@ async function markFailed(env: Env, job: SendJob, err: unknown): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
   const message = err instanceof Error ? err.message : String(err)
   const kind = err instanceof SendError ? err.kind : 'unknown'
+  // The provider is recorded on failure as well as on success. Only `recordSent`
+  // ever wrote this column, so a message that reached a transport and was
+  // refused by it read as `unassigned` — indistinguishable from one that never
+  // got as far as routing, which is precisely the distinction a reader needs.
+  const failedProvider = err instanceof SendError ? err.provider : null
   await sql
     .prepare(
       `UPDATE messages
-          SET status = 'failed', state_rank = 96, error_message = ?, lease_until = NULL
+          SET status = 'failed', state_rank = 96, error_message = ?,
+              provider = COALESCE(provider, ?), lease_until = NULL
         WHERE id = ? AND workspace_id = ? AND state_rank < 96`,
     )
-    .bind(`${kind}: ${message}`, job.email_id, job.workspace_id)
+    .bind(`${kind}: ${message}`, failedProvider, job.email_id, job.workspace_id)
     .run()
 
   await updateOutboundStatus(sql, job.workspace_id, job.email_id, 'failed').catch(() => {})

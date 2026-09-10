@@ -36,6 +36,20 @@
       "when": 1789022335651,
       "tag": "0004_dns_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789200000000,
+      "tag": "0005_event_diagnostic",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789026614099,
+      "tag": "0006_dns_error",
+      "breakpoints": true
     }
   ]
 }

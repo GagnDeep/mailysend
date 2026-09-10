@@ -496,6 +496,12 @@ const ComposeRequest = z.object({
   to: z.array(z.string().min(3).max(320)).min(1).max(50),
   cc: z.array(z.string().min(3).max(320)).max(50).optional(),
   bcc: z.array(z.string().min(3).max(320)).max(50).optional(),
+  /**
+   * Where replies should go when that is not the From address — which is the
+   * normal case for a send-only identity on a verified domain with no mailbox
+   * behind it.
+   */
+  reply_to: z.array(z.string().min(3).max(320)).max(10).optional(),
   subject: z.string().max(998).optional(),
   html: z.string().max(2_000_000).optional(),
   text: z.string().max(2_000_000).optional(),
@@ -594,7 +600,14 @@ mail.post('/send', async (c) => {
     ...(body.text ? { text: body.text } : {}),
     ...(attachments.length ? { attachments } : {}),
     ...(body.scheduled_at ? { scheduled_at: body.scheduled_at } : {}),
-    ...(replyTo ? { reply_to: [replyTo] } : {}),
+    // An explicit Reply-To wins over the per-thread reply token: the author
+    // asked for replies to go somewhere specific, and threading is the token's
+    // convenience rather than its obligation.
+    ...(body.reply_to?.length
+      ? { reply_to: body.reply_to }
+      : replyTo
+        ? { reply_to: [replyTo] }
+        : {}),
     ...(Object.keys(headers).length ? { headers } : {}),
   })
 
@@ -632,6 +645,118 @@ async function mintReplyTo(ctx: Ctx, threadId: string | null): Promise<string | 
 // ---------------------------------------------------------------------------
 // Labels and drafts
 // ---------------------------------------------------------------------------
+
+/**
+ * `GET /v1/mail/identities` — every address this workspace can send as.
+ *
+ * There was no server-side notion of a sendable address until this endpoint:
+ * the composer built one client-side by concatenating `mail@` onto the first
+ * verified domain, which is why the From menu offered an address nobody had
+ * created and never offered the mailboxes somebody had.
+ *
+ * Three sources, in the order a person would rank them:
+ *   1. every `inbound_mailboxes` row whose domain the workspace owns — a real
+ *      address that can receive the reply,
+ *   2. one synthetic `hello@<domain>` per verified domain with no mailbox, so a
+ *      workspace that has verified a domain and created nothing can still send,
+ *   3. the test identity, in test mode, which needs no domain at all.
+ *
+ * `can_receive_replies` is the distinction that matters and the one the old
+ * picker could not express: sending from an address with no mailbox behind it
+ * works, and the reply goes nowhere.
+ */
+mail.get('/identities', async (c) => {
+  const ctx = c.get('ctx')
+
+  const [mailboxes, domains] = await Promise.all([
+    ctx.sql
+      .prepare(
+        'SELECT id, address, name FROM inbound_mailboxes WHERE workspace_id = ? ORDER BY address',
+      )
+      .bind(ctx.workspace.id)
+      .all<{ id: string; address: string; name: string | null }>(),
+    ctx.sql
+      .prepare('SELECT id, name, status FROM domains WHERE workspace_id = ? ORDER BY name')
+      .bind(ctx.workspace.id)
+      .all<{ id: string; name: string; status: string }>(),
+  ])
+
+  const byName = new Map(domains.results.map((d) => [d.name.toLowerCase(), d]))
+  const data: {
+    object: 'mail_identity'
+    address: string
+    name: string | null
+    domain: string
+    domain_id: string | null
+    domain_status: string
+    source: 'mailbox' | 'domain' | 'test'
+    can_receive_replies: boolean
+  }[] = []
+
+  const claimed = new Set<string>()
+  for (const box of mailboxes.results) {
+    const domain = box.address.split('@')[1]?.toLowerCase() ?? ''
+    const owned = byName.get(domain)
+    // A mailbox on a domain the workspace does not own is not a sendable
+    // identity — `POST /v1/inbound/mailboxes` used to accept any domain at all,
+    // so rows like that exist and must not be offered here.
+    if (!owned) continue
+    claimed.add(domain)
+    data.push({
+      object: 'mail_identity',
+      address: box.address,
+      name: box.name,
+      domain,
+      domain_id: owned.id,
+      domain_status: owned.status,
+      source: 'mailbox',
+      can_receive_replies: true,
+    })
+  }
+
+  for (const domain of domains.results) {
+    if (claimed.has(domain.name.toLowerCase())) continue
+    if (domain.status !== 'verified') continue
+    data.push({
+      object: 'mail_identity',
+      address: `hello@${domain.name}`,
+      name: null,
+      domain: domain.name,
+      domain_id: domain.id,
+      domain_status: domain.status,
+      source: 'domain',
+      can_receive_replies: false,
+    })
+  }
+
+  if (ctx.actor.environment === 'test') {
+    data.unshift({
+      object: 'mail_identity',
+      address: 'test@test.invalid',
+      name: 'Test mode',
+      domain: 'test.invalid',
+      domain_id: null,
+      domain_status: 'verified',
+      source: 'test',
+      can_receive_replies: true,
+    })
+  }
+
+  return json({
+    object: 'list',
+    data,
+    has_more: false,
+    next_cursor: null,
+    /**
+     * The domains any local part may be typed on. The picker is free text by
+     * design — the user asked to send from a hand-written inbox — and this is
+     * what it validates the typed domain against before the server does.
+     */
+    sendable_domains: domains.results
+      .filter((d) => d.status === 'verified')
+      .map((d) => ({ id: d.id, name: d.name })),
+  })
+})
 
 mail.get('/labels', async (c) => {
   const ctx = c.get('ctx')

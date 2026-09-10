@@ -1,6 +1,7 @@
 import { CreateDomainRequest } from '@mailysend/contracts'
 import {
   Button,
+  Callout,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,7 +25,7 @@ import { num, shortDate } from '~/components/app/format.ts'
 import { PageHeader } from '~/components/app/page.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { EmptyState, ErrorState, TableSkeleton } from '~/components/app/states.tsx'
-import type { DomainRecord } from '~/lib/api-client.ts'
+import type { DomainIdentityRecord, DomainRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
 
@@ -199,19 +200,37 @@ const AddDomainWizard = ({
   const [name, setName] = useState('')
   const [invalid, setInvalid] = useState<string | null>(null)
   const [domain, setDomain] = useState<DomainRecord | null>(null)
+  const [identity, setIdentity] = useState<DomainIdentityRecord | null>(null)
 
   const reset = () => {
     setStep(0)
     setName('')
     setInvalid(null)
     setDomain(null)
+    setIdentity(null)
   }
+
+  /**
+   * Ask the transport to register the domain, the moment it exists.
+   *
+   * The wizard never called this, so a Cloudflare-routed domain reached step 2
+   * with an empty record table under the words "Add these records to the DNS
+   * zone" — instructions for a list that was not there, and no sign of the
+   * hand-off link that is the actual next step. Best-effort: the records we
+   * compute stand on their own if the transport will not answer.
+   */
+  const ensureIdentity = useMutation({
+    mutationFn: (id: string) => api.ensureDomainIdentity(id),
+    onSuccess: (state) => setIdentity(state),
+    onError: () => setIdentity(null),
+  })
 
   const create = useMutation({
     mutationFn: (value: string) => api.createDomain({ name: value }),
     onSuccess: (created) => {
       setDomain(created)
       setStep(1)
+      ensureIdentity.mutate(created.id)
       void queryClient.invalidateQueries({ queryKey: qk.domains(environment) })
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -307,10 +326,30 @@ const AddDomainWizard = ({
         {step > 0 && domain ? (
           <div className="flex flex-col gap-3">
             <p className="m-0 text-[14px] text-muted">
-              {step === 1
-                ? `Add these records to the DNS zone for ${domain.name}. Leave them in place — removing one later stops the domain sending.`
-                : 'We resolve each record ourselves. Anything still pending has simply not reached our resolver yet.'}
+              {(domain.records?.length ?? 0) === 0 && identity?.external
+                ? `${domain.name} is set up by the transport itself — there is nothing for you to copy here.`
+                : step === 1
+                  ? `Add these records to the DNS zone for ${domain.name}. Leave them in place — removing one later stops the domain sending.`
+                  : 'We resolve each record ourselves. Anything still pending has simply not reached our resolver yet.'}
             </p>
+
+            {/* For an `observe`-only transport the hand-off is the primary
+                action, not a footnote under an empty table. */}
+            {identity?.external ? (
+              <Callout variant="info" title="This transport does its own setup">
+                {identity.detail ?? 'The records below are checked, not copied.'}
+                <span className="mt-2 block">
+                  <a
+                    className="text-accent underline-offset-2 hover:underline"
+                    href={identity.external.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {identity.external.label} →
+                  </a>
+                </span>
+              </Callout>
+            ) : null}
             {step === 2 ? (
               <p className="m-0 flex items-center gap-2 text-[13.5px] text-muted">
                 Current state: <StatusBadge status={domain.status} size="sm" />

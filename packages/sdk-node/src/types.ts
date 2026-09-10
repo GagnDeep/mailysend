@@ -212,10 +212,27 @@ export interface DnsRecord {
   type: string
   ttl: string
   priority?: number
-  status: 'not_started' | 'pending' | 'verified' | 'failed'
+  /**
+   * `error` means the lookup did not happen — the resolver was unreachable, or
+   * the zone's nameservers failed to answer. It is not `failed`, which is a
+   * record that exists and disagrees, and it is emphatically not `verified`.
+   */
+  status: 'not_started' | 'pending' | 'verified' | 'failed' | 'error'
   /** Which transport needs this record. */
   provider: ProviderName | 'all'
   purpose?: string
+  /** Who publishes it. `observe` is a record the transport writes itself. */
+  origin?: 'copy' | 'observe'
+  /** How the resolved value is compared. */
+  match?: 'exact' | 'include' | 'prefix'
+  /** What actually resolved, so a failed row can show the difference. */
+  found?: string | null
+  /** Why the lookup could not be made, when `status` is `error`. */
+  error?: string | null
+  /** The value we asked for, so the row can show found against expected. */
+  expected?: string | null
+  /** When the resolver last looked. Null means never checked, not "failed". */
+  last_checked_at?: string | null
 }
 
 export interface Domain {
@@ -235,6 +252,31 @@ export interface Domain {
   open_tracking: boolean
   click_tracking: boolean
   custom_return_path: string
+  /** The DKIM selector the records were minted for; `ms1` unless overridden. */
+  dkim_selector?: string
+  /** Outbound TLS policy. `enforced` fails a send rather than downgrading. */
+  tls?: 'opportunistic' | 'enforced'
+  /** Null until the first successful verification, then the last that passed. */
+  last_verified_at?: string | null
+  /** The transport the records were derived from. Null = workspace default. */
+  provider?: ProviderName | null
+  /**
+   * How much of the last verification actually happened. Present on a verify
+   * response only: a check that could reach the resolver for two of six records
+   * used to be indistinguishable from one that checked all six.
+   */
+  checked?: {
+    total: number
+    resolved: number
+    errored: number
+    first_error?: string | null
+  }
+  /** What the transport itself says, where it has an identity API to ask. */
+  identity?: {
+    status: string
+    detail?: string | null
+    external?: { url: string; label: string } | null
+  }
 }
 
 export interface CreateDomainRequest {
