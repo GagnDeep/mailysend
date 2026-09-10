@@ -51,9 +51,22 @@ const VERSION = createRequire(import.meta.url)('./package.json').version as stri
  *
  * `IS_MARKETING_BUILD` is captured before the default is applied, because one
  * thing does depend on the difference: only the marketing deployment may
- * publish `mailysend.com` as its sitemap host.
+ * publish `mailysend.com` as its canonical host.
+ *
+ * Capturing it into a plain `const` was not enough. Vite evaluates this file
+ * once per environment — four times for a Cloudflare build, in one process — so
+ * the first load's `MS_LANDING = 'marketing'` default was still in
+ * `process.env` when the second load read it, and loads two through four each
+ * concluded they were the marketing build. Every fork therefore resolved
+ * `sitemapHost` to `https://mailysend.com` and baked it into the bundle,
+ * which is precisely the failure this guard exists to prevent. The answer is
+ * memoised in an environment variable of its own, so that re-evaluating this
+ * file cannot change what it decides.
  */
-const IS_MARKETING_BUILD = process.env.MS_LANDING === 'marketing'
+const ORIGINAL_LANDING = process.env.MS_LANDING_AT_BUILD_START ?? process.env.MS_LANDING ?? ''
+process.env.MS_LANDING_AT_BUILD_START = ORIGINAL_LANDING
+
+const IS_MARKETING_BUILD = ORIGINAL_LANDING === 'marketing'
 if (!process.env.MS_LANDING) process.env.MS_LANDING = 'marketing'
 
 const sitemapHost =
@@ -91,7 +104,21 @@ const outDir = target === 'cloudflare' ? '.output-cf' : '.output'
 
 export default defineConfig({
   cacheDir,
-  define: { __MS_VERSION__: JSON.stringify(VERSION) },
+  /**
+   * `__MS_SITE_URL__` is the same host the sitemap is generated with, compiled
+   * in so that `seo/site.ts` cannot disagree with `sitemap.xml` and
+   * `robots.txt` about which site this is. It used to read a
+   * `VITE_PUBLIC_URL` that is set nowhere in this repository, so it always
+   * fell back to the literal `https://mailysend.com` — which meant every
+   * one-click Cloudflare deploy shipped canonicals, `og:url`s and JSON-LD
+   * `@id`s naming a domain its operator does not own. An empty value is the
+   * honest answer for a build with no configured host, and `absoluteUrl`
+   * turns it into site-relative URLs that resolve to whoever is serving them.
+   */
+  define: {
+    __MS_VERSION__: JSON.stringify(VERSION),
+    __MS_SITE_URL__: JSON.stringify(sitemapHost ?? ''),
+  },
   resolve: {
     alias: [
       /**
