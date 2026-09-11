@@ -1,10 +1,5 @@
 import { cn } from '@mailysend/ui'
-import { useEffect, useState } from 'react'
 import { REPO_URL } from '~/seo'
-
-/** The `owner/repo` the API wants. It is not a label: the button says "GitHub". */
-const REPO_PATH = REPO_URL.replace(/^https?:\/\/github\.com\//, '')
-const CACHE_KEY = 'ms:gh-stats'
 
 /**
  * GitHub's own mark. Lucide 1.x dropped its brand icons, and a generic "code"
@@ -23,23 +18,15 @@ const StarMark = ({ className }: { className?: string }) => (
   </svg>
 )
 
-interface RepoStats {
-  stars: number
-}
-
 /**
- * The repository, as two buttons that do the two different things a visitor
- * wants: open the source, or star it.
+ * The repository, as two buttons for the two different things a visitor wants:
+ * open the source, or star it.
  *
- * The count is fetched from GitHub in the visitor's own browser. A star number
- * is the one figure on a marketing page that is a single click from being
- * checked, so a hard-coded or rounded-up one is the most easily caught lie we
- * could tell — this renders the button with its plain "Star" label until a real
- * answer arrives, and keeps that label for a visitor who is offline or
- * rate-limited, rather than showing a zero.
- *
- * Unauthenticated and read-only: the request carries no identity of ours, and
- * GitHub's 60-per-hour limit is per visitor IP, not per site.
+ * Deliberately no star count. An early project's real number argues against
+ * the button it sits on, and the alternatives are worse — a rounded-up figure
+ * is one click from being disproved, and a count fetched but hidden spends a
+ * request on nothing. This asks GitHub for nothing at all; bringing the number
+ * back means adding the fetch, not unhiding a value.
  */
 export const GitHubButton = ({
   tone = 'ink',
@@ -51,45 +38,6 @@ export const GitHubButton = ({
   size?: 'md' | 'lg'
   className?: string
 }) => {
-  const [stats, setStats] = useState<RepoStats | null>(null)
-
-  useEffect(() => {
-    // Within one session the count cannot have meaningfully moved, and this
-    // keeps somebody who reads five pages from spending five of their sixty.
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY)
-      if (cached) {
-        setStats(JSON.parse(cached) as RepoStats)
-        return
-      }
-    } catch {
-      // Private mode, or storage disabled. The fetch below still works.
-    }
-
-    const aborter = new AbortController()
-    fetch(`https://api.github.com/repos/${REPO_PATH}`, { signal: aborter.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(String(response.status))
-        return response.json() as Promise<{ stargazers_count?: number }>
-      })
-      .then((body) => {
-        if (typeof body.stargazers_count !== 'number') return
-        const next = { stars: body.stargazers_count }
-        setStats(next)
-        try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify(next))
-        } catch {
-          // Not worth a broken render.
-        }
-      })
-      .catch(() => {
-        // Offline, rate-limited or unmounted: the button keeps its plain label.
-      })
-    return () => {
-      aborter.abort()
-    }
-  }, [])
-
   const dark = tone === 'dark'
   const half =
     'flex items-center no-underline transition-colors duration-[0.18s] ' +
@@ -122,14 +70,7 @@ export const GitHubButton = ({
       >
         <StarMark className="size-[15px]" />
         Star
-        {stats ? (
-          <span className="ms-num font-mono text-[13.5px]">{compact(stats.stars)}</span>
-        ) : null}
       </a>
     </div>
   )
 }
-
-/** 1200 → 1.2k. `Intl` does this correctly for every locale we render in. */
-const compact = (value: number) =>
-  new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
