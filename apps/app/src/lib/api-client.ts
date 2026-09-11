@@ -733,7 +733,18 @@ export const MailMessage = z.object({
   dkim: z.string().nullable(),
   dmarc: z.string().nullable(),
   spam_score: z.number().nullable(),
-  parse_status: z.string().nullable(),
+  /**
+   * The consumer writes exactly two values: `parsed`, or `raw_only` when the
+   * MIME parse threw and only the original bytes were kept.
+   *
+   * Typed as a union rather than a string because it was a string, and the
+   * reader compared it against `'ok'` — a value nothing has ever written — so
+   * every correctly parsed message was labelled "MIME parsing failed". A union
+   * makes that comparison a type error. `.catch` keeps an unrecognised value
+   * from taking the thread view down; it renders as parsed, which is the
+   * non-alarming reading.
+   */
+  parse_status: z.enum(['parsed', 'raw_only']).nullable().catch('parsed'),
   /** Which threading signal won — `reply_token` beats every RFC header. */
   matched_by: z.string().nullable(),
   status: z.string().nullable(),

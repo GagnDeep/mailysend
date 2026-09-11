@@ -302,6 +302,28 @@ describe('receiving', () => {
     expect(body.messages[0]?.dkim).toBe('fail')
   })
 
+  /**
+   * The word the reader branches on, pinned at the API boundary.
+   *
+   * The thread view compared `parse_status` against `'ok'` — a value nothing
+   * has ever written — so every message that parsed correctly was crowned with
+   * "MIME parsing failed, so there is no rendered body", above a perfectly
+   * rendered body. The client schema is a union now, which makes that a type
+   * error; this asserts the other half, that the server really does say
+   * `parsed` for a message that parsed.
+   */
+  it('says a parsed message is parsed, in the word the reader branches on', async () => {
+    await addMailbox()
+    await deliver({ raw: mime() })
+    const threads = await listThreads()
+    const detail = await h.fetch(`/v1/mail/threads/${threads.data[0]!.id}`, { cookie })
+    const body = (await detail.json()) as {
+      messages: { parse_status: string; html: string | null }[]
+    }
+    expect(body.messages[0]?.parse_status).toBe('parsed')
+    expect(body.messages[0]?.html).toContain('It never arrived.')
+  })
+
   it('threads a reply onto its parent by In-Reply-To', async () => {
     await addMailbox()
     await deliver({ raw: mime({ messageId: '<one@example.com>' }) })

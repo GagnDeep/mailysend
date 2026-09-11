@@ -234,7 +234,7 @@ export function MailReader({ message, defaultOpen = true }: MailReaderProps) {
 
       {open ? (
         <div className="flex flex-col gap-3 border-t border-line-soft p-3">
-          {message.parse_status && message.parse_status !== 'ok' ? (
+          {message.parse_status === 'raw_only' ? (
             <Callout variant="warn" title="Unparsed">
               MIME parsing failed, so there is no rendered body — only the original bytes, which are
               kept exactly as they arrived. The raw tab is the whole message.
