@@ -28,10 +28,11 @@ import {
 } from '~/components/marketing/deploy'
 import type { FaqItem } from '~/components/marketing/faq'
 import { Faq, toFaqEntries } from '~/components/marketing/faq'
+import { GitHubStats } from '~/components/marketing/github-stars.tsx'
 import { GuideCard } from '~/components/marketing/guide-card.tsx'
 import { PageShell, Section } from '~/components/marketing/page-shell'
 import { GUIDES } from '~/content/site-map.ts'
-import { DEPLOY_URL, faqPageSchema, pageHead, softwareApplicationSchema } from '~/seo'
+import { DEPLOY_URL, faqPageSchema, pageHead, REPO_URL, softwareApplicationSchema } from '~/seo'
 
 /**
  * Six guides on the home page, chosen by search intent rather than by track.
@@ -41,6 +42,10 @@ import { DEPLOY_URL, faqPageSchema, pageHead, softwareApplicationSchema } from '
  * the opposite of who lands here. Adding a guide to the manifest should not
  * silently rearrange the home page.
  */
+/** The repo as a reader would say it, without the scheme getting in the way. */
+const REPO_LABEL = REPO_URL.replace(/^https?:\/\//, '').toUpperCase()
+const REPO_LINK = 'text-muted-2 no-underline transition-colors duration-[0.18s] hover:text-accent'
+
 const FEATURED_GUIDES = [
   'deploy-to-cloudflare',
   'send-your-first-email',
@@ -527,7 +532,19 @@ function HomePage() {
             note={DEPLOY_RANGE}
             className="mt-[26px] max-w-full"
           />
+          {/*
+            The repository, written out rather than hidden behind the word
+            "GitHub". "Open source" is a claim; a URL somebody can read off the
+            screen and type is the evidence for it, and this is the one line on
+            the page where a visitor is still deciding whether to believe the
+            pill above.
+          */}
           <div className="mt-4 flex flex-wrap justify-center gap-x-[22px] gap-y-2 font-mono text-[11.5px] tracking-[0.06em] text-muted-2">
+            <a href={REPO_URL} className={REPO_LINK}>
+              {REPO_LABEL}
+            </a>
+            <GitHubStats className={REPO_LINK} />
+            <span aria-hidden="true">·</span>
             <span>MIT LICENSED</span>
             <span aria-hidden="true">·</span>
             <span>YOUR ACCOUNT, YOUR DATA</span>

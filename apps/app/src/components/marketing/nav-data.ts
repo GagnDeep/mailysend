@@ -1,3 +1,5 @@
+import { REPO_URL } from '~/seo'
+
 /**
  * The navigation graph, in one place.
  *
@@ -92,6 +94,10 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
       { label: 'Webhooks', href: '/docs#webhooks' },
       { label: 'SES & Resend providers', href: '/docs#providers' },
       { label: 'Self-host (MIT)', href: '/resources#selfhost' },
+      // The only absolute URL in the graph. `SiteFooter` renders whatever is
+      // here in a plain anchor, so an off-site destination needs no special
+      // case — but it is worth saying out loud that this one leaves the site.
+      { label: 'Source on GitHub', href: REPO_URL },
     ],
   },
   {
