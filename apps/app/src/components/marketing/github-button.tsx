@@ -2,7 +2,7 @@ import { cn } from '@mailysend/ui'
 import { useEffect, useState } from 'react'
 import { REPO_URL } from '~/seo'
 
-/** `GagnDeep/mailysend` — the API path and the label, derived, never retyped. */
+/** The `owner/repo` the API wants. It is not a label: the button says "GitHub". */
 const REPO_PATH = REPO_URL.replace(/^https?:\/\/github\.com\//, '')
 const CACHE_KEY = 'ms:gh-stats'
 
@@ -110,7 +110,7 @@ export const GitHubButton = ({
     >
       <a href={REPO_URL} className={cn(half, 'gap-2.5', size === 'lg' ? 'px-[22px]' : 'px-[18px]')}>
         <GitHubMark className={size === 'lg' ? 'size-[18px]' : 'size-4'} />
-        <span className="font-mono text-[13.5px] tracking-[0.02em]">{REPO_PATH}</span>
+        GitHub
       </a>
       <a
         href={`${REPO_URL}/stargazers`}

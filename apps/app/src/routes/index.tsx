@@ -514,10 +514,10 @@ function HomePage() {
           <div className="mt-[34px] flex flex-wrap justify-center gap-3">
             <DeployButton label="Deploy in one click" size="lg" />
             {/*
-              Second, and weighted like a primary button rather than a link: for
-              an MIT project the repository is a destination people arrive
+              Second, and weighted like a primary button rather than a link:
+              for an MIT project the repository is a destination people arrive
               wanting, not a footnote to the deploy. Accent stays with the one
-              action that is irreversible; this one is ink.
+              action that provisions infrastructure; this one is ink.
             */}
             <GitHubButton />
             <Button asChild size="lg" variant="outline">
