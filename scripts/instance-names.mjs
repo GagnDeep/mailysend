@@ -30,6 +30,18 @@
 /** The name the repo ships with, and the only one that keeps the `ms-` prefix. */
 export const DEFAULT_WORKER = 'mailysend'
 
+/**
+ * What this build will actually be called, which is not always what it says.
+ *
+ * Workers Builds and the Deploy to Cloudflare button let the operator name the
+ * Worker in the dashboard, and pass that name to wrangler as
+ * `WRANGLER_CI_OVERRIDE_NAME` rather than by editing the config. So the repo
+ * behind `mailysend16` still says `"name": "mailysend"`, and keying the scoping
+ * off the config alone would have scoped nothing for exactly the deployments
+ * that need it — every instance created the one-click way.
+ */
+export const workerName = (config) => process.env.WRANGLER_CI_OVERRIDE_NAME?.trim() || config?.name
+
 const QUEUE_PREFIX = 'ms-'
 
 /**
@@ -50,7 +62,7 @@ const queueNameFor = (worker, queue) =>
  * every caller that there is nothing to say about it.
  */
 export function scopeResourceNames(config) {
-  const worker = config?.name
+  const worker = workerName(config)
   if (!worker || worker === DEFAULT_WORKER) return []
 
   const changes = []

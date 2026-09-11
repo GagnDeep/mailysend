@@ -62,6 +62,29 @@ describe('the names a build deploys', () => {
   })
 
   /**
+   * The name the dashboard chose, which is not the name in the file.
+   *
+   * Workers Builds and the Deploy to Cloudflare button pass the operator's
+   * chosen Worker name to wrangler as `WRANGLER_CI_OVERRIDE_NAME` instead of
+   * editing the config — the repo behind `mailysend16` still reads
+   * `"name": "mailysend"`. Keying off the config alone scoped nothing for
+   * precisely the deployments that need it: every one-click instance.
+   */
+  it('scopes to the CI name override, not just the config', () => {
+    const previous = process.env.WRANGLER_CI_OVERRIDE_NAME
+    process.env.WRANGLER_CI_OVERRIDE_NAME = 'mailysend16'
+    try {
+      const cfg = { ...config(), name: 'mailysend' }
+      scopeResourceNames(cfg)
+      expect(cfg.queues.producers[0]?.queue).toBe('mailysend16-send')
+      expect(cfg.d1_databases[0]?.database_name).toBe('mailysend16')
+    } finally {
+      if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
+      else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
+    }
+  })
+
+  /**
    * The load-bearing half. Renaming the default deployment's resources would
    * point a running instance at an empty database — a data loss, not a rename.
    */

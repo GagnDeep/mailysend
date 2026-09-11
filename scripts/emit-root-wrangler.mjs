@@ -20,7 +20,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { scopeResourceNames } from './instance-names.mjs'
+import { scopeResourceNames, workerName } from './instance-names.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const generated = join(root, 'apps/app/.output-cf/server/wrangler.json')
@@ -75,7 +75,7 @@ if (!wantsAnalyticsEngine && config.analytics_engine_datasets?.length) {
  */
 const scoped = scopeResourceNames(config)
 if (scoped.length > 0) {
-  console.log(`[wrangler] scoped to "${config.name}": ${scoped.join(', ')}`)
+  console.log(`[wrangler] scoped to "${workerName(config)}": ${scoped.join(', ')}`)
   // The bundle's own config is what `pnpm deploy:cf` deploys, so it has to
   // carry the same names as the root copy.
   const bundled = JSON.parse(readFileSync(generated, 'utf8'))

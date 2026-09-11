@@ -36,7 +36,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { scopeResourceNames } from './instance-names.mjs'
+import { scopeResourceNames, workerName } from './instance-names.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -110,8 +110,9 @@ const source = readJsonc(join(root, 'apps/app/wrangler.jsonc'))
  * create `mailysend16-send` rather than create `ms-send` and then watch the
  * deploy ask for a queue nobody made.
  */
+const instance = workerName(source)
 const scoped = scopeResourceNames(source)
-if (scoped.length > 0) console.log(`[resources] scoped to "${source.name}": ${scoped.length} names`)
+if (scoped.length > 0) console.log(`[resources] scoped to "${instance}": ${scoped.length} names`)
 
 // ---------------------------------------------------------------------------
 // Queues. Producers, consumers and dead-letter targets are three different
@@ -184,7 +185,7 @@ for (const [name, existing] of info) {
  * somebody has to make rather than something a build script may take.
  */
 const declaredConsumers = [...new Set((source.queues?.consumers ?? []).map((c) => c.queue))]
-const scriptName = source.name
+const scriptName = instance
 
 for (const queue of declaredConsumers) {
   const existing = info.get(queue)
@@ -279,12 +280,12 @@ const kvTitleFor = (namespaces, binding, worker) => {
 for (const namespace of source.kv_namespaces ?? []) {
   const binding = namespace.binding
   let namespaces = await list(['kv', 'namespace', 'list'])
-  let found = kvTitleFor(namespaces, binding, source.name)
+  let found = kvTitleFor(namespaces, binding, instance)
   if (!found) {
     try {
       await wrangler(['kv', 'namespace', 'create', binding])
       namespaces = await list(['kv', 'namespace', 'list'])
-      found = kvTitleFor(namespaces, binding, source.name)
+      found = kvTitleFor(namespaces, binding, instance)
       if (found) console.log(`[resources] + kv ${found.title}`)
     } catch (error) {
       console.log(`[resources] ! kv ${binding}: ${short(error)}`)
