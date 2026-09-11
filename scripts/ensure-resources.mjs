@@ -36,7 +36,14 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { scopeDataNames, scopeQueueNames, workerName } from './instance-names.mjs'
+import {
+  chooseKvNamespace,
+  kvNamespaceTitle,
+  ownsItsData,
+  scopeDataNames,
+  scopeQueueNames,
+  workerName,
+} from './instance-names.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -246,10 +253,15 @@ const isDeployed = async (name) => {
 }
 
 const databases = await list(['d1', 'list', '--json'])
-const scopedData = scopeDataNames(source, {
+const account = {
   hasOwnDatabase: databases.some((d) => d.name === instance),
   deployed: await isDeployed(instance),
-})
+}
+// The same answer decides the database, the bucket and the KV namespaces: does
+// this build get to give the instance storage of its own, or is it a running
+// deployment whose storage is already chosen?
+const ownsData = ownsItsData(source, account)
+const scopedData = scopeDataNames(source, account)
 
 console.log(
   scopedData.length > 0
@@ -300,41 +312,29 @@ for (const database of source.d1_databases ?? []) {
   if (id) patch.d1.set(database.binding, id)
 }
 
-/**
- * Wrangler titles a namespace `<worker>-<binding>`.
- *
- * Matching on the `-CACHE` suffix alone was how a second instance on the same
- * account silently adopted the first one's namespaces — including SUPPRESSIONS,
- * which is authoritative rather than a cache, so one deployment's do-not-send
- * list became another's. This deployment's own title wins; a single unlabelled
- * candidate is still accepted, because a Worker renamed at deploy time keeps a
- * namespace titled after the name it was created under and that is the one it
- * has been using all along. Anything more ambiguous than that is left alone and
- * a new namespace is created.
- */
-const kvTitleFor = (namespaces, binding, worker) => {
-  const candidates = namespaces.filter(
-    (n) => n.title === binding || n.title?.endsWith(`-${binding}`),
-  )
-  return (
-    candidates.find((n) => n.title === `${worker}-${binding}`) ??
-    (candidates.length === 1 ? candidates[0] : undefined)
-  )
-}
-
 for (const namespace of source.kv_namespaces ?? []) {
   const binding = namespace.binding
+  const title = kvNamespaceTitle(instance, binding)
   let namespaces = await list(['kv', 'namespace', 'list'])
-  let found = kvTitleFor(namespaces, binding, instance)
+  let found = chooseKvNamespace(namespaces, binding, instance, ownsData)
   if (!found) {
     try {
-      await wrangler(['kv', 'namespace', 'create', binding])
+      await wrangler(['kv', 'namespace', 'create', title])
       namespaces = await list(['kv', 'namespace', 'list'])
-      found = kvTitleFor(namespaces, binding, instance)
+      found = chooseKvNamespace(namespaces, binding, instance, ownsData)
       if (found) console.log(`[resources] + kv ${found.title}`)
     } catch (error) {
       console.log(`[resources] ! kv ${binding}: ${short(error)}`)
     }
+  } else if (found.title !== title) {
+    // Worth a line rather than a silent bind: this instance is reading and
+    // writing a namespace named after something else, which for SUPPRESSIONS
+    // means it shares a do-not-send list with whoever else binds it. It stays
+    // that way because moving it would drop the list, not because it is right.
+    console.log(
+      `[resources] = kv ${binding} stays on "${found.title}", not "${title}" — this Worker was ` +
+        'already deployed on it. Moving it would leave its suppression list behind.',
+    )
   }
   if (found?.id) patch.kv.set(binding, found.id)
 }

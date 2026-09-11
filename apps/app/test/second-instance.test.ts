@@ -3,7 +3,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { QUEUES, queueRole } from '@mailysend/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scopeDataNames, scopeQueueNames } from '../../../scripts/instance-names.mjs'
+import {
+  chooseKvNamespace,
+  kvNamespaceTitle,
+  scopeDataNames,
+  scopeQueueNames,
+} from '../../../scripts/instance-names.mjs'
 import { runCron } from '../src/server/cron.ts'
 import { type Harness, harness } from './harness.ts'
 
@@ -188,6 +193,59 @@ describe('whether an instance gets its own database', () => {
       if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
       else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
     }
+  })
+})
+
+/**
+ * Which KV namespace an instance binds.
+ *
+ * `wrangler kv namespace create CACHE` titles the namespace exactly `CACHE` and
+ * adds no prefix of its own, so the first build created bare `CACHE` and
+ * `SUPPRESSIONS` and every later instance found them and took them. Two live
+ * deployments were bound to one pair. SUPPRESSIONS is a do-not-send list rather
+ * than a cache, and every instance addresses it under the same default
+ * workspace id, so those keys collided exactly.
+ */
+describe('which KV namespace an instance binds', () => {
+  const account = [
+    { id: 'n1', title: 'CACHE' },
+    { id: 'n2', title: 'SUPPRESSIONS' },
+    { id: 'n3', title: 'mailysend16-CACHE' },
+    { id: 'n4', title: '__somebody-else-workers_sites_assets' },
+  ]
+
+  it('names a scoped instance its own namespace, and the default one the bare title', () => {
+    expect(kvNamespaceTitle('mailysend17', 'CACHE')).toBe('mailysend17-CACHE')
+    expect(kvNamespaceTitle('mailysend', 'CACHE')).toBe('CACHE')
+    expect(kvNamespaceTitle(undefined, 'CACHE')).toBe('CACHE')
+  })
+
+  /** The bug, asserted: an instance with its own storage may not adopt a stray. */
+  it('does not let an instance that owns its data adopt somebody elses', () => {
+    expect(chooseKvNamespace(account, 'CACHE', 'mailysend17', true)).toBeUndefined()
+    expect(chooseKvNamespace(account, 'SUPPRESSIONS', 'mailysend17', true)).toBeUndefined()
+  })
+
+  it('binds the namespace named after the instance when there is one', () => {
+    expect(chooseKvNamespace(account, 'CACHE', 'mailysend16', true)?.id).toBe('n3')
+  })
+
+  /**
+   * And the other half of the same rule as the database: an instance already
+   * running on a shared namespace keeps it, because moving it would leave the
+   * suppression list it has accumulated behind.
+   */
+  it('leaves an already-running instance on what it is running on', () => {
+    expect(chooseKvNamespace(account, 'SUPPRESSIONS', 'mailysend14', false)?.id).toBe('n2')
+  })
+
+  it('gives the default deployment its bare namespace', () => {
+    expect(chooseKvNamespace(account, 'CACHE', 'mailysend', false)?.id).toBe('n1')
+  })
+
+  it('creates rather than guess when the candidates are ambiguous', () => {
+    const ambiguous = [...account, { id: 'n5', title: 'mailysend12-CACHE' }]
+    expect(chooseKvNamespace(ambiguous, 'CACHE', 'mailysend14', false)).toBeUndefined()
   })
 })
 

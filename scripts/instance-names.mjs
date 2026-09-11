@@ -22,9 +22,9 @@
  * at an empty database, which is not a rename but a data loss with a changelog
  * entry. This only ever names resources for a Worker that does not have any.
  *
- * KV is not here: a namespace is addressed by id, not by name, and
- * `ensure-resources.mjs` resolves it by title — which is where the same
- * collision lived, and is fixed there.
+ * KV is here too, as a title rather than a rename: a namespace is addressed by
+ * id, so the scoping is in what a new one is *called* and which existing one a
+ * build is allowed to adopt.
  */
 
 /** The name the repo ships with, and the only one that keeps the `ms-` prefix. */
@@ -112,10 +112,21 @@ export function scopeQueueNames(config) {
  * this takes them rather than looking them up: the only caller that can ask is
  * `ensure-resources.mjs`, which is the only thing holding credentials.
  */
-export function scopeDataNames(config, { deployed, hasOwnDatabase }) {
+export function ownsItsData(config, { deployed, hasOwnDatabase }) {
   const worker = workerName(config)
-  if (!worker || worker === DEFAULT_WORKER) return []
-  if (!hasOwnDatabase && deployed) return []
+  if (!worker || worker === DEFAULT_WORKER) return false
+  if (!hasOwnDatabase && deployed) return false
+  return true
+}
+
+/**
+ * Renames the database and the bucket, in place, when that is allowed.
+ *
+ * The decision itself is `ownsItsData`; this is what follows from it.
+ */
+export function scopeDataNames(config, account) {
+  if (!ownsItsData(config, account)) return []
+  const worker = workerName(config)
 
   const changes = []
   // A name the operator chose themselves is left alone — pointing two Workers
@@ -136,4 +147,43 @@ export function scopeDataNames(config, { deployed, hasOwnDatabase }) {
   }
 
   return changes
+}
+
+/**
+ * What this instance's KV namespace should be called.
+ *
+ * `wrangler kv namespace create CACHE` titles the namespace exactly `CACHE` —
+ * it adds no prefix of its own, whatever the Worker is called. That is how two
+ * live instances ended up bound to one pair of namespaces: the first build
+ * created bare `CACHE` and `SUPPRESSIONS`, and every later build found them and
+ * took them. SUPPRESSIONS is the one that matters — it is the do-not-send list,
+ * authoritative rather than a cache, and every instance addresses it under the
+ * same default workspace id, so the keys collided exactly rather than merely
+ * sharing a store.
+ *
+ * The default deployment keeps the bare title it already has.
+ */
+export const kvNamespaceTitle = (worker, binding) =>
+  !worker || worker === DEFAULT_WORKER ? binding : `${worker}-${binding}`
+
+/**
+ * Which existing namespace, if any, this build may bind — `undefined` means
+ * create one.
+ *
+ * An instance that owns its data takes its own title and nothing else, so a new
+ * instance never inherits a list of addresses somebody else may not write to.
+ * An instance that does *not* own its data is one already running on shared
+ * namespaces, and moving it would lose the suppressions it has accumulated — so
+ * it keeps what it is on, by the older and looser rule: the bare binding, or a
+ * single unambiguous candidate.
+ */
+export function chooseKvNamespace(namespaces, binding, worker, ownsData) {
+  const title = kvNamespaceTitle(worker, binding)
+  const exact = namespaces.find((n) => n.title === title)
+  if (exact || ownsData) return exact
+
+  const candidates = namespaces.filter(
+    (n) => n.title === binding || n.title?.endsWith(`-${binding}`),
+  )
+  return candidates.length === 1 ? candidates[0] : undefined
 }
