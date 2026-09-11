@@ -56,12 +56,17 @@ const queueNameFor = (worker, queue) =>
   )
 
 /**
- * Rewrites a resolved wrangler config in place and returns what changed.
+ * Renames the queues in a resolved config, in place, and says what changed.
+ *
+ * Queues only. Renaming a queue costs nothing — it holds work in flight, not
+ * records — so this is safe to decide offline, from the name alone. The
+ * database and the bucket are the opposite and are decided by
+ * `scopeDataNames`, which is allowed to ask the account first.
  *
  * Returns an empty array for the default deployment, which is the signal to
  * every caller that there is nothing to say about it.
  */
-export function scopeResourceNames(config) {
+export function scopeQueueNames(config) {
   const worker = workerName(config)
   if (!worker || worker === DEFAULT_WORKER) return []
 
@@ -81,13 +86,45 @@ export function scopeResourceNames(config) {
     }
   }
 
-  // A database and a bucket named after the default deployment belong to the
-  // default deployment. A name the operator chose themselves is left alone —
-  // pointing two Workers at one database is a legitimate thing to ask for, and
-  // this cannot tell the difference except by what the repo ships with.
+  return changes
+}
+
+/**
+ * Whether this build may give the instance its *own* database and bucket.
+ *
+ * Getting this wrong in the unsafe direction cost a live deployment its data
+ * for eight minutes: scoping on the name alone pointed a running `mailysend14`
+ * at a `mailysend14` database that did not exist, the app created it, ran every
+ * migration, and came up as a fresh unclaimed instance with the real one —
+ * users, domains, mail — still sitting in `mailysend`. Nothing was lost, and
+ * nothing about that was obvious from the build log either.
+ *
+ * So a rename is only ever applied to an instance that cannot yet have data:
+ *
+ *   - a database already named after the Worker — it was scoped before, and
+ *     that is its database
+ *   - otherwise a Worker that has never been deployed to this account — a new
+ *     instance, which is the case the scoping exists for
+ *   - otherwise nothing: a Worker that is already running keeps what it is
+ *     running on, because the alternative is stranding it
+ *
+ * `deployed` and `hasOwnDatabase` are answers from the account, which is why
+ * this takes them rather than looking them up: the only caller that can ask is
+ * `ensure-resources.mjs`, which is the only thing holding credentials.
+ */
+export function scopeDataNames(config, { deployed, hasOwnDatabase }) {
+  const worker = workerName(config)
+  if (!worker || worker === DEFAULT_WORKER) return []
+  if (!hasOwnDatabase && deployed) return []
+
+  const changes = []
+  // A name the operator chose themselves is left alone — pointing two Workers
+  // at one database is a legitimate thing to ask for, and this cannot tell the
+  // difference except by what the repo ships with.
   for (const database of config.d1_databases ?? []) {
     if (database.database_name === DEFAULT_WORKER) {
       database.database_name = worker
+      delete database.database_id
       changes.push(`d1 ${DEFAULT_WORKER} → ${worker}`)
     }
   }

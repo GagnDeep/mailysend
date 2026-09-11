@@ -20,7 +20,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { scopeResourceNames, workerName } from './instance-names.mjs'
+import { scopeQueueNames, workerName } from './instance-names.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const generated = join(root, 'apps/app/.output-cf/server/wrangler.json')
@@ -66,20 +66,25 @@ if (!wantsAnalyticsEngine && config.analytics_engine_datasets?.length) {
 }
 
 /**
- * Names that have to be unique on the account are derived from the Worker's.
+ * Queue names that have to be unique on the account are derived from the
+ * Worker's.
  *
  * Done here rather than in `wrangler.jsonc` because the Worker's name is only
  * known once the config is resolved, and done before the root copy is written
- * so both configs a deploy might read say the same thing. See
- * `scripts/instance-names.mjs` for what this prevents.
+ * so both configs a deploy might read say the same thing.
+ *
+ * Queues only. Whether this instance gets its own database and bucket is a
+ * question about what already exists on the account, and this script has no
+ * credentials — `ensure-resources.mjs` decides that, and writes it into these
+ * same two files. See `scripts/instance-names.mjs`.
  */
-const scoped = scopeResourceNames(config)
+const scoped = scopeQueueNames(config)
 if (scoped.length > 0) {
   console.log(`[wrangler] scoped to "${workerName(config)}": ${scoped.join(', ')}`)
   // The bundle's own config is what `pnpm deploy:cf` deploys, so it has to
   // carry the same names as the root copy.
   const bundled = JSON.parse(readFileSync(generated, 'utf8'))
-  scopeResourceNames(bundled)
+  scopeQueueNames(bundled)
   writeFileSync(generated, `${JSON.stringify(bundled, null, 2)}\n`)
 }
 

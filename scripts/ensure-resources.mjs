@@ -36,7 +36,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { scopeResourceNames, workerName } from './instance-names.mjs'
+import { scopeDataNames, scopeQueueNames, workerName } from './instance-names.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -105,14 +105,19 @@ const source = readJsonc(join(root, 'apps/app/wrangler.jsonc'))
 /**
  * The names this build is actually going to deploy.
  *
- * `emit-root-wrangler.mjs` has already scoped the generated configs to the
- * Worker; doing the same to the source read here is what makes this script
+ * `emit-root-wrangler.mjs` has already scoped the generated configs' queues to
+ * the Worker; doing the same to the source read here is what makes this script
  * create `mailysend16-send` rather than create `ms-send` and then watch the
  * deploy ask for a queue nobody made.
+ *
+ * The database and the bucket are decided further down, once the account has
+ * been asked what already exists — see `scopeDataNames`.
  */
 const instance = workerName(source)
-const scoped = scopeResourceNames(source)
-if (scoped.length > 0) console.log(`[resources] scoped to "${instance}": ${scoped.length} names`)
+const scopedQueues = scopeQueueNames(source)
+if (scopedQueues.length > 0) {
+  console.log(`[resources] scoped to "${instance}": ${scopedQueues.length} queue names`)
+}
 
 // ---------------------------------------------------------------------------
 // Queues. Producers, consumers and dead-letter targets are three different
@@ -215,6 +220,46 @@ const missing = wantedQueues.filter((name) => !info.get(name))
 console.log(`[resources] = ${wantedQueues.length - missing.length}/${wantedQueues.length} queues`)
 
 // ---------------------------------------------------------------------------
+// Whether this instance gets its own database and bucket, or keeps the ones it
+// is already running on. The two questions `scopeDataNames` needs answered,
+// and the only place in the build that can answer them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Deployed before, under this name, on this account.
+ *
+ * `code: 10007` — "This Worker does not exist on your account" — is the only
+ * answer that means *no*. Every other failure, including a token that cannot
+ * read deployments, is treated as yes, because yes is the side of this
+ * decision that never strands a running instance's data.
+ */
+const isDeployed = async (name) => {
+  try {
+    await wrangler(['deployments', 'list', '--name', name])
+    return true
+  } catch (error) {
+    const message = short(error)
+    if (/10007|does not exist on your account/i.test(message)) return false
+    console.log(`[resources] ? could not tell whether "${name}" is deployed: ${message}`)
+    return true
+  }
+}
+
+const databases = await list(['d1', 'list', '--json'])
+const scopedData = scopeDataNames(source, {
+  hasOwnDatabase: databases.some((d) => d.name === instance),
+  deployed: await isDeployed(instance),
+})
+
+console.log(
+  scopedData.length > 0
+    ? `[resources] scoped to "${instance}": ${scopedData.join(', ')}`
+    : `[resources] = data stays on ${(source.d1_databases ?? [])
+        .map((d) => d.database_name)
+        .join(', ')}`,
+)
+
+// ---------------------------------------------------------------------------
 // R2. Buckets are addressed by name, so nothing has to be written back.
 // ---------------------------------------------------------------------------
 
@@ -303,12 +348,25 @@ const targets = [
   join(root, 'apps/app/.output-cf/server/wrangler.json'),
 ].filter((path) => existsSync(path))
 
+/** The name this build settled on, per binding, so the configs agree with it. */
+const chosenD1 = new Map((source.d1_databases ?? []).map((d) => [d.binding, d.database_name]))
+const chosenR2 = new Map((source.r2_buckets ?? []).map((b) => [b.binding, b.bucket_name]))
+
 for (const path of targets) {
   const config = JSON.parse(readFileSync(path, 'utf8'))
   for (const database of config.d1_databases ?? []) {
+    // The database name is decided here, not in `emit-root-wrangler.mjs`,
+    // because deciding it needs the account. These files were written before
+    // that question was asked.
+    const name = chosenD1.get(database.binding)
+    if (name) database.database_name = name
     const id = patch.d1.get(database.binding)
     if (id) database.database_id = id
     else delete database.database_id
+  }
+  for (const bucket of config.r2_buckets ?? []) {
+    const name = chosenR2.get(bucket.binding)
+    if (name) bucket.bucket_name = name
   }
   for (const namespace of config.kv_namespaces ?? []) {
     const id = patch.kv.get(namespace.binding)

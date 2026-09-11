@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { QUEUES, queueRole } from '@mailysend/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scopeResourceNames } from '../../../scripts/instance-names.mjs'
+import { scopeDataNames, scopeQueueNames } from '../../../scripts/instance-names.mjs'
 import { runCron } from '../src/server/cron.ts'
 import { type Harness, harness } from './harness.ts'
 
@@ -42,7 +42,7 @@ describe('the names a build deploys', () => {
 
   it('scopes every account-global name to the Worker', () => {
     const cfg = config()
-    scopeResourceNames(cfg)
+    scopeQueueNames(cfg)
 
     expect(cfg.queues.producers.map((p) => p.queue)).toEqual([
       'mailysend16-send',
@@ -57,8 +57,6 @@ describe('the names a build deploys', () => {
     expect(new Set(cfg.queues.consumers.map((c) => c.dead_letter_queue))).toEqual(
       new Set(['mailysend16-dlq']),
     )
-    expect(cfg.d1_databases[0]?.database_name).toBe('mailysend16')
-    expect(cfg.r2_buckets[0]?.bucket_name).toBe('mailysend16')
   })
 
   /**
@@ -75,9 +73,8 @@ describe('the names a build deploys', () => {
     process.env.WRANGLER_CI_OVERRIDE_NAME = 'mailysend16'
     try {
       const cfg = { ...config(), name: 'mailysend' }
-      scopeResourceNames(cfg)
+      scopeQueueNames(cfg)
       expect(cfg.queues.producers[0]?.queue).toBe('mailysend16-send')
-      expect(cfg.d1_databases[0]?.database_name).toBe('mailysend16')
     } finally {
       if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
       else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
@@ -90,23 +87,106 @@ describe('the names a build deploys', () => {
    */
   it('leaves the default deployment alone, entirely', () => {
     const cfg = { ...config(), name: 'mailysend' }
-    expect(scopeResourceNames(cfg)).toEqual([])
+    expect(scopeQueueNames(cfg)).toEqual([])
     expect(cfg.queues.producers[0]?.queue).toBe('ms-send')
     expect(cfg.d1_databases[0]?.database_name).toBe('mailysend')
-  })
-
-  it('keeps a database name the operator chose themselves', () => {
-    const cfg = { ...config(), d1_databases: [{ database_name: 'shared-mail' }] }
-    scopeResourceNames(cfg)
-    expect(cfg.d1_databases[0]?.database_name).toBe('shared-mail')
   })
 
   /** Cloudflare's limit, and a Worker name may be long. */
   it('keeps a scoped queue name inside 63 characters', () => {
     const cfg = { ...config(), name: 'a'.repeat(60) }
-    scopeResourceNames(cfg)
+    scopeQueueNames(cfg)
     for (const producer of cfg.queues.producers) {
       expect(producer.queue.length).toBeLessThanOrEqual(63)
+    }
+  })
+})
+
+/**
+ * Whether an instance gets its own database, which is the half that bites.
+ *
+ * Deciding this from the Worker's name alone took a live `mailysend14` off its
+ * data for eight minutes: it pointed at a `mailysend14` database that did not
+ * exist, the app created it, ran every migration, and came up as a fresh
+ * unclaimed instance while the real one — users, domains, mail — sat in
+ * `mailysend`. Nothing was lost and nothing in the build log said a word.
+ */
+describe('whether an instance gets its own database', () => {
+  const config = () => ({
+    name: 'mailysend',
+    d1_databases: [{ binding: 'DB', database_name: 'mailysend' }],
+    r2_buckets: [{ binding: 'BUCKET', bucket_name: 'mailysend' }],
+  })
+
+  const scoped = (over, account) => {
+    const previous = process.env.WRANGLER_CI_OVERRIDE_NAME
+    // Assigning `undefined` to process.env stores the *string* "undefined", so
+    // "no override" has to be a delete.
+    if (over === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
+    else process.env.WRANGLER_CI_OVERRIDE_NAME = over
+    try {
+      const cfg = config()
+      const changes = scopeDataNames(cfg, account)
+      return { cfg, changes }
+    } finally {
+      if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
+      else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
+    }
+  }
+
+  it('gives a Worker that has never been deployed its own', () => {
+    const { cfg, changes } = scoped('mailysend17', { deployed: false, hasOwnDatabase: false })
+    expect(changes).toHaveLength(2)
+    expect(cfg.d1_databases[0]?.database_name).toBe('mailysend17')
+    expect(cfg.r2_buckets[0]?.bucket_name).toBe('mailysend17')
+  })
+
+  /** The regression, asserted directly: a running instance keeps its data. */
+  it('leaves a Worker that is already deployed on what it is running on', () => {
+    const { cfg, changes } = scoped('mailysend14', { deployed: true, hasOwnDatabase: false })
+    expect(changes).toEqual([])
+    expect(cfg.d1_databases[0]?.database_name).toBe('mailysend')
+    expect(cfg.r2_buckets[0]?.bucket_name).toBe('mailysend')
+  })
+
+  it('keeps an instance that already has its own database on it', () => {
+    const { cfg } = scoped('mailysend16', { deployed: true, hasOwnDatabase: true })
+    expect(cfg.d1_databases[0]?.database_name).toBe('mailysend16')
+  })
+
+  it('never renames the default deployment, deployed or not', () => {
+    const { cfg, changes } = scoped(undefined, { deployed: false, hasOwnDatabase: false })
+    expect(changes).toEqual([])
+    expect(cfg.d1_databases[0]?.database_name).toBe('mailysend')
+  })
+
+  it('keeps a database name the operator chose themselves', () => {
+    const previous = process.env.WRANGLER_CI_OVERRIDE_NAME
+    process.env.WRANGLER_CI_OVERRIDE_NAME = 'mailysend17'
+    try {
+      const cfg = { ...config(), d1_databases: [{ binding: 'DB', database_name: 'shared-mail' }] }
+      scopeDataNames(cfg, { deployed: false, hasOwnDatabase: false })
+      expect(cfg.d1_databases[0]?.database_name).toBe('shared-mail')
+    } finally {
+      if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
+      else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
+    }
+  })
+
+  /** A stale id would out-rank the new name and bind the old database anyway. */
+  it('drops the database id along with the name', () => {
+    const previous = process.env.WRANGLER_CI_OVERRIDE_NAME
+    process.env.WRANGLER_CI_OVERRIDE_NAME = 'mailysend17'
+    try {
+      const cfg = {
+        ...config(),
+        d1_databases: [{ binding: 'DB', database_name: 'mailysend', database_id: 'f22203bf' }],
+      }
+      scopeDataNames(cfg, { deployed: false, hasOwnDatabase: false })
+      expect(cfg.d1_databases[0]).not.toHaveProperty('database_id')
+    } finally {
+      if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
+      else process.env.WRANGLER_CI_OVERRIDE_NAME = previous
     }
   })
 })
