@@ -30,6 +30,7 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
   const queryClient = useQueryClient()
   const [local, setLocal] = useState('')
   const localId = useId()
+  const catchAllId = useId()
 
   const mailboxes = useQuery({
     queryKey: qk.mailboxes(environment),
@@ -39,11 +40,17 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: qk.mailboxes(environment) })
 
   const create = useMutation({
-    mutationFn: (address: string) => api.createMailbox({ address }),
-    onSuccess: () => {
+    mutationFn: ({ address, catchAll }: { address: string; catchAll: boolean }) =>
+      api.createMailbox({ address, is_catch_all: catchAll }),
+    onSuccess: (mailbox) => {
       setLocal('')
       void invalidate()
-      toast.success('Mailbox created.')
+      void queryClient.invalidateQueries({ queryKey: qk.domain(environment, domain.id) })
+      toast.success(
+        mailbox.is_catch_all
+          ? `${mailbox.address} created, and every address at this domain now lands there.`
+          : `${mailbox.address} created. Only that exact address is accepted.`,
+      )
     },
     onError: (error) => toast.error(errorMessage(error)),
   })
@@ -70,11 +77,25 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
     mailbox.address.endsWith(`@${domain.name}`),
   )
 
+  const hasCatchAll = mine.some((mailbox) => mailbox.is_catch_all)
+
+  /**
+   * Catch-all defaults on until this domain has one.
+   *
+   * Cloudflare's rule routes the whole domain here, so a workspace whose only
+   * mailbox is `support@` answers 550 to every other address that rule sends —
+   * which reads as "receiving is broken" rather than as a missing switch. The
+   * default matches what the router actually delivers; once a catch-all exists,
+   * a second one would only take the first one's place, so it defaults off.
+   */
+  const [catchAll, setCatchAll] = useState<boolean | null>(null)
+  const catchAllChecked = catchAll ?? !hasCatchAll
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const trimmed = local.trim().toLowerCase()
     if (!trimmed) return
-    create.mutate(`${trimmed}@${domain.name}`)
+    create.mutate({ address: `${trimmed}@${domain.name}`, catchAll: catchAllChecked })
   }
 
   return (
@@ -96,31 +117,54 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
         detail={domain.receiving?.catch_all.detail ?? null}
       />
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={localId}>New mailbox</Label>
-          <div className="flex items-center gap-1.5">
-            <Input
-              id={localId}
-              value={local}
-              onChange={(event) => setLocal(event.target.value)}
-              placeholder="support"
-              className="w-[200px]"
-              autoComplete="off"
-            />
-            <span className="font-mono text-[13px] text-muted">@{domain.name}</span>
+      <form onSubmit={submit} className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={localId}>New mailbox</Label>
+            <div className="flex items-center gap-1.5">
+              <Input
+                id={localId}
+                value={local}
+                onChange={(event) => setLocal(event.target.value)}
+                placeholder="support"
+                className="w-[200px]"
+                autoComplete="off"
+              />
+              <span className="font-mono text-[13px] text-muted">@{domain.name}</span>
+            </div>
           </div>
+          <div className="flex items-center gap-2 pb-2">
+            <Switch
+              id={catchAllId}
+              checked={catchAllChecked}
+              onCheckedChange={setCatchAll}
+              aria-label="Accept every address at this domain"
+            />
+            <Label htmlFor={catchAllId} className="text-[13px] text-muted">
+              Accept every address at this domain
+            </Label>
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={create.isPending || local.trim() === ''}
+          >
+            {create.isPending ? 'Creating…' : 'Create mailbox'}
+          </Button>
         </div>
-        <Button type="submit" variant="primary" disabled={create.isPending || local.trim() === ''}>
-          {create.isPending ? 'Creating…' : 'Create mailbox'}
-        </Button>
+        <p className="m-0 max-w-[80ch] text-[13px] text-muted">
+          {catchAllChecked
+            ? `Catch-all. Cloudflare's rule hands this Worker every address at ${domain.name}, so this is the setting that matches it: anything not claimed by a named mailbox lands here instead of being refused. One catch-all per domain — turning this on takes it off whichever mailbox holds it now.`
+            : `Only ${local.trim() === '' ? 'this exact address' : `${local.trim().toLowerCase()}@${domain.name}`} will be accepted. Everything else Cloudflare routes here is answered with a 550, which is what makes a first test message bounce.`}
+        </p>
       </form>
 
       {mine.length === 0 ? (
-        <p className="m-0 text-[13.5px] text-muted">
+        <p className="m-0 max-w-[80ch] text-[13.5px] text-muted">
           No mailboxes on this domain yet, so every address on it is answered with a 550 rather than
-          silently dropped. Create one — then turn on <strong>Catch-all</strong> if you want the
-          rest of the domain to land there too.
+          silently dropped. Create one with <strong>Accept every address</strong> left on — that is
+          the shape Cloudflare's catch-all rule delivers, and the one that will not bounce your
+          first test message.
         </p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">

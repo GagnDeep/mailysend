@@ -185,10 +185,37 @@ describe('can this domain receive', () => {
     expect(track.steps[0]?.detail).toContain('every message')
   })
 
-  it('asks for a mailbox when routing is right and nothing can land', () => {
+  it('asks for a mailbox, with catch-all on, when routing is right and nothing can land', () => {
     const track = deriveReceiving(record({ receiving: receiving({ mx_status: 'verified' }) }))
-    expect(track.action).toBe('Create a mailbox on this domain')
+    expect(track.action).toBe('Create a mailbox with catch-all on')
     expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('current')
+  })
+
+  it('does not call named mailboxes finished when nothing else at the domain is accepted', () => {
+    // Cloudflare's rule hands this Worker the whole domain, so a workspace with
+    // only `support@` answers 550 to every other address that rule delivers —
+    // which reads as "receiving is broken" rather than as a missing switch.
+    const track = deriveReceiving(
+      record({
+        receiving: receiving({ mx_status: 'verified', mailboxes: { count: 1, catch_all: null } }),
+      }),
+    )
+    expect(track.action).toBe('Turn catch-all on for one mailbox')
+    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('current')
+    expect(track.steps.find((s) => s.key === 'mailbox')?.detail).toContain('550')
+  })
+
+  it('counts the mailbox step done only once a catch-all accepts the rest', () => {
+    const track = deriveReceiving(
+      record({
+        receiving: receiving({
+          mx_status: 'verified',
+          mailboxes: { count: 2, catch_all: 'hello@acme.dev' },
+        }),
+      }),
+    )
+    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('done')
+    expect(track.action).toBe('Send this domain a test message')
   })
 
   it('treats an arrived message as the only end-to-end proof', () => {

@@ -275,15 +275,27 @@ export function deriveReceiving(domain: DomainRecord): Track {
     "Cloudflare's catch-all rule is not readable over its API, so this is the one step nobody here can confirm. Open Email Routing and check that the catch-all action is Send to a Worker, pointed at this instance.",
   )
 
+  /**
+   * The mailbox step, which is really the catch-all step.
+   *
+   * Cloudflare's rule routes *the whole domain* to this Worker, so what arrives
+   * here is addressed to anything at all — `hello@`, `support@`, the address a
+   * customer typed from memory. A named mailbox accepts exactly one of those
+   * and answers 550 to the rest, which is why "routing is right and the first
+   * test message still bounced" is the single most common way this setup fails.
+   * A catch-all is the configuration that matches what the router actually
+   * sends, so it is what this asks for by default rather than mentioning as an
+   * option further down the page.
+   */
   const mailboxStep = step(
     'mailbox',
     'An address exists here to land in',
-    mailboxes === 0 ? 'current' : 'done',
+    mailboxes === 0 ? 'current' : catchAll ? 'done' : 'current',
     mailboxes === 0
-      ? 'No mailbox on this domain, so every address is answered with a 550 — which is why a first test message bounces even when routing is right.'
+      ? 'No mailbox on this domain, so every address is answered with a 550 — which is why a first test message bounces even when routing is right. Create one with catch-all on and every address at this domain is accepted; without it, only the exact address you name.'
       : catchAll
-        ? `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'}, with catch-all on ${catchAll}, so anything at this domain lands.`
-        : `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'}, no catch-all — any other address is rejected.`,
+        ? `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'}, catch-all on ${catchAll} — every address at this domain is accepted and lands there unless a named mailbox claims it first.`
+        : `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'} and no catch-all, so only ${mailboxes === 1 ? 'that exact address' : 'those exact addresses'} ${mailboxes === 1 ? 'is' : 'are'} accepted — everything else at this domain is answered with a 550. Turn catch-all on for one of them to accept the rest.`,
   )
 
   const arrivedStep = step(
@@ -394,7 +406,23 @@ export function deriveReceiving(domain: DomainRecord): Track {
     return {
       badge: 'pending',
       headline: 'Routing reaches us, but there is nowhere for mail to land',
-      action: 'Create a mailbox on this domain',
+      action: 'Create a mailbox with catch-all on',
+      actor: 'you-here',
+      steps: [mxStep, routeStep, mailboxStep, arrivedStep],
+    }
+  }
+
+  // R-F — addresses exist, but only the ones somebody thought to name. Worth
+  // its own branch rather than a footnote: Cloudflare's rule hands this Worker
+  // the whole domain, so without a catch-all the gap between what is routed and
+  // what is accepted is every other address at the domain.
+  if (!catchAll) {
+    return {
+      badge: 'pending',
+      headline: arrived
+        ? 'Mail is arriving, but only for the addresses you named'
+        : 'Only the addresses you named will be accepted',
+      action: 'Turn catch-all on for one mailbox',
       actor: 'you-here',
       steps: [mxStep, routeStep, mailboxStep, arrivedStep],
     }
