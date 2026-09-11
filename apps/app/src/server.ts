@@ -1,3 +1,4 @@
+import { queueRole } from '@mailysend/core'
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
 import { api } from './server/api/index.ts'
 import { actorFromSession } from './server/auth.ts'
@@ -156,19 +157,22 @@ export default {
   async queue(batch: QueueBatchLike, rawEnv: Env, ctx: ExecutionContextLike): Promise<void> {
     const env = await configure(rawEnv)
     return runWithEnv(env, ctx, async () => {
-      switch (batch.queue) {
-        case 'ms-send':
-        case 'ms-send-bulk':
+      // By role, not by name: a second instance on the same account consumes
+      // `mailysend16-send` rather than `ms-send`, because a queue has exactly
+      // one consumer account-wide. See `queueRole`.
+      switch (queueRole(batch.queue)) {
+        case 'send':
+        case 'send-bulk':
           return consumeSend(batch as never, env)
-        case 'ms-events-cf':
-        case 'ms-events-raw':
-        case 'ms-events-norm':
+        case 'events-cf':
+        case 'events-raw':
+        case 'events-norm':
           return consumeEventQueue(batch as never, env)
-        case 'ms-webhooks':
+        case 'webhooks':
           return consumeWebhooks(batch as never, env)
-        case 'ms-broadcast-pages':
+        case 'broadcast-pages':
           return consumeBroadcastPages(batch as never, env)
-        case 'ms-inbound':
+        case 'inbound':
           return consumeInbound(batch as never, env)
         default: {
           const { consumeMisc } = await import('./server/consumers/misc.ts')

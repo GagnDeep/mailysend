@@ -203,8 +203,17 @@
 
   "send_email": [{ "name": "SEND_EMAIL" }],
 
+  // One schedule, deliberately. Cron triggers are counted per account and the
+  // Workers Free plan allows five, so three per instance meant the second
+  // deployment on an account lost triggers and the third could not deploy:
+  //
+  //   This account has reached the Workers Free limit of 5 cron triggers per
+  //   account [code: 10072]
+  //
+  // The hourly schedule did nothing, and `runCron` claims the daily task off
+  // the minute tick — once per UTC day, however many ticks arrive.
   "triggers": {
-    "crons": ["* * * * *", "0 * * * *", "0 3 * * *"]
+    "crons": ["* * * * *"]
   }
 
   // No `limits.cpu_ms`, deliberately. 30000 is already the Workers Paid

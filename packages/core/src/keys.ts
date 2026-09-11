@@ -140,6 +140,33 @@ export const QUEUES = {
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES]
 
+/** What a queue is *for*, with the deployment's prefix taken off the front. */
+export type QueueRole = QueueName extends `ms-${infer R}` ? R : never
+
+/**
+ * Queue names are account-global, and a queue has exactly one consumer.
+ *
+ * So two MailySend instances on one Cloudflare account cannot both consume
+ * `ms-send`: the second one's deploy fails its trigger update with
+ * `Queue 'ms-send' already has a consumer`, after a clean upload. The build
+ * scopes the names to the Worker — `mailysend16-send`, `mailysend16-inbound` —
+ * and the default deployment keeps the `ms-` prefix it already has, so nothing
+ * existing is renamed.
+ *
+ * That makes the name a poor thing to switch on, which both consumer entry
+ * points did. This is the switch instead: the role is the stable half, and it
+ * is matched as a suffix so any prefix works, including one with dashes in it.
+ * Longest role first, or `mailysend16-send-bulk` answers to `send`.
+ */
+const QUEUE_ROLES = Object.values(QUEUES)
+  .map((queue) => queue.slice('ms-'.length))
+  .sort((a, b) => b.length - a.length)
+
+export function queueRole(queue: string): QueueRole | null {
+  const role = QUEUE_ROLES.find((r) => queue === r || queue.endsWith(`-${r}`))
+  return (role as QueueRole | undefined) ?? null
+}
+
 export const ANALYTICS_DATASETS = {
   emailEvents: 'ms_email_events',
   tagFacts: 'ms_tag_facts',

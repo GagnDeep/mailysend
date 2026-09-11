@@ -229,19 +229,15 @@ export function startNodeRuntime(): Promise<Env> {
     Object.assign(platform.env, env)
     platform.start()
 
-    // Cron on Workers; timers here. Same functions, so a schedule change is one edit.
-    for (const [ms, cron] of [
-      [60_000, '* * * * *'],
-      [3_600_000, '0 * * * *'],
-      [86_400_000, '0 3 * * *'],
-    ] as const) {
-      const timer = setInterval(() => {
-        void runWithEnv(env, nodeCtx, () => runCron(cron, env)).catch((err) =>
-          console.error(`[cron ${cron}]`, err),
-        )
-      }, ms)
-      timer.unref()
-    }
+    // Cron on Workers; a timer here. One schedule, as on Workers, where three
+    // of them ate three of the five a free account is allowed — `runCron`
+    // decides what a given tick owes, so this stays a single edit.
+    const timer = setInterval(() => {
+      void runWithEnv(env, nodeCtx, () => runCron('* * * * *', env)).catch((err) =>
+        console.error('[cron]', err),
+      )
+    }, 60_000)
+    timer.unref()
 
     console.log(
       `[mailysend] node runtime ready (mode=${env.MS_MODE}, data=${DATA_DIR}, port=${PORT})`,

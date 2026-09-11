@@ -11,25 +11,66 @@ import { reclaimStuckSends } from './send/consumer.ts'
  * either claims its work or does a fixed amount of it.
  */
 
+/**
+ * One cron trigger, not three.
+ *
+ * Cron schedules are counted per account, and the Workers Free plan allows
+ * five. Three schedules per instance meant the second deployment on an account
+ * could not have all of its triggers, and the third could not deploy at all:
+ *
+ *   This account has reached the Workers Free limit of 5 cron triggers per
+ *   account [code: 10072]
+ *
+ * The hourly schedule did nothing at all — `SegmentActor` arms its own alarm —
+ * and the daily one is a once-a-day task that the minute tick can perfectly
+ * well notice is due. So the deployment declares `* * * * *` and nothing else,
+ * and this decides what that tick owes.
+ *
+ * `cron` is still the parameter, because the Node runtime and the Workers
+ * runtime both have one, and an instance deployed before this change still has
+ * the old schedules attached until its next deploy — every one of them lands
+ * here and does the right thing.
+ */
 export async function runCron(cron: string, env: Env): Promise<void> {
-  switch (cron) {
-    case '* * * * *':
-      await sweepExpired(env)
-      break
-    case '0 * * * *':
-      // Nothing hourly of our own. `SegmentActor` arms its own alarm on the
-      // hour boundary and re-arms it after each firing, on Workers and on Node
-      // alike — the cron task that used to be here duplicated that, called a
-      // `sweep()` the actor does not have, and selected a `segments.live`
-      // column that has never existed, so every hourly tick since the first
-      // deploy has thrown `no such column: live` and done nothing else.
-      break
-    case '0 3 * * *':
-      await dailyMaintenance(env)
-      break
-    default:
-      await sweepExpired(env)
-  }
+  // The hourly tick is the one schedule with nothing to do. Kept as a named
+  // case so a stale trigger does not fall through to a full sweep every hour.
+  if (cron === '0 * * * *') return
+
+  await sweepExpired(env)
+  if (await claimDailyRun(env)) await dailyMaintenance(env)
+}
+
+/**
+ * Whether this tick is the one that runs today's maintenance.
+ *
+ * A schedule guaranteed the daily task ran once; a minute tick has to earn
+ * that, and "the hour is 03 and the minute is 00" would not — a tick that is
+ * late, or a deploy in that minute, silently skips a day, and two instances of
+ * the same deployment would both run it.
+ *
+ * So the claim is a row, and the winner is whoever changes it. `WHERE value <`
+ * is what makes that atomic: the second writer's UPDATE matches nothing and
+ * reports zero changes, and the task runs exactly once per UTC day however
+ * many ticks arrive. 03:00 UTC is kept as the earliest it may run, so the
+ * heavy deletes still happen at the quiet hour they were put at.
+ */
+async function claimDailyRun(env: Env): Promise<boolean> {
+  const now = new Date()
+  if (now.getUTCHours() < 3) return false
+  const today = now.toISOString().slice(0, 10)
+  const sql = tenancyFor(env).db(DEFAULT_WORKSPACE)
+
+  const claimed = await sql
+    .prepare(
+      `INSERT INTO settings (workspace_id, key, value, updated_at)
+       VALUES (?, 'cron_daily_ran_on', ?, ?)
+       ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value,
+                                                     updated_at = excluded.updated_at
+        WHERE settings.value < excluded.value`,
+    )
+    .bind(DEFAULT_WORKSPACE, today, now.toISOString())
+    .run()
+  return (claimed.meta?.changes ?? 0) > 0
 }
 
 /**

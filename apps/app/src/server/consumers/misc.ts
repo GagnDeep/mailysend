@@ -24,18 +24,20 @@ export async function consumeMisc(batch: QueueBatch<{ type?: string }>, env: Env
 }
 
 async function dispatch(queue: string, body: { type?: string }, env: Env): Promise<void> {
-  const { doName } = await import('@mailysend/core')
+  const { doName, queueRole } = await import('@mailysend/core')
   const { tenancyFor } = await import('../context.ts')
 
-  switch (queue) {
-    case 'ms-segments': {
+  // Matched by role, because a second instance on the same account consumes
+  // `mailysend16-segments` and not `ms-segments`. See `queueRole`.
+  switch (queueRole(queue)) {
+    case 'segments': {
       const job = body as { workspace_id: string; segment_id: string; mode?: 'full' | 'delta' }
       const actor = env.SEGMENT.get(doName('Segment', job.workspace_id, job.segment_id))
       await (job.mode === 'delta' ? actor.delta() : actor.recompute())
       return
     }
 
-    case 'ms-automation-triggers': {
+    case 'automation-triggers': {
       // Three job shapes share this queue: a trigger decides who enters, and
       // the other two carry out a `send` step for one person or for a cohort.
       // They share a queue because they share a rate: one automation's work.
@@ -50,13 +52,13 @@ async function dispatch(queue: string, body: { type?: string }, env: Env): Promi
       return
     }
 
-    case 'ms-dmarc': {
+    case 'dmarc': {
       const { ingestDmarcReport } = await import('../services/dmarc.ts')
       await ingestDmarcReport(body as never, env)
       return
     }
 
-    case 'ms-export': {
+    case 'export': {
       const { runExport } = await import('../services/export.ts')
       await runExport(body as never, env)
       return

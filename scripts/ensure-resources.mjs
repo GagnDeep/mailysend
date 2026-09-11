@@ -36,6 +36,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { scopeResourceNames } from './instance-names.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,6 +102,17 @@ const readJsonc = (path) =>
 
 const source = readJsonc(join(root, 'apps/app/wrangler.jsonc'))
 
+/**
+ * The names this build is actually going to deploy.
+ *
+ * `emit-root-wrangler.mjs` has already scoped the generated configs to the
+ * Worker; doing the same to the source read here is what makes this script
+ * create `mailysend16-send` rather than create `ms-send` and then watch the
+ * deploy ask for a queue nobody made.
+ */
+const scoped = scopeResourceNames(source)
+if (scoped.length > 0) console.log(`[resources] scoped to "${source.name}": ${scoped.length} names`)
+
 // ---------------------------------------------------------------------------
 // Queues. Producers, consumers and dead-letter targets are three different
 // lists and a queue may appear in only one — `ms-events-cf` has no producer
@@ -161,17 +173,15 @@ for (const [name, existing] of info) {
  * What `wrangler deploy` is about to do with these, and why it can fail.
  *
  * Deploy attaches every consumer this Worker declares. If the queue is missing,
- * or if another Worker already consumes it — a queue has exactly one consumer,
- * and these names are account-global, so a second MailySend deployment on one
- * account collides with the first — the trigger update fails with
+ * or if another Worker already consumes it, the trigger update fails with
  *
- *   A request to the Cloudflare API (/accounts/…/queues) failed.
- *   An unknown error has occurred [code: 10013]
+ *   Queue 'ms-send' (UUID 'a82e…') already has a consumer. [code: 11004]
  *
- * which names neither the queue nor the reason. The script uploads fine and the
- * build is reported as failed regardless. Neither case can be fixed from here
- * without breaking somebody else's deployment, so both are said plainly, with
- * the queue named, while the log is still in front of whoever ran the build.
+ * after a clean upload, so the build is reported as failed with the Worker
+ * already live. Two instances on one account no longer land here — the queue
+ * names are scoped to the Worker before this runs — so anything still holding
+ * one of these queues is something outside this repo, which is a decision
+ * somebody has to make rather than something a build script may take.
  */
 const declaredConsumers = [...new Set((source.queues?.consumers ?? []).map((c) => c.queue))]
 const scriptName = source.name
@@ -194,9 +204,8 @@ for (const queue of declaredConsumers) {
   if (other) {
     console.log(
       `[resources] ! queue ${queue} is already consumed by "${other}", not "${scriptName}". A ` +
-        'queue has exactly one consumer and these names are account-global, so two MailySend ' +
-        'deployments on one account collide here. Use a separate Cloudflare account, or remove ' +
-        "the other Worker's consumer.",
+        'queue has exactly one consumer. Queue names are scoped to this Worker, so this is not ' +
+        `another MailySend instance — remove that consumer, or rename this Worker.`,
     )
   }
 }
@@ -246,22 +255,36 @@ for (const database of source.d1_databases ?? []) {
 }
 
 /**
- * Wrangler titles a namespace `<worker>-<binding>`, and the worker may have
- * been renamed at deploy time, so the binding suffix is the only stable part to
- * match on.
+ * Wrangler titles a namespace `<worker>-<binding>`.
+ *
+ * Matching on the `-CACHE` suffix alone was how a second instance on the same
+ * account silently adopted the first one's namespaces — including SUPPRESSIONS,
+ * which is authoritative rather than a cache, so one deployment's do-not-send
+ * list became another's. This deployment's own title wins; a single unlabelled
+ * candidate is still accepted, because a Worker renamed at deploy time keeps a
+ * namespace titled after the name it was created under and that is the one it
+ * has been using all along. Anything more ambiguous than that is left alone and
+ * a new namespace is created.
  */
-const kvTitleFor = (namespaces, binding) =>
-  namespaces.find((n) => n.title === binding || n.title?.endsWith(`-${binding}`))
+const kvTitleFor = (namespaces, binding, worker) => {
+  const candidates = namespaces.filter(
+    (n) => n.title === binding || n.title?.endsWith(`-${binding}`),
+  )
+  return (
+    candidates.find((n) => n.title === `${worker}-${binding}`) ??
+    (candidates.length === 1 ? candidates[0] : undefined)
+  )
+}
 
 for (const namespace of source.kv_namespaces ?? []) {
   const binding = namespace.binding
   let namespaces = await list(['kv', 'namespace', 'list'])
-  let found = kvTitleFor(namespaces, binding)
+  let found = kvTitleFor(namespaces, binding, source.name)
   if (!found) {
     try {
       await wrangler(['kv', 'namespace', 'create', binding])
       namespaces = await list(['kv', 'namespace', 'list'])
-      found = kvTitleFor(namespaces, binding)
+      found = kvTitleFor(namespaces, binding, source.name)
       if (found) console.log(`[resources] + kv ${found.title}`)
     } catch (error) {
       console.log(`[resources] ! kv ${binding}: ${short(error)}`)

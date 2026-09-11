@@ -20,6 +20,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { scopeResourceNames } from './instance-names.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const generated = join(root, 'apps/app/.output-cf/server/wrangler.json')
@@ -61,6 +62,24 @@ if (!wantsAnalyticsEngine && config.analytics_engine_datasets?.length) {
   // so it has to agree with the one at the root or the two paths diverge.
   const bundled = JSON.parse(readFileSync(generated, 'utf8'))
   delete bundled.analytics_engine_datasets
+  writeFileSync(generated, `${JSON.stringify(bundled, null, 2)}\n`)
+}
+
+/**
+ * Names that have to be unique on the account are derived from the Worker's.
+ *
+ * Done here rather than in `wrangler.jsonc` because the Worker's name is only
+ * known once the config is resolved, and done before the root copy is written
+ * so both configs a deploy might read say the same thing. See
+ * `scripts/instance-names.mjs` for what this prevents.
+ */
+const scoped = scopeResourceNames(config)
+if (scoped.length > 0) {
+  console.log(`[wrangler] scoped to "${config.name}": ${scoped.join(', ')}`)
+  // The bundle's own config is what `pnpm deploy:cf` deploys, so it has to
+  // carry the same names as the root copy.
+  const bundled = JSON.parse(readFileSync(generated, 'utf8'))
+  scopeResourceNames(bundled)
   writeFileSync(generated, `${JSON.stringify(bundled, null, 2)}\n`)
 }
 
