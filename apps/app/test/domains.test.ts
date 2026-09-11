@@ -222,6 +222,64 @@ describe('matchers that used to pass on strings they had not matched', () => {
   })
 })
 
+/**
+ * Tracking is off unless somebody asked for it.
+ *
+ * Both switches change the message in a way the recipient can see — a pixel
+ * their client fetches from us, and links that resolve through our redirector
+ * — and both used to be on from the moment a domain was created. That is a
+ * default nobody consented to, so it is now asserted in three places at once:
+ * the response body, the row the INSERT actually wrote, and the column default
+ * the INSERT relies on.
+ */
+describe('what a new domain starts with', () => {
+  it('creates a domain with neither tracking switch on', async () => {
+    const created = await h.fetch('/v1/domains', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'quiet.dev' }),
+    })
+    expect(created.status).toBe(201)
+    const body = (await created.json()) as {
+      id: string
+      open_tracking: boolean
+      click_tracking: boolean
+    }
+    expect(body.open_tracking).toBe(false)
+    expect(body.click_tracking).toBe(false)
+
+    // The response is a literal; this is the row, which is what the send path
+    // reads. The two disagreeing is exactly the bug this guards.
+    const row = await h.sql
+      .prepare('SELECT open_tracking, click_tracking FROM domains WHERE id = ?')
+      .bind(body.id)
+      .first<{ open_tracking: number; click_tracking: number }>()
+    expect(row?.open_tracking).toBe(0)
+    expect(row?.click_tracking).toBe(0)
+  })
+
+  it('takes the column default, not a value the INSERT names', async () => {
+    // The INSERT does not list either column, so the migration's default is
+    // the whole of the behaviour. A rebuild that dropped it would pass the test
+    // above only if the response literal were wrong in the same direction.
+    await h.sql
+      .prepare(
+        `INSERT INTO domains (id, workspace_id, name, status, region, dkim_selector,
+                              custom_return_path, created_at, updated_at)
+         VALUES ('dom_default', 'ws_default', 'bare.dev', 'not_started', 'global', 'ms1',
+                 'cf-bounce', ?, ?)`,
+      )
+      .bind(new Date().toISOString(), new Date().toISOString())
+      .run()
+    const row = await h.sql
+      .prepare('SELECT open_tracking, click_tracking FROM domains WHERE id = ?')
+      .bind('dom_default')
+      .first<{ open_tracking: number; click_tracking: number }>()
+    expect(row?.open_tracking).toBe(0)
+    expect(row?.click_tracking).toBe(0)
+  })
+})
+
 describe('a rewritten record set', () => {
   it('demotes the domain rather than leaving verified over rows nobody has checked', async () => {
     // `writeRecords` deletes and re-inserts every row as `not_started`. It is

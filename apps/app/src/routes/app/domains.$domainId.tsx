@@ -566,8 +566,11 @@ function DomainDetail() {
             <div className="min-w-0">
               <div className="text-[14.5px] font-medium">Open tracking</div>
               <p className="m-0 mt-1 max-w-[70ch] text-[13.5px] text-muted">
-                Adds a tracking pixel to HTML mail from this domain. Mailbox-provider prefetching
-                inflates raw opens, which is why the dashboard reports the human figure by default.
+                Inserts a 1×1 tracking pixel into the HTML body of every message. The recipient's
+                mail client fetches it from us, which is how an open is recorded — and which means
+                the recipient's client can see the request, block it, or prefetch it on their
+                behalf, which is why the dashboard reports the human figure rather than raw opens.
+                Off until you turn it on.
               </p>
             </div>
             <Switch
@@ -583,8 +586,9 @@ function DomainDetail() {
             <div className="min-w-0">
               <div className="text-[14.5px] font-medium">Click tracking</div>
               <p className="m-0 mt-1 max-w-[70ch] text-[13.5px] text-muted">
-                Rewrites links so clicks are attributable. Rewritten links change what the recipient
-                sees on hover, so some senders leave this off for transactional mail.
+                Rewrites every link in the message to point at our redirector before the real
+                destination. That is what produces click data, and it is visible to the recipient:
+                the URL they see on hover is ours, not yours. Off until you turn it on.
               </p>
             </div>
             <Switch

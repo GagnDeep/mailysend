@@ -29,8 +29,10 @@ const ROLES = ['owner', 'developer', 'marketer', 'read_only'] as const
 const SETTING_DEFAULTS = {
   default_from: null as string | null,
   default_reply_to: null as string | null,
-  open_tracking: true,
-  click_tracking: true,
+  // Off by default: both are visible to the recipient and neither is needed to
+  // send. See the column comment on `domains.open_tracking`.
+  open_tracking: false,
+  click_tracking: false,
   provider: 'cloudflare' as 'cloudflare' | 'ses' | 'resend' | 'smtp',
   failover_provider: null as 'cloudflare' | 'ses' | 'resend' | 'smtp' | null,
   log_retention_days: 30,

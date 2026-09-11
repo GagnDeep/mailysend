@@ -111,8 +111,10 @@ domains.post('/', async (c) => {
       created_at: now,
       custom_return_path: returnPath,
       provider,
-      open_tracking: true,
-      click_tracking: true,
+      // Both off, matching the column defaults this INSERT relied on. Neither
+      // is silent to the recipient, so neither is on until somebody asks.
+      open_tracking: false,
+      click_tracking: false,
       records: records.map((r) => toDnsRecord(r, 'not_started', null)),
     },
     201,

@@ -83,8 +83,17 @@ export const Domain = z.object({
   dmarc_policy: z.enum(['none', 'quarantine', 'reject', 'missing']).nullable().optional(),
   /** Learned by SendingDomainDO from provider rejections; null before the first send. */
   daily_quota: z.number().int().nullable().optional(),
-  open_tracking: z.boolean().default(true),
-  click_tracking: z.boolean().default(true),
+  /**
+   * Off unless somebody turned them on.
+   *
+   * Both alter the message in a way the recipient can see — a pixel their
+   * client fetches from us, and links that point at our redirector — and
+   * neither is required to send. The schema default has to match the column
+   * default, or a client parsing a partial row invents a setting the server
+   * does not hold.
+   */
+  open_tracking: z.boolean().default(false),
+  click_tracking: z.boolean().default(false),
   custom_return_path: z.string().default('cf-bounce'),
   /** The DKIM selector the DNS records were minted for; `ms1` unless overridden. */
   dkim_selector: z.string().optional(),

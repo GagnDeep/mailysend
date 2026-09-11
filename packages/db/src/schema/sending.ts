@@ -30,8 +30,23 @@ export const domains = sqliteTable(
     dkimPublicKey: text('dkim_public_key'),
     /** Cloudflare's sending DNS lives under this subdomain. */
     customReturnPath: text('custom_return_path').notNull().default('cf-bounce'),
-    openTracking: bool('open_tracking').notNull().default(true),
-    clickTracking: bool('click_tracking').notNull().default(true),
+    /**
+     * Both tracking switches default off, and that is a deliberate reversal.
+     *
+     * Neither is silent and neither is required to send: open tracking inserts
+     * a 1x1 pixel the recipient's client fetches from us, and click tracking
+     * rewrites every link so the URL on hover is ours rather than the sender's.
+     * Defaulting them on meant a domain added in thirty seconds started
+     * altering the sender's mail in ways their recipients can see, before
+     * anybody had been asked. A default that a reader would be surprised by if
+     * they found out about it later is the wrong default; both are one switch
+     * away on the domain page for anyone who wants the data.
+     *
+     * Existing domains keep whatever they have — the migration rebuilds the
+     * table to change the default for new rows and copies every value across.
+     */
+    openTracking: bool('open_tracking').notNull().default(false),
+    clickTracking: bool('click_tracking').notNull().default(false),
     tls: text('tls', { enum: ['opportunistic', 'enforced'] })
       .notNull()
       .default('opportunistic'),

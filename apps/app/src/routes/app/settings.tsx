@@ -355,7 +355,7 @@ function SendingPanel({ settings }: { settings: WorkspaceSettingsRecord }) {
 
           <p className="m-0 text-[13px] leading-[1.6] text-muted">
             Both are visible to the recipient's mail client. Neither is silent, and neither is
-            required to send.
+            required to send — so both are off until you turn them on, here or per domain.
           </p>
         </div>
 
