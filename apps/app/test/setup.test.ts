@@ -42,21 +42,71 @@ describe('claiming', () => {
     expect(body.options.challenge).toBeTruthy()
   })
 
-  it('will not hand the instance to whoever finds the URL first', async () => {
-    // Dropping MS_OWNER_EMAIL from the deploy form removed the only thing
-    // standing between a fresh deployment and a passer-by. The code printed on
-    // first boot is what replaced it, so an absent or wrong one must not pass.
-    const without = await h.fetch('/v1/setup/claim/options', {
+  it('claims without a code by default, because the code is opt-in', async () => {
+    // The default is an open claim, closed by the first person to reach
+    // /setup — which on a fresh deploy is the operator, seconds later. A code
+    // that lives only in a log line, needed at the one moment nobody is reading
+    // logs, locked out more operators than passers-by. `MS_OWNER_EMAIL` and
+    // `MS_REQUIRE_CLAIM_CODE` are the two ways to close it, and both are tested
+    // below. The harness pins a code row either way, so this also covers the
+    // case that makes the switch live rather than first-boot-only: a deployment
+    // that booted while the code was the default must still let its operator in
+    // once the flag is off.
+    const response = await h.fetch('/v1/setup/claim/options', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner@acme.dev' }),
+    })
+    expect(response.status).toBe(200)
+  })
+
+  it('will not hand the instance to whoever finds the URL first, when asked not to', async () => {
+    // `MS_REQUIRE_CLAIM_CODE` restores the guarantee for a deployment whose URL
+    // is public before its operator gets there: an absent or wrong code must
+    // not pass, and the right one must.
+    const locked = await harness({ MS_REQUIRE_CLAIM_CODE: '1' })
+
+    const without = await locked.fetch('/v1/setup/claim/options', {
       method: 'POST',
       body: JSON.stringify({ email: 'stranger@else.dev' }),
     })
     expect(without.status).toBe(401)
 
-    const wrong = await h.fetch('/v1/setup/claim/options', {
+    const wrong = await locked.fetch('/v1/setup/claim/options', {
       method: 'POST',
       body: JSON.stringify({ email: 'stranger@else.dev', claim_code: 'WRON-GCOD-E000' }),
     })
     expect(wrong.status).toBe(401)
+
+    const right = await locked.fetch('/v1/setup/claim/options', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner@acme.dev', claim_code: CLAIM_CODE }),
+    })
+    expect(right.status).toBe(200)
+  })
+
+  it('tells /setup which of the two locks is on', async () => {
+    // The form renders from this, so a disagreement between what the instance
+    // reports and what the claim endpoint enforces is a claim that fails after
+    // the operator has already touched their passkey.
+    const read = async (instance: Harness) =>
+      (await (await instance.fetch('/v1/instance')).json()) as {
+        claim: { code_required: boolean; reserved: boolean }
+      }
+
+    expect((await read(h)).claim).toEqual({ code_required: false, reserved: false })
+    expect((await read(await harness({ MS_REQUIRE_CLAIM_CODE: '1' }))).claim).toEqual({
+      code_required: true,
+      reserved: false,
+    })
+    // Two locks on one door: the code yields to the reserved address.
+    expect(
+      (await read(await harness({ MS_REQUIRE_CLAIM_CODE: '1', MS_OWNER_EMAIL: 'o@acme.dev' })))
+        .claim,
+    ).toEqual({ code_required: false, reserved: true })
+    // `0` and `false` mean off — the surprise that only shows up in an incident.
+    expect((await read(await harness({ MS_REQUIRE_CLAIM_CODE: '0' }))).claim.code_required).toBe(
+      false,
+    )
   })
 
   it('refuses to offer one once the instance has an owner', async () => {

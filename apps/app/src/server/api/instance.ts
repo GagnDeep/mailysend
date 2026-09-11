@@ -43,7 +43,7 @@ instance.get('/', async () => {
       .first<{ n: number }>(),
     readInstanceSetting(sql, PREVIOUS_URL_KEY),
     readInstanceSetting(sql, LAST_SEND_ERROR_KEY),
-    claimCodeRequired(sql, env.MS_OWNER_EMAIL),
+    claimCodeRequired(sql, env.MS_OWNER_EMAIL, env.MS_REQUIRE_CLAIM_CODE),
   ])
 
   const verifiedDomains = verified?.n ?? 0
@@ -53,8 +53,9 @@ instance.get('/', async () => {
   return Response.json({
     object: 'instance',
     claimed,
-    // What `/setup` must ask for, and nothing about who. `code_required` says a
-    // code was minted on first boot and has not been spent; `reserved` says
+    // What `/setup` must ask for, and nothing about who. `code_required` says
+    // this deployment opted into a code with `MS_REQUIRE_CLAIM_CODE`, minted one
+    // on first boot, and has not spent it; `reserved` says
     // `MS_OWNER_EMAIL` is set. The address itself stays out of an
     // unauthenticated response — knowing that *an* address is required is what
     // the form needs, and is already observable by trying; knowing *which* is a

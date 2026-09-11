@@ -112,18 +112,33 @@ instance.
 
 ## The claim code
 
-First boot prints one, once, into the deployment's log — alongside the bootstrap
-API key, and stored the same way: only its SHA-256 is kept. `/setup` asks for it
-before it will claim an instance.
+Off by default, and switched on by setting `MS_REQUIRE_CLAIM_CODE` to `1`,
+`true`, `yes`, `on` or `required`; anything else, `0` and `false` included,
+leaves it off. With it on, first boot prints a code once into the deployment's
+log — alongside the bootstrap API key, and stored the same way: only its SHA-256
+is kept — and `/setup` asks for it before it will claim an instance. With it off
+no code is minted, nothing about one is printed, and the deployment is claimed by
+the first person to reach `/setup`.
 
-That is the answer to the obvious objection to first-claimant-wins. Reading a
-Worker's log is something only the person who deployed it can do, and it needs
+That code is the answer to the obvious objection to first-claimant-wins. Reading
+a Worker's log is something only the person who deployed it can do, and it needs
 no email, no DNS and no identity provider — the same reason a passkey is the
 claim credential. `wrangler tail`, or the Worker's *Logs* tab in the Cloudflare
 dashboard.
 
-Two deployments are never asked for it: one that booted before the code existed
-(it has no stored hash, and would otherwise be permanently unclaimable), and one
-with `MS_OWNER_EMAIL` set, which is already narrowed to a single address. Lost
-the log? `npx mailysend claim` writes a nonce straight into the deployment's own
-database, which is a strictly stronger proof and stays available afterwards.
+The window it closes is real but short: between the deployment answering its
+first request and its operator reaching `/setup`, whoever has the URL can claim
+it. On a URL that is public before its operator gets there, closing that window
+is worth a code. Making it the default was not, and what it cost was operators
+locked out of their own deployment by a code that lives only in a log line they
+were not watching — on a Worker whose log retention may already have dropped it.
+
+Two deployments are never asked for the code even with the flag on: one with
+`MS_OWNER_EMAIL` set, which is already narrowed to a single address — setting
+both is two locks on one door, and the code is the lock that yields — and one
+with no stored hash, which is any deployment that booted before the code existed
+or booted without the flag. The flag is read on every `/setup`, not once at first
+boot, so a deployment that booted while the code was the default still carries
+its row and turning the flag off lets its operator straight in. Lost the log?
+`npx mailysend claim` writes a nonce straight into the deployment's own database,
+which is a strictly stronger proof and stays available afterwards.

@@ -102,7 +102,7 @@ export const GUIDES: GuideMeta[] = [
         label: 'First boot',
         headline: 'What happens on first boot',
         description:
-          'Migrations, the owner claim window, and the health endpoint that tells you which bindings resolved.',
+          'Migrations, the bootstrap API key printed once, the open claim window, and the health endpoint that tells you which bindings resolved.',
       },
       {
         anchor: 'what-is-not-done',
@@ -141,7 +141,7 @@ export const GUIDES: GuideMeta[] = [
     slug: 'claim-your-instance',
     title: 'Claim a fresh instance and choose how you will sign in',
     description:
-      'A newly deployed instance has no owner. Here is how the claim works, why it is time-limited, and which of the six sign-in doors to open.',
+      'A newly deployed instance has no owner, and the first person to reach /setup takes it. Here is how the claim works, how to close the window early, and which of the six sign-in doors to open.',
     category: 'Deploy',
     level: 'Beginner',
     minutes: 8,
@@ -162,7 +162,7 @@ export const GUIDES: GuideMeta[] = [
         label: 'Claim it',
         headline: 'Claim the instance',
         description:
-          'The /setup screen, the claim code, and the MS_OWNER_EMAIL variable that pins the claim to an address you already control.',
+          'The /setup screen, and the two variables that close the claim window early: MS_OWNER_EMAIL to reserve it for one address, MS_REQUIRE_CLAIM_CODE to demand a code printed on first boot.',
       },
       {
         anchor: 'six-doors',
@@ -183,7 +183,7 @@ export const GUIDES: GuideMeta[] = [
       {
         question: 'What if someone else claims my instance first?',
         answer:
-          'Set MS_OWNER_EMAIL before the first request reaches the instance. The claim then only completes for that address, so an unclaimed URL is not a race you can lose.',
+          'By default that is possible, which is why you should open /setup as soon as the deploy answers. If the URL will be public before you get to it, set MS_OWNER_EMAIL before the first request reaches the instance and the claim completes only for that address, or set MS_REQUIRE_CLAIM_CODE=1 and first boot mints a code that /setup demands.',
       },
       {
         question: 'Can I change the owner later?',

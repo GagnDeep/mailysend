@@ -42,7 +42,8 @@ overwrites a secret on every deploy.
 |---|---|---|
 | `MS_MODE` | `single` | `single` for a self-hosted instance, `saas` for the hosted product |
 | `MS_DEFAULT_PROVIDER` | `cloudflare` | The transport used when a workspace has configured none |
-| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup`. Setting it also means `/setup` does not ask for the first-boot claim code — one lock instead of two. Not on the deploy form |
+| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup`. Setting it also means `/setup` does not ask for the claim code — one lock instead of two. Not on the deploy form |
+| `MS_REQUIRE_CLAIM_CODE` | off | `1`, `true`, `yes`, `on` or `required` mints a claim code on first boot, prints it to the log and makes `/setup` ask for it. For a URL that is public before you reach `/setup`; the cost is a credential that exists only in a log line. Read on every `/setup`, so turning it off lets the operator of a deployment that already has a code straight in |
 | `MS_LANDING` | `app` when `MS_MODE=single`, else `marketing` | What `/` serves: `app` redirects to the dashboard (or `/setup` while unclaimed), `marketing` serves the public site |
 | `EVENT_DETAIL` | `on` | `off` stops writing a row per event and reconstructs timelines from the R2 archive |
 | `MS_LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` |
@@ -57,12 +58,12 @@ A fresh deployment has no verified sending domain, no identity provider and
 nobody to email, so its first session cannot come from any of those. It comes
 from claiming the instance.
 
-**`/setup`** is where that happens. It asks for the **claim code** printed once
-in the deployment's log on first boot — `wrangler tail`, or the Worker's *Logs*
-tab — which is what makes a public URL safe before you have opened it: whoever
-finds the deployment cannot claim it without reading its log. A deployment that
-booted before this existed has no stored code and is not asked for one, and
-setting `MS_OWNER_EMAIL` narrows the claim to one address instead. Then the
+**`/setup`** is where that happens, and by default the first person to reach it
+takes the deployment. `MS_OWNER_EMAIL` narrows the claim to one address, and
+`MS_REQUIRE_CLAIM_CODE=1` makes first boot print a **claim code** into the
+deployment's log — `wrangler tail`, or the Worker's *Logs* tab — that `/setup`
+then asks for, which is what makes a public URL safe before you have opened it:
+whoever finds the deployment cannot claim it without reading its log. Then the
 visitor registers a passkey and becomes the owner; the claim is one conditional insert, so two simultaneous
 claimants produce exactly one owner. Ten single-use recovery codes are shown
 once. The two steps after it — add a sending domain, mint a key and send a test

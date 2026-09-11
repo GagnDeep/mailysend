@@ -227,8 +227,7 @@ provisions less than its documentation implies.
 **The deploy form has no fields on it.** There is nothing you need to know before the
 first boot: on its first request the instance applies its own migrations, creates the
 workspace, generates and stores a 32-byte signing secret, learns its own public URL from
-the request it is answering, and prints one bootstrap API key and one claim code to the
-log.
+the request it is answering, and prints one bootstrap API key to the log.
 
 That form is built from the repo's `.env.example`, and it is worth knowing exactly what
 Cloudflare does with it: it shows key names only — never the comments — it stores every
@@ -244,12 +243,13 @@ When it finishes, open the deployment's URL. It lands on **`/setup`**, where you
 instance with a passkey — no email, no DNS and no identity provider needed, because a
 freshly deployed Worker has none of those.
 
-`/setup` asks for the **claim code** printed in the deploy log (`wrangler tail`, or the
-Worker's *Logs* tab). That is what makes a public URL safe before you get to it: whoever
-finds the deployment first cannot claim it without reading its log, and only the person who
-pressed deploy can. Setting `MS_OWNER_EMAIL` narrows the claim to one address instead, in
-which case the code is not asked for — it does not create an owner, it restricts who may
-become one. Everything else can wait until you are inside.
+The first person to reach `/setup` takes the deployment, so claim it now rather than
+later. Setting `MS_OWNER_EMAIL` narrows the claim to one address — it does not create an
+owner, it restricts who may become one. For a URL that is public before you get to it,
+`MS_REQUIRE_CLAIM_CODE=1` makes first boot print a **claim code** to the deploy log
+(`wrangler tail`, or the Worker's *Logs* tab) that `/setup` then demands, so whoever finds
+the deployment first cannot claim it without reading its log. Everything else can wait
+until you are inside.
 
 **The build creates what the button does not.** `wrangler deploy` validates every binding
 before it uploads, so a missing queue or namespace is a failed deploy rather than a
@@ -309,10 +309,10 @@ signing secret, and prints one API key. The key is printed exactly once, because
 SHA-256 hash is ever stored. Then open `http://localhost:8917/`, which sends you to
 `/setup` to claim the instance with a passkey.
 
-First boot also prints a **claim code**, and `/setup` asks for it — the log is the one
-place it exists, and reading the log is the proof. Set `MS_OWNER_EMAIL=you@your-domain.com`
-to narrow the claim to a single address instead (the code is then not asked for), and
-`MS_SECRET` to a 32-byte hex string if you would rather keep the signing key out of the
+The first person to reach `/setup` claims it. Set `MS_OWNER_EMAIL=you@your-domain.com` to
+narrow the claim to a single address, `MS_REQUIRE_CLAIM_CODE=1` to have first boot print a
+**claim code** that `/setup` then asks for — the log is the one place it exists, and
+reading the log is the proof — and `MS_SECRET` to a 32-byte hex string if you would rather keep the signing key out of the
 database and be able to rotate it. All optional. The full list is in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
@@ -620,7 +620,8 @@ for the long form.
 | `MS_MODE` | `single` | `single` (self-hosted) or `saas` |
 | `MS_DATA_KEY` | `MS_SECRET` | Encrypts stored provider credentials |
 | `MS_DEFAULT_PROVIDER` | `cloudflare` | Fallback transport when nothing is configured |
-| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup`. Not on the Cloudflare deploy form — set it with `wrangler secret put`. When set, the first-boot claim code is not asked for |
+| `MS_OWNER_EMAIL` | — | Optional and *restrictive*: it does not create an owner, it limits who may claim the instance at `/setup`. Not on the Cloudflare deploy form — set it with `wrangler secret put`. When set, the claim code is not asked for |
+| `MS_REQUIRE_CLAIM_CODE` | off | `1`, `true`, `yes`, `on` or `required` mints a claim code on first boot, prints it to the log and makes `/setup` ask for it. For a URL that is public before you reach `/setup` |
 | `MS_LANDING` | `app` in single mode | What `/` serves. `app` redirects to your dashboard (or `/setup` while unclaimed); `marketing` serves the public site, which is what `mailysend.com` runs |
 | `MS_ACCESS_TEAM` | — | Cloudflare Access team domain, e.g. `acme.cloudflareaccess.com` |
 | `MS_ACCESS_AUD` | — | The Access application's AUD tag. Both are required for Access sign-in |

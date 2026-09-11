@@ -1,6 +1,12 @@
-import { Callout, StepCard, Terminal } from '@mailysend/ui'
+import { Callout, StepCard } from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
-import { Diagram, FactTable, Gotcha, Takeaway } from '~/components/marketing/guide-blocks.tsx'
+import {
+  Contrast,
+  Diagram,
+  FactTable,
+  Gotcha,
+  Takeaway,
+} from '~/components/marketing/guide-blocks.tsx'
 import { GuideLayout } from '~/components/marketing/guide-layout.tsx'
 import { Code, Com, Lede, Mono } from '~/components/marketing/prose.tsx'
 import { guideBySlug, guideHead } from '~/seo/guide-head.ts'
@@ -69,14 +75,15 @@ function Page() {
             </Lede>
             <Takeaway>
               It is a claim: a one-time proof that the person at the keyboard is the person who
-              deployed it, made with a passkey and locked with a code that only the deployment’s own
-              log has ever shown.
+              deployed it, made with a passkey and closed for good the moment it succeeds. By
+              default the first person to reach <Mono>/setup</Mono> takes it, which on a fresh
+              deployment is you, seconds later.
             </Takeaway>
             <Diagram
               steps={[
                 { kicker: 'DEPLOY', title: 'A public URL', meta: 'unclaimed' },
-                { kicker: 'FIRST BOOT', title: 'Claim code printed once', meta: 'log only' },
-                { kicker: '/SETUP', title: 'Address + code + passkey', tone: 'accent' },
+                { kicker: 'FIRST BOOT', title: 'Bootstrap API key printed once', meta: 'log only' },
+                { kicker: '/SETUP', title: 'Address + passkey', tone: 'accent' },
                 { kicker: 'CLAIMED', title: 'Owner exists', meta: 'setup routes refuse' },
               ]}
             />
@@ -103,19 +110,46 @@ function Page() {
                 ],
               ]}
               monoFirst={false}
-              caption="So claiming is “prove you have a browser pointed at this instance, and that you read its log”, and then write down ten recovery codes."
+              caption="So claiming is “prove you have a browser pointed at this instance before anybody else does”, and then write down ten recovery codes."
             />
             <p className="text-[15.5px] leading-[1.7] text-muted">
-              <strong className="text-ink">
-                The claim code is what makes first-claimant-wins safe.
-              </strong>{' '}
-              First boot mints one and prints it once into the deployment’s log, alongside the
-              bootstrap API key, and stores only its SHA-256. Reading a Worker’s log —{' '}
-              <Mono>wrangler tail</Mono>, or the Worker’s <em>Logs</em> tab — is something only the
-              person who deployed it can do, and it needs no email, no DNS and no identity provider,
-              which is the same reason a passkey is the claim credential. Whoever else finds the URL
-              cannot claim it.
+              <strong className="text-ink">First claimant wins, and that is the default.</strong>{' '}
+              First boot mints the bootstrap API key and nothing else: no claim code, no line about
+              one in the log, and <Mono>/setup</Mono> asks for an address and a passkey. The window
+              that leaves open is real — between the deployment answering its first request and you
+              reaching <Mono>/setup</Mono>, whoever has the URL can claim it — and on a deploy you
+              are watching it is seconds long. A mandatory code closed that window at the price of
+              needing a log line at the one moment nobody is reading logs, on a Worker whose
+              retention may already have dropped it.
             </p>
+            <FactTable
+              columns={['If the URL is public before you get to it', 'Set', 'What it does']}
+              rows={[
+                [
+                  'You know which address will claim it',
+                  <>
+                    <Mono>MS_OWNER_EMAIL</Mono>
+                  </>,
+                  'The claim completes only for that address, and every other claimant is refused. It creates nobody and sends nothing.',
+                ],
+                [
+                  'You do not, or the address may change',
+                  <>
+                    <Mono>MS_REQUIRE_CLAIM_CODE=1</Mono>
+                  </>,
+                  'First boot mints a code, prints it once beside the bootstrap API key, stores only its SHA-256, and /setup demands it before it will let anyone in.',
+                ],
+                [
+                  'Both',
+                  <>
+                    <Mono>MS_OWNER_EMAIL</Mono> wins
+                  </>,
+                  'No code is minted and none is asked for. Two locks on one door buys nothing, so this one yields.',
+                ],
+              ]}
+              monoFirst={false}
+              caption="MS_REQUIRE_CLAIM_CODE reads 1, true, yes, on and required as on. Anything else — including 0 and false — leaves it off, because a variable set to 0 meaning “on” is the kind of surprise that only surfaces during an incident."
+            />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">The window is genuinely a window.</strong> Once an owner
               exists the claim path is closed and cannot be reopened, including by you: every{' '}
@@ -132,66 +166,29 @@ function Page() {
               claimed, so <Mono>/setup</Mono> cannot be used to take over a running deployment. An
               instance with no member at all stays unclaimed — which is precisely the case{' '}
               <Mono>/setup</Mono> exists for: a deploy nobody ever managed to sign into. Such an
-              instance has no stored claim code either, and so is not asked for one, rather than
-              being permanently unclaimable.
+              instance has no stored claim code either — the code is minted only on the boot that
+              creates the workspace — so it is asked for nothing, rather than being permanently
+              unclaimable by a code that was never printed.
             </Gotcha>
           </>
         ),
         'claim-it': (
           <>
-            <Lede>Two minutes, and one optional step that is worth taking first.</Lede>
+            <Lede>Two minutes, and the thing that makes it safe is doing it now.</Lede>
             <Takeaway>
-              The safe version is the one where you decide who may claim it before the instance is
-              reachable.
+              On a default deployment the instance belongs to whoever opens <Mono>/setup</Mono>{' '}
+              first, so claim it while the URL is still something only you know.
             </Takeaway>
             <div className="flex flex-col gap-3.5">
-              <StepCard step={1} title="Optional: pin the owner first" variant="rule">
-                <p className="mt-1.5 mb-2 text-[15px] leading-[1.6] text-muted">
-                  Set <Mono>MS_OWNER_EMAIL</Mono> before the first request reaches the instance and
-                  the claim completes only for that address — every other claimant is refused with{' '}
-                  <em>This instance is reserved for a different address</em>. It is{' '}
-                  <strong className="text-ink">a restriction, not a nomination</strong>: it creates
-                  nobody, sends nothing, and nothing will happen until you open <Mono>/setup</Mono>{' '}
-                  yourself. When it is set, the claim code is not asked for — two locks on one door
-                  buys nothing.
-                </p>
-                <Terminal
-                  lines={[
-                    { kind: 'command', text: 'npx wrangler secret put MS_OWNER_EMAIL' },
-                    { kind: 'output', text: 'you@yourdomain.com' },
-                  ]}
-                />
-                <p className="mt-2 mb-0 text-[14px] leading-[1.6] text-muted-2">
-                  It is deliberately absent from the Cloudflare deploy form, which stores answers as
-                  masked secrets and does not prefill defaults — an optional variable rendered there
-                  looks exactly like a credential the deployment cannot start without.
-                </p>
-              </StepCard>
-              <StepCard step={2} title="Read the claim code out of the log" variant="rule">
-                <p className="mt-1.5 mb-2 text-[15px] leading-[1.6] text-muted">
-                  Twelve characters in three groups of four, drawn from an alphabet with the
-                  terminal-font confusables removed, printed once on first boot next to the
-                  bootstrap API key. Only its hash is stored, so this log line is the only place it
-                  exists.
-                </p>
-                <Code>
-                  <Com>
-                    {'#  Your claim code — /setup asks for this before it will let anyone in:'}
-                  </Com>
-                  {'\n\n      K7QF-3MPX-R9TB'}
-                </Code>
-              </StepCard>
-              <StepCard step={3} title="Open /setup and register a passkey" variant="rule">
+              <StepCard step={1} title="Open /setup and register a passkey" variant="rule">
                 <p className="mt-1.5 mb-0 text-[15px] leading-[1.6] text-muted">
-                  You give an address, the code, and a passkey. The code is checked on both legs of
-                  the flow — when the browser asks for a registration challenge and again when it
-                  submits the credential — because the first leg is what stops a passkey prompt that
-                  fails after you have already touched your key, and nothing but the challenge
-                  carries between them. It is compared as a hash, in constant time, after
-                  upper-casing and stripping spaces, so typing it back with the dashes is fine.
+                  You give an address and create a passkey, and the browser already open on the page
+                  is the whole credential — which is why this works on a deployment with no verified
+                  sending domain and no identity provider. Nothing else is asked for unless you set
+                  one of the two variables below before the instance became reachable.
                 </p>
               </StepCard>
-              <StepCard step={4} title="Save the ten recovery codes" variant="rule">
+              <StepCard step={2} title="Save the ten recovery codes" variant="rule">
                 <p className="mt-1.5 mb-0 text-[15px] leading-[1.6] text-muted">
                   Shown once, single-use. Then <Mono>/setup</Mono> offers two more steps — adding a
                   sending domain, and minting your first API key with a live test send — and both
@@ -200,15 +197,75 @@ function Page() {
                 </p>
               </StepCard>
             </div>
-            <Callout variant="warn" title="LOST THE LOG?">
+            <p className="text-[15.5px] leading-[1.7] text-muted">
+              <strong className="text-ink">
+                If you cannot be the first one there, close the claim window instead.
+              </strong>{' '}
+              Both of these are deliberate hardening for the deployment whose URL is public before
+              its operator arrives — a custom domain pointed at the Worker in advance, a deploy run
+              by somebody else, an instance that will sit unattended between deploying and first
+              sign-in — and both have to be set before the first request reaches it.
+            </p>
+            <Contrast
+              sides={[
+                {
+                  label: 'MS_OWNER_EMAIL',
+                  tone: 'good',
+                  points: [
+                    <>
+                      Reserves the claim for one address. Every other claimant is refused with{' '}
+                      <em>This instance is reserved for a different address</em>.
+                    </>,
+                    <>
+                      <strong className="text-ink">A restriction, not a nomination</strong>: it
+                      creates nobody, sends nothing, and nothing happens until you open{' '}
+                      <Mono>/setup</Mono> yourself.
+                    </>,
+                    <>
+                      Set it with <Mono>npx wrangler secret put MS_OWNER_EMAIL</Mono>. It is
+                      deliberately absent from the Cloudflare deploy form, which stores answers as
+                      masked secrets and does not prefill defaults — an optional variable rendered
+                      there looks exactly like a credential the deployment cannot start without.
+                    </>,
+                    'When it is set, no claim code is minted and none is asked for.',
+                  ],
+                },
+                {
+                  label: 'MS_REQUIRE_CLAIM_CODE',
+                  tone: 'neutral',
+                  points: [
+                    <>
+                      Mints a code on the first boot and makes <Mono>/setup</Mono> demand it. Twelve
+                      characters in three groups of four, from an alphabet with the terminal-font
+                      confusables removed, printed once next to the bootstrap API key.
+                    </>,
+                    'Only its SHA-256 is stored, so that log line is the only place the code ever exists.',
+                    'Checked on both legs of the flow — when the browser asks for a registration challenge, and again when it submits the credential — because the first leg is what stops a passkey prompt that fails after you have already touched your key, and nothing but the challenge carries between them.',
+                    'Compared as a hash, in constant time, after upper-casing and stripping spaces, so typing it back with the dashes is fine.',
+                  ],
+                },
+              ]}
+            />
+            <Code>
+              <Com>{'#  Your claim code — /setup asks for this before it will let anyone in:'}</Com>
+              {'\n\n      K7QF-3MPX-R9TB'}
+            </Code>
+            <Gotcha title="The code is minted on first boot or not at all">
+              Turning <Mono>MS_REQUIRE_CLAIM_CODE</Mono> on for a deployment that has already booted
+              mints nothing, and <Mono>/setup</Mono> goes on asking for nothing. In the other
+              direction it is a live switch: a deployment that booted while the code was mandatory
+              still carries the stored hash, and clearing the variable lets its operator in rather
+              than leaving them locked out by a code they never chose to need.
+            </Gotcha>
+            <Callout variant="warn" title="LOCKED OUT?">
               <Mono>npx mailysend claim --url https://your-instance</Mono> is the break-glass path,
-              and it is a strictly stronger proof than reading an inbox: it writes a one-time nonce
-              straight into the deployment’s own database — through the Cloudflare D1 API when{' '}
-              <Mono>CLOUDFLARE_ACCOUNT_ID</Mono> and <Mono>CLOUDFLARE_API_TOKEN</Mono> are in your
-              environment, otherwise by printing the exact <Mono>wrangler d1 execute</Mono> command
-              for you to run — and then proves it knows that value. Only somebody who can write that
-              database can produce it, which is why it stays available <em>after</em> the instance
-              is claimed as well.
+              and it is a strictly stronger proof than reading a log or an inbox: it writes a
+              one-time nonce straight into the deployment’s own database — through the Cloudflare D1
+              API when <Mono>CLOUDFLARE_ACCOUNT_ID</Mono> and <Mono>CLOUDFLARE_API_TOKEN</Mono> are
+              in your environment, otherwise by printing the exact <Mono>wrangler d1 execute</Mono>{' '}
+              command for you to run — and then proves it knows that value. Only somebody who can
+              write that database can produce it, which is why it stays available <em>after</em> the
+              instance is claimed as well.
             </Callout>
           </>
         ),
@@ -245,6 +302,10 @@ function Page() {
                 [
                   'auth.otp',
                   'Whether any domain is verified — a fact about the deployment, not about a person.',
+                ],
+                [
+                  'claim.code_required',
+                  'False unless this deployment opted into MS_REQUIRE_CLAIM_CODE and first-booted with it set.',
                 ],
                 ['claim.reserved', 'That an address is required, without saying which.'],
                 [
@@ -307,11 +368,11 @@ function Page() {
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">Nothing stored is a working credential.</strong> Session
               tokens are random values whose SHA-256 is the row’s primary key, so a dump of{' '}
-              <Mono>sessions</Mono> cannot be replayed as a cookie; API keys, recovery codes and the
-              claim code are stored the same way. Cookies are <Mono>HttpOnly</Mono>,{' '}
-              <Mono>SameSite=Lax</Mono> and <Mono>Secure</Mono> unless the instance is being served
-              over plain HTTP on localhost, and a session lasts thirty days. This is also why
-              nothing in the product can show you a key a second time.
+              <Mono>sessions</Mono> cannot be replayed as a cookie; API keys, recovery codes and a
+              claim code where one was minted are stored the same way. Cookies are{' '}
+              <Mono>HttpOnly</Mono>, <Mono>SameSite=Lax</Mono> and <Mono>Secure</Mono> unless the
+              instance is being served over plain HTTP on localhost, and a session lasts thirty
+              days. This is also why nothing in the product can show you a key a second time.
             </p>
             <Gotcha title="Moving to your own domain is a security event">
               A passkey is bound to a hostname, so changing the host invalidates every passkey

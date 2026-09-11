@@ -313,8 +313,9 @@ function ResourcesPage() {
               Press the button and pick your Cloudflare account. The form has no fields on it at
               all, because there is nothing you have to know yet. D1, KV and R2 are created for you;
               queues and the analytics datasets need one command afterwards, and the app tells you
-              when it needs it. Your claim code is printed in the deploy log;{' '}
-              <code className="font-mono text-[13px] text-ink">/setup</code> asks for it.
+              when it needs it. Then open{' '}
+              <code className="font-mono text-[13px] text-ink">/setup</code> and claim it: the first
+              person to reach that page owns the instance.
             </p>
             <Button asChild size="lg" className="mt-auto self-start">
               {/* Cloudflare's own flow, not our sign-up: this section *is* the

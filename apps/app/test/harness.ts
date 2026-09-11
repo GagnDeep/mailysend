@@ -170,13 +170,18 @@ export async function harness(overrides: Partial<Env> = {}): Promise<Harness> {
 
   const env = await configure(base, new Request('https://mail.acme.dev/'))
 
-  // First boot mints a claim code and prints it beside the bootstrap API key,
-  // keeping only its hash. A test cannot read the log line, so the row is
-  // rewritten here to a constant — the gate under test is "the right code and
-  // no other", not the randomness of the generator.
+  // First boot mints a claim code only when `MS_REQUIRE_CLAIM_CODE` asks for
+  // one, and prints it beside the bootstrap API key, keeping only its hash. A
+  // test cannot read the log line, so the row is pinned here to a constant —
+  // the gate under test is "the right code and no other", not the randomness of
+  // the generator. Written as an upsert rather than an update because the row
+  // is absent by default, and a harness that opts in still needs a known code.
   await sql
-    .prepare(`UPDATE settings SET value = ? WHERE workspace_id = '' AND key = ?`)
-    .bind(await hashApiKey(CLAIM_CODE), CLAIM_CODE_KEY)
+    .prepare(
+      `INSERT INTO settings (workspace_id, key, value, updated_at) VALUES ('', ?, ?, ?)
+       ON CONFLICT (workspace_id, key) DO UPDATE SET value = excluded.value`,
+    )
+    .bind(CLAIM_CODE_KEY, await hashApiKey(CLAIM_CODE), new Date().toISOString())
     .run()
 
   return {

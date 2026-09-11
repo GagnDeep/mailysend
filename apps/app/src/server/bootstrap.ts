@@ -150,40 +150,72 @@ async function ensureWorkspace(env: Env): Promise<void> {
     )
     .run()
 
-  // The claim code closes the window the deploy form used to hold open.
+  // The claim code is opt-in, and off by default.
   //
-  // `MS_OWNER_EMAIL` was the only thing standing between a fresh deployment and
-  // whoever found its URL first — and it was asked for as an empty, masked,
-  // mandatory-looking box on Cloudflare's variables form, which is why it is no
-  // longer asked for there at all. A code minted here restores the guarantee
-  // without the question: the operator reading this log is the operator who
-  // pressed deploy, and nobody else can read it. Stored as a hash, like the key
-  // above.
-  const claimCode = claimCodeString()
-  await env.DB.prepare(
-    'INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)',
-  )
-    .bind(INSTANCE, CLAIM_CODE_KEY, await hashApiKey(claimCode), now)
-    .run()
+  // It closes a real window — between a deployment answering its first request
+  // and its operator reaching `/setup`, whoever has the URL can claim it — and
+  // for a deployment on a URL that is public before its operator gets there,
+  // `MS_REQUIRE_CLAIM_CODE=1` is the right answer. But it is not the common
+  // case, and as a default it cost every operator the same thing: a code that
+  // exists only in a log line, needed at the one moment they are least likely
+  // to be reading logs, on a Worker whose log retention may already have
+  // dropped it. Two locks on one door, and the one people lost was the one
+  // nobody chose.
+  //
+  // So the default is an open claim, closed by the first person to reach
+  // `/setup` — which on a fresh deploy is the operator, seconds later. The two
+  // narrower guarantees stay available and are documented together in
+  // `docs/AUTH.md`: `MS_OWNER_EMAIL` reserves the claim for one address, and
+  // `MS_REQUIRE_CLAIM_CODE` mints the code below.
+  const wantsCode = requireClaimCode(env.MS_REQUIRE_CLAIM_CODE) && !env.MS_OWNER_EMAIL
+  const claimCode = wantsCode ? claimCodeString() : null
+  if (claimCode) {
+    await env.DB.prepare(
+      'INSERT INTO settings (workspace_id, key, value, updated_at) VALUES (?,?,?,?)',
+    )
+      .bind(INSTANCE, CLAIM_CODE_KEY, await hashApiKey(claimCode), now)
+      .run()
+  }
 
   // The only time these strings exist anywhere but in the operator's hands:
   // the table stores their SHA-256 and nothing else. On Workers they land in
   // `wrangler tail` and the dashboard's live logs.
   console.log('\n  MailySend is set up. Your first API key — this is the only time it is shown:\n')
   console.log(`      ${token}\n`)
-  console.log('  Your claim code — /setup asks for this before it will let anyone in:\n')
-  console.log(`      ${claimCode}\n`)
-  console.log(
-    '  Open /setup, enter the code above and create a passkey. Nobody owns this\n' +
-      '  deployment until somebody does, and the code is what makes that safe\n' +
-      '  even if the URL is public before you get there.\n' +
-      (env.MS_OWNER_EMAIL
-        ? `  Only ${env.MS_OWNER_EMAIL} may claim it (MS_OWNER_EMAIL is set), so the\n` +
-          '  code is not asked for.\n'
-        : '  Lost it? `npx mailysend claim` writes a fresh nonce straight into this\n' +
-          '  database and is the break-glass path back in.\n'),
-  )
+  if (claimCode) {
+    console.log('  Your claim code — /setup asks for this before it will let anyone in:\n')
+    console.log(`      ${claimCode}\n`)
+    console.log(
+      '  Open /setup, enter the code above and create a passkey. You asked for this\n' +
+        '  with MS_REQUIRE_CLAIM_CODE, and it is what makes claiming safe even if the\n' +
+        '  URL is public before you get there.\n' +
+        '  Lost it? `npx mailysend claim` writes a fresh nonce straight into this\n' +
+        '  database and is the break-glass path back in.\n',
+    )
+  } else {
+    console.log(
+      '  Open /setup and create a passkey. This deployment is unclaimed, and the\n' +
+        '  first person to reach /setup takes it — so claim it now rather than later.\n' +
+        (env.MS_OWNER_EMAIL
+          ? `  Only ${env.MS_OWNER_EMAIL} may claim it (MS_OWNER_EMAIL is set).\n`
+          : '  To hold the claim for a URL that is public before you get to it, set\n' +
+            '  MS_OWNER_EMAIL to reserve it for one address, or MS_REQUIRE_CLAIM_CODE=1\n' +
+            '  to mint a code here that /setup will ask for.\n') +
+        '  Locked out later? `npx mailysend claim` writes a fresh nonce straight into\n' +
+        '  this database and is the break-glass path back in.\n',
+    )
+  }
 }
+
+/**
+ * Is the first-boot claim code switched on?
+ *
+ * Written out rather than a truthiness check because the values that reach it
+ * are strings from a deploy form, and `MS_REQUIRE_CLAIM_CODE=0` or `=false`
+ * meaning "on" is the kind of surprise that only shows up in an incident.
+ */
+export const requireClaimCode = (value?: string): boolean =>
+  value !== undefined && ['1', 'true', 'yes', 'on', 'required'].includes(value.trim().toLowerCase())
 
 /**
  * A code a human reads off a log and types into a form.
@@ -206,13 +238,22 @@ const claimCodeString = (): string => {
 /**
  * Does `/setup` need a claim code?
  *
- * Three answers, and only one of them asks. A deployment that predates this —
- * no code row — is never locked out by a code it was never shown. A deployment
- * with `MS_OWNER_EMAIL` set is already narrowed to one address, and asking for
- * both would be two locks on the same door. Everything else asks.
+ * Four answers now, and only one of them asks. A deployment that did not opt in
+ * with `MS_REQUIRE_CLAIM_CODE` is never asked — including one that booted while
+ * the code was the default and still carries the row, which is the case that
+ * makes this a live switch rather than a first-boot decision: turning it off
+ * has to actually let the operator in. A deployment with `MS_OWNER_EMAIL` set
+ * is already narrowed to one address, and asking for both would be two locks on
+ * the same door. A deployment that predates the code has no row. Everything
+ * else asks.
  */
-export const claimCodeRequired = async (sql: Sql, ownerEmail?: string): Promise<boolean> => {
+export const claimCodeRequired = async (
+  sql: Sql,
+  ownerEmail?: string,
+  requireCode?: string,
+): Promise<boolean> => {
   if (ownerEmail) return false
+  if (!requireClaimCode(requireCode)) return false
   return (await readInstanceSetting(sql, CLAIM_CODE_KEY)) !== null
 }
 

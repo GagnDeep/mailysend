@@ -30,7 +30,8 @@ export interface Instance {
   }
   /**
    * What `/setup` must ask for before it will claim this instance — never who.
-   * `code_required` is the first-boot claim code; `reserved` says
+   * `code_required` is the first-boot claim code, which is off unless the
+   * deployment opted in with `MS_REQUIRE_CLAIM_CODE`; `reserved` says
    * `MS_OWNER_EMAIL` narrows the claim to one address the API does not name.
    */
   claim?: { code_required: boolean; reserved: boolean }

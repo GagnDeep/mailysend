@@ -139,7 +139,8 @@ function ClaimStep({
   const [workspace, setWorkspace] = useState('')
   const [claimCode, setClaimCode] = useState('')
   const supported = passkeysSupported()
-  // Absent on an instance that predates the claim code, and false once
+  // False unless the deployment opted in with `MS_REQUIRE_CLAIM_CODE`, absent
+  // on an instance that predates the claim code, and false once
   // `MS_OWNER_EMAIL` already narrows the claim — asking for both would be two
   // locks on one door.
   const needsCode = instance?.claim?.code_required ?? false

@@ -99,11 +99,13 @@ function assertAllowedClaimant(email: string): void {
  * `claim/verify` checks again because the options leg is not a session and
  * nothing carries between them but the challenge.
  *
- * A deployment with no stored code — anything that booted before this existed —
- * is not locked out: `claimCodeRequired` is false and this is a no-op.
+ * A deployment that did not ask for a code — the default, and anything that
+ * booted before the code existed — is not locked out: `claimCodeRequired` is
+ * false and this is a no-op.
  */
 async function assertClaimCode(sql: Sql, code: string | undefined): Promise<void> {
-  if (!(await claimCodeRequired(sql, getEnv().MS_OWNER_EMAIL))) return
+  const env = getEnv()
+  if (!(await claimCodeRequired(sql, env.MS_OWNER_EMAIL, env.MS_REQUIRE_CLAIM_CODE))) return
   if (!code || !(await claimCodeMatches(sql, code))) {
     throw apiError('not_signed_in', {
       message:

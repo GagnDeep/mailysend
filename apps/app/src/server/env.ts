@@ -29,6 +29,18 @@ export interface Env {
    * domain verifies.
    */
   MS_OWNER_EMAIL?: string
+  /**
+   * Ask `/setup` for the first-boot claim code before it will let anyone claim
+   * the instance. Off unless set to `1`, `true`, `yes`, `on` or `required`.
+   *
+   * The claim window it closes is real but short — between a deployment
+   * answering its first request and its operator reaching `/setup` — and the
+   * code that closes it lives only in a log line the operator is unlikely to be
+   * watching. Worth it for a deployment on a URL that is public before anyone
+   * gets to it; not worth it as a default. `MS_OWNER_EMAIL` is the other way to
+   * hold the claim, and setting both is two locks on one door: this one yields.
+   */
+  MS_REQUIRE_CLAIM_CODE?: string
   /** Cloudflare Access team domain, e.g. `acme.cloudflareaccess.com`. */
   MS_ACCESS_TEAM?: string
   /** The Access application's AUD tag. Both must be set for Access to be on. */

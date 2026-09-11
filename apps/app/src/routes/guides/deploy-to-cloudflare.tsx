@@ -77,9 +77,9 @@ const FIRST_BOOT: Array<[string, string, string]> = [
     'Printed once — only the SHA-256 is stored',
   ],
   [
-    'Claim code',
-    'Mints and prints one claim code, the lock on /setup.',
-    'Printed once — only the SHA-256 is stored',
+    'The claim window',
+    'Opens. The deployment has no owner, and /setup accepts the first person to reach it.',
+    'Closes for good the moment somebody claims it',
   ],
   [
     'The two undefaultable values',
@@ -415,11 +415,12 @@ function Page() {
               monoFirst={false}
             />
             <Gotcha title="Read the log once">
-              The API key and the claim code are printed exactly once each, because only their
-              SHA-256 hashes are ever stored; there is no screen anywhere in the product that can
-              show either of them again. On Workers they land in <Mono>wrangler tail</Mono> and the
-              Worker’s <em>Logs</em> tab. Everything else on this page can be done later — this is
-              the one thing that has to be done now.
+              The bootstrap API key is printed exactly once — and a claim code beside it, on a
+              deployment that asked for one with <Mono>MS_REQUIRE_CLAIM_CODE</Mono> — because only
+              their SHA-256 hashes are ever stored; there is no screen anywhere in the product that
+              can show either of them again. On Workers they land in <Mono>wrangler tail</Mono> and
+              the Worker’s <em>Logs</em> tab. Everything else on this page can be done later — this
+              is the one thing that has to be done now.
             </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">The public URL is learned, not configured.</strong>{' '}
@@ -449,11 +450,13 @@ function Page() {
             </p>
             <Callout title="THE CLAIM WINDOW IS OPEN">
               Until someone claims it, a freshly deployed instance will accept a claim from whoever
-              reaches <Mono>/setup</Mono> first — subject to the claim code, which is the lock that
-              makes a public URL safe before you get to it. If you would rather narrow it to one
-              address instead, set <Mono>MS_OWNER_EMAIL</Mono> with <Mono>wrangler secret put</Mono>{' '}
-              (it is deliberately not on the deploy form). When it is set, the code is not asked for
-              — one lock rather than two — and{' '}
+              reaches <Mono>/setup</Mono> first, and no code is asked for. On a deploy you are
+              watching that window is seconds long, so the answer is usually to claim it now. For a
+              URL that is public before you get to it, set <Mono>MS_OWNER_EMAIL</Mono> with{' '}
+              <Mono>wrangler secret put</Mono> to reserve the claim for one address, or{' '}
+              <Mono>MS_REQUIRE_CLAIM_CODE=1</Mono> to have first boot mint a code and print it in
+              this same log — neither is on the deploy form, and setting both leaves only the
+              address check, because two locks on one door buys nothing. Either way,{' '}
               <a
                 href="/guides/claim-your-instance"
                 className="text-accent underline underline-offset-4"
