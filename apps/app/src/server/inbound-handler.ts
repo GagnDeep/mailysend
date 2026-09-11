@@ -107,6 +107,85 @@ export async function resolveMailbox(
   return catchAll ? { ...catchAll, matched: 'catch_all' } : null
 }
 
+/**
+ * Receiving works by default, because the operator already said so twice.
+ *
+ * Getting a message this far takes three deliberate acts: the domain was added
+ * to this workspace, its MX was pointed at Cloudflare Email Routing, and a
+ * catch-all rule there was bound to *this* Worker. Cloudflare's rule routes the
+ * whole domain, so it delivers `anything@` — and the handler used to answer 550
+ * to all of it unless somebody had also created a mailbox here, with catch-all
+ * turned on, in a fourth place. "I bound the catch-all, sent a test from Gmail,
+ * and nothing arrived" was the single most common way this setup failed, and
+ * the product was the thing refusing.
+ *
+ * So the first message for an adopted domain creates the catch-all it was
+ * always entitled to and is filed against it. The row is real and editable —
+ * it appears under Receiving, where its agent and webhook can be set — rather
+ * than being an invisible special case in the delivery path.
+ *
+ * The domain check is the whole of the security boundary and stays: a Worker
+ * somebody else routes their domain at still gets a 550, because nothing here
+ * claims that domain.
+ */
+async function adoptDomain(
+  sql: Sql,
+  workspaceId: string,
+  recipient: string,
+): Promise<{ id: string; address: string; matched: 'catch_all' } | null> {
+  const domain = recipient.split('@')[1]?.toLowerCase()
+  if (!domain) return null
+
+  const owned = await sql
+    .prepare('SELECT id FROM domains WHERE workspace_id = ? AND name = ?')
+    .bind(workspaceId, domain)
+    .first<{ id: string }>()
+  if (!owned) return null
+
+  const address = `catch-all@${domain}`
+  /*
+   * `ON CONFLICT DO UPDATE` against either unique index — one per address, one
+   * catch-all per domain. Two messages arriving at once is the normal case for
+   * a domain that has just been routed, and both must be filed rather than one
+   * of them failing on a unique constraint.
+   *
+   * The update rather than `DO NOTHING` covers the one case where the address
+   * is already taken: a mailbox literally named `catch-all@` whose flag is off.
+   * Nothing else can collide — a domain that already had a catch-all was
+   * answered by `resolveMailbox` and never reached here — and for that mailbox
+   * the operator's intent is not in much doubt.
+   */
+  await sql
+    .prepare(
+      `INSERT INTO inbound_mailboxes
+         (id, workspace_id, address, name, forward_webhook_id, agent_enabled, is_catch_all,
+          domain, created_at)
+       VALUES (?, ?, ?, ?, NULL, 0, 1, ?, ?)
+       ON CONFLICT (workspace_id, address) DO UPDATE SET is_catch_all = 1`,
+    )
+    .bind(
+      newId('inbound'),
+      workspaceId,
+      address,
+      `Everything at ${domain}`,
+      domain,
+      new Date().toISOString(),
+    )
+    .run()
+
+  // Re-read rather than trust the insert: under a concurrent first delivery the
+  // row that won the race is the one this message has to be filed against.
+  const row = await sql
+    .prepare(
+      `SELECT id, address FROM inbound_mailboxes
+        WHERE workspace_id = ? AND is_catch_all = 1 AND domain = ? LIMIT 1`,
+    )
+    .bind(workspaceId, domain)
+    .first<{ id: string; address: string }>()
+  if (row) console.log(`[inbound] adopted ${domain} — created ${row.address} to accept it`)
+  return row ? { ...row, matched: 'catch_all' as const } : null
+}
+
 export async function handleInboundEmail(message: EmailMessageLike, env: Env): Promise<void> {
   const to = message.to.toLowerCase()
   const workspaceId = await resolveWorkspace(env, to)
@@ -120,20 +199,18 @@ export async function handleInboundEmail(message: EmailMessageLike, env: Env): P
   // No `enabled` predicate: `inbound_mailboxes` has never had that column, so
   // this query threw inside Cloudflare's mail pipeline on every single inbound
   // message. Every one of them was deferred and then bounced.
-  const mailbox = await resolveMailbox(sql, workspaceId, to)
+  // A domain this workspace owns accepts everything, without being configured
+  // to. `adoptDomain` is what makes that true on the first message.
+  const mailbox =
+    (await resolveMailbox(sql, workspaceId, to)) ?? (await adoptDomain(sql, workspaceId, to))
 
   if (!mailbox) {
-    // Rejecting at SMTP time is the honest answer: the sender gets an immediate
-    // 550 naming the address, instead of silence that looks like delivery.
-    //
-    // It is also the failure an operator is most likely to hit — bind the
-    // catch-all in Cloudflare, send a test from Gmail, watch nothing arrive —
-    // and until now it left no trace anywhere: no log line, no row, nothing to
-    // distinguish it from a Worker that was never invoked. Both now exist.
-    console.warn(
-      `[inbound] rejected ${to} — no mailbox and no catch-all on ${to.split('@')[1] ?? '?'}`,
-    )
-    await recordInboundReject(sql, workspaceId, to, message.from, 'no_mailbox')
+    // The only remaining way to get here is a domain nobody in this deployment
+    // has added. Rejecting at SMTP time is the honest answer: the sender gets
+    // an immediate 550 naming the address, instead of silence that looks like
+    // delivery.
+    console.warn(`[inbound] rejected ${to} — ${to.split('@')[1] ?? '?'} is not a domain here`)
+    await recordInboundReject(sql, workspaceId, to, message.from, 'unknown_domain')
     message.setReject(`550 5.1.1 No such mailbox: ${to}`)
     return
   }
@@ -179,7 +256,7 @@ export async function recordInboundReject(
   workspaceId: string,
   to: string,
   from: string,
-  reason: 'no_mailbox' | 'mailbox_vanished',
+  reason: 'unknown_domain' | 'mailbox_vanished',
 ): Promise<void> {
   try {
     const now = new Date().toISOString()
@@ -194,8 +271,8 @@ export async function recordInboundReject(
         workspaceId,
         to,
         now,
-        reason === 'no_mailbox'
-          ? `550 5.1.1 No such mailbox: ${to}. Create it under the domain's Receiving tab, or turn on the catch-all there.`
+        reason === 'unknown_domain'
+          ? `550 5.1.1 No such mailbox: ${to}. ${to.split('@')[1] ?? 'That domain'} is not a domain in this workspace — add it under Domains and mail for it is accepted from then on, without any further setup here.`
           : `Accepted at the door, then the mailbox was gone before the message was filed: ${to}`,
         now,
       )

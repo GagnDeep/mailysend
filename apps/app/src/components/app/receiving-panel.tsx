@@ -77,19 +77,19 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
     mailbox.address.endsWith(`@${domain.name}`),
   )
 
-  const hasCatchAll = mine.some((mailbox) => mailbox.is_catch_all)
-
   /**
-   * Catch-all defaults on until this domain has one.
+   * Catch-all defaults off, because nothing depends on it any more.
    *
-   * Cloudflare's rule routes the whole domain here, so a workspace whose only
-   * mailbox is `support@` answers 550 to every other address that rule sends —
-   * which reads as "receiving is broken" rather than as a missing switch. The
-   * default matches what the router actually delivers; once a catch-all exists,
-   * a second one would only take the first one's place, so it defaults off.
+   * It used to default on: Cloudflare's rule routes the whole domain here, and
+   * a workspace whose only mailbox was `support@` answered 550 to every other
+   * address that rule delivered. The handler now accepts every address at a
+   * domain this workspace owns and creates the mailbox as the mail lands, so
+   * the gap is closed at the source. Somebody typing `support` here means
+   * `support`, and silently making it the catch-all for the domain would be the
+   * surprising reading.
    */
   const [catchAll, setCatchAll] = useState<boolean | null>(null)
-  const catchAllChecked = catchAll ?? !hasCatchAll
+  const catchAllChecked = catchAll ?? false
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -101,13 +101,15 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
   return (
     <div className="flex flex-col gap-4">
       <Handoff
-        title="Set up receiving in Cloudflare"
+        title="One step, and it is in Cloudflare"
         body={
           <>
             Cloudflare dashboard → <strong>Email</strong> → <strong>Email Routing</strong>. Enable
-            it and Cloudflare publishes the MX records itself, then add a <strong>catch-all</strong>{' '}
-            rule with the action <strong>Send to a Worker</strong> and choose this instance's
-            script.
+            it and Cloudflare publishes the MX records itself, then under{' '}
+            <strong>Routing rules</strong> set the <strong>Catch-all address</strong> to the action{' '}
+            <strong>Send to a Worker</strong> and choose this deployment's script. That is the whole
+            setup — nothing on this page has to be configured for mail to arrive, and every address
+            at {domain.name} is accepted from the first message.
           </>
         }
         href={emailRoutingUrl(domain.name)}
@@ -152,19 +154,25 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
             {create.isPending ? 'Creating…' : 'Create mailbox'}
           </Button>
         </div>
+        {/*
+          Optional, and the copy has to say so in both positions — this form
+          used to be the thing standing between a correct Cloudflare rule and a
+          bounced test message, and the habit of reading it that way outlives
+          the code.
+        */}
         <p className="m-0 max-w-[80ch] text-[13px] text-muted">
           {catchAllChecked
-            ? `Catch-all. Cloudflare's rule hands this Worker every address at ${domain.name}, so this is the setting that matches it: anything not claimed by a named mailbox lands here instead of being refused. One catch-all per domain — turning this on takes it off whichever mailbox holds it now.`
-            : `Only ${local.trim() === '' ? 'this exact address' : `${local.trim().toLowerCase()}@${domain.name}`} will be accepted. Everything else Cloudflare routes here is answered with a 550, which is what makes a first test message bounce.`}
+            ? `Catch-all: everything at ${domain.name} that no named mailbox claims lands here, instead of in the one created automatically. One catch-all per domain — turning this on takes it off whichever mailbox holds it now.`
+            : `Optional. Mail for ${domain.name} already arrives without this; naming ${local.trim() === '' ? 'an address' : `${local.trim().toLowerCase()}@${domain.name}`} gives it its own mailbox to file into, with its own agent and webhook settings.`}
         </p>
       </form>
 
       {mine.length === 0 ? (
         <p className="m-0 max-w-[80ch] text-[13.5px] text-muted">
-          No mailboxes on this domain yet, so every address on it is answered with a 550 rather than
-          silently dropped. Create one with <strong>Accept every address</strong> left on — that is
-          the shape Cloudflare's catch-all rule delivers, and the one that will not bounce your
-          first test message.
+          No mailboxes here yet, and none are needed: once the Cloudflare rule points at this
+          Worker, every address at {domain.name} is accepted and the first message creates the
+          mailbox it lands in. Name one above only when you want an address kept apart — its own
+          agent, its own webhook.
         </p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">

@@ -25,6 +25,13 @@ import { transportLabel } from './transports.ts'
  * `badge: 'verified'` — the best it says is that everything observable is in
  * place and one step remains that only the operator can confirm. A test holds
  * that over the whole cross-product of inputs.
+ *
+ * The mirror of that constraint: **nothing in this product is a prerequisite
+ * for receiving.** Cloudflare's catch-all rule is the required setup, and it
+ * lives in Cloudflare's dashboard. A domain this workspace owns accepts every
+ * address at it from the first message, creating the mailbox as it lands, so
+ * no branch here may ask the reader to configure anything to make receiving
+ * work.
  */
 
 /** One step in a track: what is true, what to do, and who does it. */
@@ -251,9 +258,11 @@ export function deriveSending(domain: DomainRecord): Track {
 /**
  * Can this domain receive?
  *
- * Branches R-A…R-F. The last step is `unknowable` in every branch, by
- * construction — see the module comment. The best badge this returns is
- * `pending`.
+ * Branches R-A…R-E, and only two of them ask the reader for anything on this
+ * side: re-run a lookup that failed, or send the test message that proves the
+ * path. The rest name what Cloudflare has to do. The route step is
+ * `unknowable` in every branch, by construction — see the module comment — and
+ * the best badge this returns is `pending`.
  */
 export function deriveReceiving(domain: DomainRecord): Track {
   const receiving = domain.receiving
@@ -268,34 +277,42 @@ export function deriveReceiving(domain: DomainRecord): Track {
     detail,
   })
 
+  /**
+   * The one step somebody has to perform, and it is not on this side.
+   *
+   * Cloudflare's catch-all rule is what hands this Worker the domain's mail,
+   * and it is not readable over its API — so it is both the only required
+   * setup and the only step that cannot be confirmed from here. Stating it as
+   * *the* step is the whole point: everything under it happens by itself.
+   */
   const routeStep = step(
     'route',
-    'Email Routing sends it to this Worker',
+    'Email Routing sends the whole domain to this Worker',
     'unknowable',
-    "Cloudflare's catch-all rule is not readable over its API, so this is the one step nobody here can confirm. Open Email Routing and check that the catch-all action is Send to a Worker, pointed at this instance.",
+    "The one thing to set up, and it lives on Cloudflare: Email Routing → Routing rules → Catch-all address, with the action set to Send to a Worker and this deployment's script selected. Cloudflare does not expose that rule over its API, so this is the one step nobody here can confirm — check it with your own eyes.",
   )
 
   /**
-   * The mailbox step, which is really the catch-all step.
+   * Nothing to do here, and saying so is the point.
    *
    * Cloudflare's rule routes *the whole domain* to this Worker, so what arrives
-   * here is addressed to anything at all — `hello@`, `support@`, the address a
-   * customer typed from memory. A named mailbox accepts exactly one of those
-   * and answers 550 to the rest, which is why "routing is right and the first
-   * test message still bounced" is the single most common way this setup fails.
-   * A catch-all is the configuration that matches what the router actually
-   * sends, so it is what this asks for by default rather than mentioning as an
-   * option further down the page.
+   * is addressed to anything at all — `hello@`, `support@`, the address a
+   * customer typed from memory. Requiring a mailbox on top of that meant a
+   * first test message bounced for a setup its operator had already finished,
+   * which was the single most common way receiving "failed". So the handler
+   * accepts every address at a domain this workspace owns and creates the
+   * mailbox that holds it on first delivery. Named mailboxes still claim their
+   * own address first; they are a refinement, never a prerequisite.
    */
   const mailboxStep = step(
     'mailbox',
-    'An address exists here to land in',
-    mailboxes === 0 ? 'current' : catchAll ? 'done' : 'current',
+    'Anything addressed to this domain is accepted',
+    'done',
     mailboxes === 0
-      ? 'No mailbox on this domain, so every address is answered with a 550 — which is why a first test message bounces even when routing is right. Create one with catch-all on and every address at this domain is accepted; without it, only the exact address you name.'
+      ? 'Nothing to create. Because this workspace owns the domain, every address at it is accepted, and the mailbox that holds the mail is created on the first message that arrives.'
       : catchAll
-        ? `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'}, catch-all on ${catchAll} — every address at this domain is accepted and lands there unless a named mailbox claims it first.`
-        : `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'} and no catch-all, so only ${mailboxes === 1 ? 'that exact address' : 'those exact addresses'} ${mailboxes === 1 ? 'is' : 'are'} accepted — everything else at this domain is answered with a 550. Turn catch-all on for one of them to accept the rest.`,
+        ? `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'}, catch-all on ${catchAll} — every address at this domain lands there unless a named mailbox claims it first.`
+        : `${mailboxes} mailbox${mailboxes === 1 ? '' : 'es'} here, each claiming ${mailboxes === 1 ? 'its' : 'their'} own address. Everything else at this domain is still accepted and lands in a catch-all created on first delivery.`,
   )
 
   const arrivedStep = step(
@@ -393,8 +410,8 @@ export function deriveReceiving(domain: DomainRecord): Track {
     }
   }
 
-  // R-E / R-F — the MX is right. Everything observable is in place, and the
-  // badge is still `pending`, because the catch-all rule is not observable.
+  // The MX is right. Everything observable is in place, and the badge is still
+  // `pending`, because the catch-all rule is not observable.
   const mxStep = step(
     'mx',
     'The MX points at Cloudflare Email Routing',
@@ -402,35 +419,14 @@ export function deriveReceiving(domain: DomainRecord): Track {
     `Mail for this domain reaches Cloudflare Email Routing (${receiving.mx_found ?? receiving.expected}). That is as far as this can be proved from here.`,
   )
 
-  if (mailboxes === 0) {
-    return {
-      badge: 'pending',
-      headline: 'Routing reaches us, but there is nowhere for mail to land',
-      action: 'Create a mailbox with catch-all on',
-      actor: 'you-here',
-      steps: [mxStep, routeStep, mailboxStep, arrivedStep],
-    }
-  }
-
-  // R-F — addresses exist, but only the ones somebody thought to name. Worth
-  // its own branch rather than a footnote: Cloudflare's rule hands this Worker
-  // the whole domain, so without a catch-all the gap between what is routed and
-  // what is accepted is every other address at the domain.
-  if (!catchAll) {
-    return {
-      badge: 'pending',
-      headline: arrived
-        ? 'Mail is arriving, but only for the addresses you named'
-        : 'Only the addresses you named will be accepted',
-      action: 'Turn catch-all on for one mailbox',
-      actor: 'you-here',
-      steps: [mxStep, routeStep, mailboxStep, arrivedStep],
-    }
-  }
-
+  // R-E — the MX is right and nothing on this side is outstanding, whatever
+  // the mailbox count is. The badge stays `pending` even when mail has arrived,
+  // because the rule in the module comment holds: receiving is never `verified`.
   return {
     badge: 'pending',
-    headline: arrived ? 'Mail is arriving for this domain' : 'Everything we can check is in place',
+    headline: arrived
+      ? 'Mail is arriving for this domain'
+      : 'Everything on this side is ready; confirm the Cloudflare rule',
     action: arrived ? null : 'Send this domain a test message',
     actor: arrived ? 'nobody' : 'you-here',
     steps: [mxStep, routeStep, mailboxStep, arrivedStep],

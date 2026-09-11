@@ -109,12 +109,20 @@ const listThreads = async () => {
 }
 
 describe('receiving', () => {
-  it('rejects mail for an address that is not a mailbox', async () => {
+  /**
+   * The only address this deployment refuses.
+   *
+   * A domain nobody here has added is the whole of the security boundary: it is
+   * the one case where accepting would file a stranger's mail into a workspace
+   * that never asked for it. Every address at a domain the workspace *does* own
+   * is accepted, mailbox or no mailbox — see the test below.
+   */
+  it('rejects mail for a domain this deployment does not own', async () => {
     let rejection: string | null = null
     await handleInboundEmail(
       {
         from: 'ana@example.com',
-        to: 'nobody@acme.dev',
+        to: 'nobody@not-ours.test',
         raw: new Response('x').body!,
         rawSize: 1,
         headers: new Headers(),
@@ -124,7 +132,65 @@ describe('receiving', () => {
       },
       h.env,
     )
-    expect(rejection).toMatch(/^550 5\.1\.1 No such mailbox: nobody@acme\.dev$/)
+    expect(rejection).toMatch(/^550 5\.1\.1 No such mailbox: nobody@not-ours\.test$/)
+  })
+
+  /**
+   * Receiving works with nothing configured on this side.
+   *
+   * Cloudflare's catch-all rule hands this Worker the whole domain, so by the
+   * time a message is here the operator has already added the domain and bound
+   * the route. Asking them to also create a mailbox made the first test message
+   * bounce for a setup that was, from their point of view, finished. The
+   * handler adopts the domain instead: it creates the catch-all mailbox on the
+   * first message and files into it.
+   */
+  it('accepts a first message at an owned domain with no mailbox at all', async () => {
+    let rejection: string | null = null
+    await handleInboundEmail(
+      {
+        from: 'ana@example.com',
+        to: 'nobody@acme.dev',
+        raw: new Response(mime({ to: 'nobody@acme.dev' })).body!,
+        rawSize: mime().length,
+        headers: new Headers(),
+        setReject: (reason) => {
+          rejection = reason
+        },
+      },
+      h.env,
+    )
+    expect(rejection).toBeNull()
+
+    const boxes = await h.env.DB.prepare(
+      'SELECT address, is_catch_all, domain FROM inbound_mailboxes WHERE workspace_id = ?',
+    )
+      .bind('ws_default')
+      .all<{ address: string; is_catch_all: number; domain: string }>()
+    expect(boxes.results).toHaveLength(1)
+    expect(boxes.results[0]?.is_catch_all).toBe(1)
+    expect(boxes.results[0]?.domain).toBe('acme.dev')
+  })
+
+  /** And the second message reuses the mailbox the first one created. */
+  it('adopts a domain once, not once per message', async () => {
+    for (const to of ['one@acme.dev', 'two@acme.dev']) {
+      await handleInboundEmail(
+        {
+          from: 'ana@example.com',
+          to,
+          raw: new Response(mime({ to })).body!,
+          rawSize: mime().length,
+          headers: new Headers(),
+          setReject: () => {},
+        },
+        h.env,
+      )
+    }
+    const boxes = await h.env.DB.prepare('SELECT id FROM inbound_mailboxes WHERE workspace_id = ?')
+      .bind('ws_default')
+      .all<{ id: string }>()
+    expect(boxes.results).toHaveLength(1)
   })
 
   /**

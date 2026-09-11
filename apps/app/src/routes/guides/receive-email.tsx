@@ -58,11 +58,11 @@ function Page() {
         <p className="m-0">
           Mail addressed to your domain now lands in a mailbox you can read, with the raw bytes and
           any attachments in your own R2 bucket and the edge’s SPF, DKIM and DMARC verdicts recorded
-          against each message. The thing most likely to bite you is that receiving needs{' '}
-          <em>two</em> things to be true in two different places — a Cloudflare routing rule
-          pointing at this Worker, and an address that exists inside the instance. Get one without
-          the other and the first test message bounces with a 550, which looks like a broken
-          deployment and is not one.
+          against each message. There is exactly <em>one</em> thing to configure, and it is not
+          here: a Cloudflare Email Routing catch-all rule whose action is <em>Send to a Worker</em>,
+          pointed at this deployment. Nothing inside the instance has to be set up to match it —
+          every address at a domain this workspace has added is accepted, and the mailbox that holds
+          the mail is created by the first message that arrives.
         </p>
       }
     >
@@ -179,11 +179,20 @@ function Page() {
                   'Delivered to the catch-all mailbox.',
                 ],
                 [
-                  'Neither',
+                  'No mailbox at all, but the workspace owns the domain',
                   'Yes',
                   <>
-                    <Mono>550 5.1.1 No such mailbox</Mono> — which is why the first message anybody
-                    sends to a freshly routed domain bounces if there is no mailbox behind it.
+                    Accepted. The handler creates a catch-all mailbox for the domain as the message
+                    lands, so a freshly routed domain does not bounce its own first test message.
+                  </>,
+                ],
+                [
+                  'Nobody here has added the domain',
+                  'Yes',
+                  <>
+                    <Mono>550 5.1.1 No such mailbox</Mono>. Owning the domain in this instance is
+                    the whole of the boundary — without it, a routing rule would file a stranger’s
+                    mail into your workspace.
                   </>,
                 ],
                 [
@@ -192,14 +201,15 @@ function Page() {
                   'The message never reaches the Worker at all.',
                 ],
               ]}
-              caption="Exact address first, then the domain’s catch-all. That order is not arbitrary: a mailbox with its own forwarding webhook, its own agent flag and its own threads must keep receiving its own mail even when a catch-all exists beside it."
+              caption="Exact address first, then the domain’s catch-all, then the domain itself. That order is not arbitrary: a mailbox with its own forwarding webhook, its own agent flag and its own threads must keep receiving its own mail even when a catch-all exists beside it — and a domain with neither must still accept, because the routing rule its operator already bound says the mail belongs here."
             />
             <Gotcha title="Receiving is separate from sending">
               A verified sending domain does not receive mail. Verification proves you control the
               domain well enough to send as it; it says nothing about where its inbound mail goes,
               and the two are configured in different places. If you added the domain, published SPF
-              and DKIM, watched it go green and then sent yourself a test reply, the bounce you got
-              is correct behaviour.
+              and DKIM, watched it go green and then sent yourself a test reply, the message never
+              reached this Worker at all — there is no routing rule until you make one, and that is
+              the single step this page is about.
             </Gotcha>
           </>
         ),

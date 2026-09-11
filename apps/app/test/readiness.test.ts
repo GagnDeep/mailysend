@@ -185,24 +185,54 @@ describe('can this domain receive', () => {
     expect(track.steps[0]?.detail).toContain('every message')
   })
 
-  it('asks for a mailbox, with catch-all on, when routing is right and nothing can land', () => {
+  /**
+   * The inversion this release makes.
+   *
+   * A domain with the MX pointed at Email Routing and nothing else configured
+   * is *finished* on this side: the inbound handler accepts every address at a
+   * domain the workspace owns and creates the mailbox on first delivery. The
+   * only thing left is proving it, which needs a real message.
+   */
+  it('asks for nothing on this side when routing is right and no mailbox exists', () => {
     const track = deriveReceiving(record({ receiving: receiving({ mx_status: 'verified' }) }))
-    expect(track.action).toBe('Create a mailbox with catch-all on')
-    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('current')
+    expect(track.action).toBe('Send this domain a test message')
+    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('done')
   })
 
-  it('does not call named mailboxes finished when nothing else at the domain is accepted', () => {
-    // Cloudflare's rule hands this Worker the whole domain, so a workspace with
-    // only `support@` answers 550 to every other address that rule delivers —
-    // which reads as "receiving is broken" rather than as a missing switch.
+  /** Named mailboxes are a refinement; the rest of the domain still lands. */
+  it('does not treat a missing catch-all as a gap', () => {
     const track = deriveReceiving(
       record({
         receiving: receiving({ mx_status: 'verified', mailboxes: { count: 1, catch_all: null } }),
       }),
     )
-    expect(track.action).toBe('Turn catch-all on for one mailbox')
-    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('current')
-    expect(track.steps.find((s) => s.key === 'mailbox')?.detail).toContain('550')
+    expect(track.action).toBe('Send this domain a test message')
+    expect(track.steps.find((s) => s.key === 'mailbox')?.state).toBe('done')
+    expect(track.steps.find((s) => s.key === 'mailbox')?.detail).not.toContain('550')
+  })
+
+  /**
+   * The required step is Cloudflare's, and every branch says so.
+   *
+   * "Guide this setting as required, but from our side nothing needs to be
+   * configured" is the whole contract of this track, so it is asserted rather
+   * than left to copy review: no branch may ask the reader to create a mailbox
+   * or flip a catch-all switch, and every branch must name the routing rule.
+   */
+  it('names the Cloudflare rule in every branch and never asks for a mailbox', () => {
+    const statuses = [null, 'pending', 'verified', 'failed', 'error'] as const
+    const boxes = [
+      { count: 0, catch_all: null },
+      { count: 1, catch_all: null },
+      { count: 3, catch_all: 'hello@acme.dev' },
+    ]
+    for (const mx_status of statuses) {
+      for (const mailboxes of boxes) {
+        const track = deriveReceiving(record({ receiving: receiving({ mx_status, mailboxes }) }))
+        expect(track.action ?? '').not.toMatch(/mailbox|catch-all/i)
+        expect(track.steps.find((s) => s.key === 'route')?.detail).toContain('Routing rules')
+      }
+    }
   })
 
   it('counts the mailbox step done only once a catch-all accepts the rest', () => {

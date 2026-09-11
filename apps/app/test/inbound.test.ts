@@ -111,20 +111,50 @@ describe('the catch-all', () => {
     expect(queued[0]?.matched).toBe('catch_all')
   })
 
-  it('still bounces once the toggle is off, and says so legibly', async () => {
+  /**
+   * Turning the toggle off does not turn receiving off.
+   *
+   * It used to: the domain went back to answering 550 for every address but
+   * `support@`, which is a bounce for a Cloudflare rule that is still correctly
+   * routing the whole domain here. The handler now adopts the domain instead,
+   * so what the toggle actually decides is *which* mailbox the rest of the
+   * domain lands in — never whether it is accepted.
+   */
+  it('keeps accepting the rest of the domain once the toggle is off', async () => {
     const { id } = await addMailbox('support@acme.dev')
     await patchMailbox(id, { is_catch_all: true })
     await patchMailbox(id, { is_catch_all: false })
 
     const { rejection, queued } = await receive('anything@acme.dev')
-    expect(rejection).toMatch(/^550 5\.1\.1 No such mailbox: anything@acme\.dev$/)
+    expect(rejection).toBeNull()
+    expect(queued[0]?.matched).toBe('catch_all')
+    expect(queued[0]?.mailbox_id).not.toBe(id)
+
+    // Nothing was refused, so there is nothing to record as a refusal.
+    expect(await rejections()).toHaveLength(0)
+
+    const adopted = await h.sql
+      .prepare('SELECT address FROM inbound_mailboxes WHERE id = ?')
+      .bind(queued[0]?.mailbox_id)
+      .first<{ address: string }>()
+    expect(adopted?.address).toBe('catch-all@acme.dev')
+  })
+
+  /**
+   * C2/C3 still hold, for the one recipient that is genuinely refused: a domain
+   * nobody in this deployment has added. That check is the security boundary —
+   * without it a routing rule aimed here would file a stranger's mail into this
+   * workspace — so the reject path keeps its legible trace.
+   */
+  it('bounces a domain nobody here owns, and says so legibly', async () => {
+    const { rejection, queued } = await receive('anything@not-ours.test')
+    expect(rejection).toMatch(/^550 5\.1\.1 No such mailbox: anything@not-ours\.test$/)
     expect(queued).toHaveLength(0)
 
-    // C2/C3: the reject leaves a trace in the product, not only in the log.
     const rows = await rejections()
     expect(rows).toHaveLength(1)
-    expect(rows[0]?.recipient).toBe('anything@acme.dev')
-    expect(rows[0]?.diagnostic).toContain('catch-all')
+    expect(rows[0]?.recipient).toBe('anything@not-ours.test')
+    expect(rows[0]?.diagnostic).toContain('not-ours.test')
   })
 
   it('never steals mail from an address that owns a mailbox', async () => {

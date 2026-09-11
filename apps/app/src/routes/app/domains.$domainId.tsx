@@ -368,7 +368,7 @@ function DomainDetail() {
 
       <PageSection
         title="Receiving setup"
-        description="Addresses on this domain that accept mail, and the one step only you can confirm."
+        description="The one required step lives in Cloudflare. Mailboxes here are optional — the domain accepts every address without them."
       >
         <ReceivingPanel domain={domain} />
       </PageSection>
