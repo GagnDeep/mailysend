@@ -938,6 +938,17 @@ function HomePage() {
         </div>
       </Section>
 
+      {/*
+        The AFTER block deliberately keeps `import { Resend } from 'resend'`. The
+        official client resolves its base URL as
+        `process.env.RESEND_BASE_URL || 'https://api.resend.com'` (verified in
+        resend@6.27.0), so the migration is an environment variable and not an
+        edit — which is a strictly stronger claim than swapping the import for
+        `mailysend/compat`, and the one the README leads with. The shim and the
+        first-party SDK stay in the prose: they are the explicit alternative, not
+        the cheapest path. If this ever shows a changed import again, check that
+        `resend` still reads that variable first.
+      */}
       <Section id="compat" innerClassName="pb-16">
         <SectionHeader
           eyebrow="DROP-IN COMPATIBLE"
@@ -951,8 +962,14 @@ function HomePage() {
         />
         <p className="mt-4 mb-[30px] max-w-[64ch] text-[17px] text-muted">
           Same request shape, same field names, same status values, same webhook event names. Your
-          react-email templates render unchanged. Point the base URL at your instance and your
-          existing code keeps working — including the SDK, if you use the compat shim.
+          react-email templates render unchanged. The official{' '}
+          <span className="font-mono">resend</span> client reads{' '}
+          <span className="font-mono">RESEND_BASE_URL</span>, so pointing that at your instance is
+          the whole migration — the import still comes from{' '}
+          <span className="font-mono">resend</span>, and your send calls are untouched. Prefer to be
+          explicit? <span className="font-mono">mailysend/compat</span> exports the same{' '}
+          <span className="font-mono">Resend</span> class, and there is a first-party{' '}
+          <span className="font-mono">mailysend</span> SDK.
         </p>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] items-stretch gap-4">
           <div className="rounded-block border border-line bg-card p-[22px]">
@@ -970,12 +987,15 @@ function HomePage() {
             </div>
           </div>
           <div className="rounded-block border-[1.5px] border-ink bg-card p-[22px]">
-            <Eyebrow className="mb-3 tracking-[0.1em] text-accent">AFTER · SAME CALL</Eyebrow>
+            <Eyebrow className="mb-3 tracking-[0.1em] text-accent">AFTER · SAME IMPORT</Eyebrow>
             <div className="overflow-x-auto rounded-code bg-ink p-4 font-mono text-[12.5px] leading-[1.85] text-on-dark">
               <pre className="m-0 whitespace-pre">
-                {'import { Resend } from '}
-                <S>{"'mailysend/compat'"}</S>
-                {';\nconst resend = new Resend('}
+                <C>{'// .env — the only edit\n// RESEND_BASE_URL=https://your-deployment/v1'}</C>
+                {'\n\nimport { Resend } from '}
+                <S>{"'resend'"}</S>
+                {'; '}
+                <C>{'// the official client, unchanged'}</C>
+                {'\nconst resend = new Resend('}
                 <S>{"'ms_...'"}</S>
                 {
                   ');\n\nawait resend.emails.send({\n  from, to, subject,\n  react: <Receipt order={o} />,   '
