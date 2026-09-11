@@ -510,6 +510,8 @@ export const ReceivingCheck = z.object({
   expected: z.string(),
   detail: z.string(),
   mailboxes: z.object({ count: z.number(), catch_all: z.string().nullable() }),
+  /** When the observation was made, so a stale answer reads as one. */
+  checked_at: z.string().optional(),
 })
 export type ReceivingCheckResult = z.infer<typeof ReceivingCheck>
 

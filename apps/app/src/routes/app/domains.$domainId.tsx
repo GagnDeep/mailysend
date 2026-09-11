@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
   StatTile,
-  StatusBadge,
   Switch,
   toast,
 } from '@mailysend/ui'
@@ -18,13 +17,28 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { AuthMark } from '~/components/app/auth-mark.tsx'
 import { ConfirmDialog } from '~/components/app/confirm-dialog.tsx'
 import { DnsRecordTable } from '~/components/app/dns-records.tsx'
 import { num, shortDate } from '~/components/app/format.ts'
+import { Handoff } from '~/components/app/handoff.tsx'
 import { PageHeader, PageSection } from '~/components/app/page.tsx'
+import {
+  deriveReceiving,
+  deriveSending,
+  dmarcState,
+  isManaged,
+} from '~/components/app/readiness.ts'
+import { ReadinessHeader } from '~/components/app/readiness-header.tsx'
 import { ReceivingPanel } from '~/components/app/receiving-panel.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { DetailSkeleton, ErrorState } from '~/components/app/states.tsx'
+import {
+  TRANSPORT_GUIDE,
+  TRANSPORT_LABEL,
+  TRANSPORT_PREREQ,
+  type TransportName,
+} from '~/components/app/transports.ts'
 import type { DomainIdentityRecord, DomainRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
@@ -40,21 +54,6 @@ type TlsMode = 'opportunistic' | 'enforced'
 const tlsMode = (domain: DomainRecord): TlsMode =>
   (domain as { tls?: string }).tls === 'enforced' ? 'enforced' : 'opportunistic'
 
-const authSentence = (
-  ready: boolean | undefined,
-  passing: string,
-  failing: string,
-): { label: string; body: string; tone: 'positive' | 'warn' | 'quiet' } =>
-  ready === undefined
-    ? {
-        label: 'not checked',
-        body: 'No check has run yet. Verify the DNS records to find out.',
-        tone: 'quiet',
-      }
-    : ready
-      ? { label: 'passing', body: passing, tone: 'positive' }
-      : { label: 'failing', body: failing, tone: 'warn' }
-
 const DMARC_SENTENCE: Record<string, string> = {
   none: 'A DMARC record is published at p=none: receivers report failures to you but still deliver them, so it is a monitoring policy rather than a protective one.',
   quarantine:
@@ -65,31 +64,16 @@ const DMARC_SENTENCE: Record<string, string> = {
     'No DMARC record is published. Mail still sends, but receivers have no instruction about what to do with a forgery of this domain — and some senders get a reputation penalty for the silence.',
 }
 
-const AuthRow = ({
-  name,
-  state,
-}: {
-  name: string
-  state: { label: string; body: string; tone: 'positive' | 'warn' | 'quiet' }
-}) => (
-  <div className="flex flex-col gap-1 border-b border-line-soft py-3 last:border-0">
-    <div className="flex items-center gap-2.5">
-      <span className="font-mono text-[12px] uppercase tracking-[0.08em]">{name}</span>
-      <span
-        className={
-          state.tone === 'positive'
-            ? 'font-mono text-[11.5px] text-positive'
-            : state.tone === 'warn'
-              ? 'font-mono text-[11.5px] text-warning'
-              : 'font-mono text-[11.5px] text-muted-2'
-        }
-      >
-        {state.label}
-      </span>
-    </div>
-    <p className="m-0 max-w-[80ch] text-[13.5px] leading-relaxed text-muted">{state.body}</p>
-  </div>
-)
+const AUTH_SENTENCE = {
+  dkim: {
+    pass: 'Mail from this domain is signed with our key and the signature covers the From header, so a receiver can prove the message was not altered in transit.',
+    fail: 'Nothing is signing this domain yet. Receivers cannot tell your mail from a forgery, and most will treat it accordingly.',
+  },
+  spf: {
+    pass: 'The published SPF record includes our sending hosts, so the envelope sender is authorised.',
+    fail: 'Our include is missing from the SPF record, so receivers see mail from a host this domain has not authorised.',
+  },
+} as const
 
 function DomainDetail() {
   const { domainId } = Route.useParams()
@@ -135,7 +119,7 @@ function DomainDetail() {
           },
         )
       } else {
-        toast.message('Not verified yet — the table shows which records are still outstanding.')
+        toast.message('Not verified yet — the header says what is still outstanding.')
       }
       // The transport's own view of the domain, now that verify asks for it.
       // The hand-off link used to appear only after pressing "Set up with this
@@ -214,6 +198,16 @@ function DomainDetail() {
     onError: (error) => toast.error(errorMessage(error)),
   })
 
+  const checkReceiving = useMutation({
+    mutationFn: () => api.checkReceiving(domainId),
+    onSuccess: () => {
+      // The observation is stored now, so the page re-reads it rather than
+      // holding an answer that disappears on the next navigation.
+      void queryClient.invalidateQueries({ queryKey: qk.domain(environment, domainId) })
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  })
+
   /**
    * Optimistic on purpose: these are booleans and a string the server echoes
    * back, so a rejected write rolls back to a value that was correct a moment
@@ -266,6 +260,11 @@ function DomainDetail() {
   }
 
   const quota = domain.daily_quota
+  const sending = deriveSending(domain)
+  const receiving = deriveReceiving(domain)
+  const managed = isManaged(domain)
+  const transport = (domain.provider ?? null) as TransportName | null
+  const records = domain.records ?? []
 
   return (
     <>
@@ -276,180 +275,182 @@ function DomainDetail() {
             Domains
           </Link>
         }
-        title={
-          <span className="flex flex-wrap items-center gap-3">
-            {domain.name}
-            <StatusBadge status={domain.status} />
-          </span>
-        }
-        description={`Added ${shortDate(domain.created_at)} · region ${domain.region}`}
+        title={<span className="flex flex-wrap items-center gap-3">{domain.name}</span>}
+        description={`Added ${shortDate(domain.created_at)} · region ${domain.region} · sends through ${
+          transport ? TRANSPORT_LABEL[transport] : 'whatever the workspace routes through'
+        }`}
       />
 
-      <PageSection
-        title="Sending transport"
-        description="Which transport carries mail for this domain, and therefore which records it needs."
-      >
-        <div className="flex flex-col gap-4 rounded-tile border border-line-soft bg-card p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={transportId}>Transport</Label>
-              <Select
-                value={domain.provider ?? 'default'}
-                onValueChange={(value) =>
-                  update.mutate({ provider: value === 'default' ? null : value })
-                }
-              >
-                <SelectTrigger id={transportId} className="w-[260px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">Whatever the workspace routes through</SelectItem>
-                  <SelectItem value="cloudflare">Cloudflare Email Service</SelectItem>
-                  <SelectItem value="ses">Amazon SES</SelectItem>
-                  <SelectItem value="resend">Resend</SelectItem>
-                  <SelectItem value="smtp">SMTP relay</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              variant="accent"
-              disabled={ensureIdentity.isPending}
-              onClick={() => ensureIdentity.mutate()}
-            >
-              {ensureIdentity.isPending ? 'Asking…' : 'Set up with this transport'}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={automate.isPending}
-              onClick={() => automate.mutate()}
-            >
-              {automate.isPending ? 'Writing…' : 'Write records for me'}
-            </Button>
-          </div>
-          <p className="m-0 max-w-[80ch] text-[13.5px] leading-relaxed text-muted">
-            Binding a transport is what makes the record list below correct. Left unbound, the
-            records are the union across every transport this workspace could fall back to, and two
-            transports that each want an apex SPF record cannot both have one — so the includes are
-            merged into a single record instead.
-          </p>
+      {/*
+        The answer first.
 
-          {/* After a few unattended re-checks the poll is no longer news, and a
-              reader watching an empty table needs the transport's own flow
-              rather than another countdown. */}
-          {!settled && attempt.current >= 3 && identity?.external ? (
-            <Callout variant="info" title="Still nothing after several checks">
-              Nothing has resolved after {attempt.current} checks. This transport publishes its own
-              records, so the setup finishes on its side rather than in your zone file.
-              <span className="mt-2 block">
-                <a
-                  className="text-accent underline-offset-2 hover:underline"
-                  href={identity.external.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {identity.external.label} →
-                </a>
-              </span>
-            </Callout>
-          ) : null}
+        The two questions a person opening this page has are "can I send from
+        this domain yet" and "can I receive on it". Seven co-equal sections
+        answered neither — and put the two contradictory signals (Cloudflare
+        publishes these records / DKIM is failing) in different sections with
+        nothing relating them. Everything below is now evidence for one of these
+        two claims.
+      */}
+      <ReadinessHeader
+        sending={sending}
+        receiving={receiving}
+        sendingAction={
+          <Button
+            size="sm"
+            variant="accent"
+            disabled={verify.isPending}
+            onClick={() => {
+              attempt.current = 0
+              verify.mutate()
+            }}
+          >
+            {verify.isPending ? 'Checking…' : 'Check records'}
+          </Button>
+        }
+        receivingAction={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={checkReceiving.isPending}
+            onClick={() => checkReceiving.mutate()}
+          >
+            {checkReceiving.isPending ? 'Resolving MX…' : 'Check receiving'}
+          </Button>
+        }
+      />
 
-          {identity ? (
-            <Callout
-              variant={
-                identity.status === 'verified'
-                  ? 'success'
-                  : identity.status === 'failed'
-                    ? 'warn'
-                    : 'info'
-              }
-              title={identity.external ? 'This transport does its own setup' : 'Transport setup'}
-            >
-              {identity.detail ?? 'No further detail.'}
-              {identity.external ? (
-                <span className="mt-2 block">
-                  <a
-                    className="text-accent underline-offset-2 hover:underline"
-                    href={identity.external.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {identity.external.label} →
-                  </a>
-                </span>
-              ) : null}
-            </Callout>
-          ) : null}
-        </div>
-      </PageSection>
+      {/*
+        A send that failed permanently is otherwise invisible until somebody
+        reads a log — including "this domain is bound to a transport you have
+        not configured", whose whole point is that a setting has to change.
+      */}
+      {domain.last_send_error ? (
+        <Callout variant="warn" title="The last send from this domain failed">
+          {domain.last_send_error.error}
+          <span className="mt-2 block text-[12.5px] text-muted-2">
+            {shortDate(domain.last_send_error.at)}
+            {domain.last_send_error.provider ? ` · ${domain.last_send_error.provider}` : ''} ·{' '}
+            {domain.last_send_error.email_id}
+          </span>
+        </Callout>
+      ) : null}
+
+      {/*
+        The hand-off, where there is one. Every record `observe` means the
+        transport publishes its own and there is nothing here to copy — so the
+        link is the affordance, not the table.
+      */}
+      {managed && identity?.external ? (
+        <Handoff
+          title={`${transport ? TRANSPORT_LABEL[transport] : 'This transport'} sets ${domain.name} up for you`}
+          body={
+            <>
+              It writes every DNS record itself — there is nothing here to copy, and nothing to
+              paste. Finish the onboarding there, then press <strong>Check records</strong>.
+            </>
+          }
+          href={identity.external.url}
+          linkLabel={identity.external.label}
+          detail={identity.detail ?? null}
+        >
+          <Button
+            variant="outline"
+            disabled={verify.isPending}
+            onClick={() => {
+              attempt.current = 0
+              verify.mutate()
+            }}
+          >
+            {verify.isPending ? 'Checking…' : 'Check records'}
+          </Button>
+        </Handoff>
+      ) : null}
 
       <PageSection
-        title="DNS records"
-        description="Everything below has to resolve before this domain can send."
-      >
-        <DnsRecordTable
-          domain={domain}
-          verifying={verify.isPending}
-          onVerify={() => {
-            attempt.current = 0
-            verify.mutate()
-          }}
-          zoneFileHref={api.domainZoneFileUrl(domainId)}
-        />
-      </PageSection>
-
-      <PageSection
-        title="Receiving"
-        description="Addresses on this domain that accept mail, and what has to be true before any arrives."
+        title="Receiving setup"
+        description="Addresses on this domain that accept mail, and the one step only you can confirm."
       >
         <ReceivingPanel domain={domain} />
       </PageSection>
 
       <PageSection
-        title="Deliverability"
-        description="What receivers can currently prove about mail claiming to be from this domain."
+        title="Evidence"
+        description="What receivers can currently prove about mail claiming to be from this domain, and the records behind it."
       >
-        <div className="rounded-tile border border-line-soft bg-card px-4 py-1">
-          <AuthRow
-            name="DKIM"
-            state={authSentence(
-              domain.dkim_ready,
-              'Mail from this domain is signed with our key and the signature covers the From header, so a receiver can prove the message was not altered in transit.',
-              'Nothing is signing this domain yet. Receivers cannot tell your mail from a forgery, and most will treat it accordingly.',
-            )}
-          />
-          <AuthRow
-            name="SPF"
-            state={authSentence(
-              domain.spf_ready,
-              'The published SPF record includes our sending hosts, so the envelope sender is authorised.',
-              'Our include is missing from the SPF record, so receivers see mail from a host this domain has not authorised.',
-            )}
-          />
-          <AuthRow
-            name="DMARC"
-            // Null and undefined both mean "nobody has looked yet", which is a
-            // different answer from `missing` — read, and not there.
-            state={{
-              label: domain.dmarc_policy ?? 'not checked',
-              body: domain.dmarc_policy
-                ? (DMARC_SENTENCE[domain.dmarc_policy] ?? 'Policy published.')
-                : 'No check has run yet. Verify the DNS records to read the published policy.',
-              tone: !domain.dmarc_policy
-                ? 'quiet'
-                : domain.dmarc_policy === 'missing'
-                  ? 'warn'
-                  : 'positive',
-            }}
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-4 rounded-tile border border-line-soft bg-card px-4 py-3">
+            <AuthMark label="DKIM" state={domain.dkim_ready} />
+            <AuthMark label="SPF" state={domain.spf_ready} />
+            <AuthMark label="DMARC" state={dmarcState(domain)} />
+            <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-3">
+              {domain.checked
+                ? `${domain.checked.resolved} of ${domain.checked.total} records resolve`
+                : `${records.length} records`}
+            </span>
+          </div>
+
+          <dl className="m-0 grid gap-3 sm:grid-cols-3">
+            <AuthFact
+              term="DKIM"
+              state={domain.dkim_ready}
+              body={
+                domain.dkim_ready === undefined
+                  ? 'No check has run yet.'
+                  : domain.dkim_ready
+                    ? AUTH_SENTENCE.dkim.pass
+                    : AUTH_SENTENCE.dkim.fail
+              }
+            />
+            <AuthFact
+              term="SPF"
+              state={domain.spf_ready}
+              body={
+                domain.spf_ready === undefined
+                  ? 'No check has run yet.'
+                  : domain.spf_ready
+                    ? AUTH_SENTENCE.spf.pass
+                    : AUTH_SENTENCE.spf.fail
+              }
+            />
+            <AuthFact
+              term={`DMARC${domain.dmarc_policy ? ` · ${domain.dmarc_policy}` : ''}`}
+              state={dmarcState(domain)}
+              body={
+                domain.dmarc_policy
+                  ? (DMARC_SENTENCE[domain.dmarc_policy] ?? 'Policy published.')
+                  : 'No check has run yet. Check the records to read the published policy.'
+              }
+            />
+          </dl>
+
+          {/*
+            Folded, because a four-row table every row of which says "do not add
+            this by hand" is not the first thing a reader needs. It is still one
+            click away, and it is still what the check is against.
+          */}
+          <details
+            className="rounded-code border border-line bg-paper p-3"
+            open={!managed && domain.status !== 'verified'}
+          >
+            <summary className="cursor-pointer list-none text-[13.5px] font-semibold text-muted hover:text-ink">
+              {managed
+                ? `Records we will check (${records.length})`
+                : `Records to publish (${records.length})`}
+            </summary>
+            <div className="mt-3">
+              <DnsRecordTable
+                domain={domain}
+                verifying={verify.isPending}
+                managedNote={!managed}
+                onVerify={() => {
+                  attempt.current = 0
+                  verify.mutate()
+                }}
+                zoneFileHref={api.domainZoneFileUrl(domainId)}
+              />
+            </div>
+          </details>
         </div>
-        {domain.dmarc_policy === 'missing' ? (
-          <Callout variant="warn" title="worth doing, not urgent">
-            A missing DMARC record is not an error and does not stop this domain sending. It is the
-            next thing to add once DKIM and SPF pass — start at{' '}
-            <code className="font-mono">p=none</code> and read the reports for a couple of weeks
-            before tightening it.
-          </Callout>
-        ) : null}
       </PageSection>
 
       <PageSection
@@ -481,6 +482,86 @@ function DomainDetail() {
 
       <PageSection title="Settings">
         <div className="flex flex-col gap-4 rounded-tile border border-line-soft bg-card p-4">
+          {/*
+            The binding lives here now, because it is a configuration decision
+            rather than a status. It is also no longer decorative: a bound
+            domain's sends are pinned to that transport and are not failed over,
+            since the records published for it authorise that transport and no
+            other.
+          */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={transportId}>Sending transport</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={domain.provider ?? 'default'}
+                onValueChange={(value) =>
+                  update.mutate({ provider: value === 'default' ? null : value })
+                }
+              >
+                <SelectTrigger id={transportId} className="w-[260px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cloudflare">{TRANSPORT_LABEL.cloudflare}</SelectItem>
+                  <SelectItem value="ses">{TRANSPORT_LABEL.ses}</SelectItem>
+                  <SelectItem value="resend">{TRANSPORT_LABEL.resend}</SelectItem>
+                  <SelectItem value="smtp">{TRANSPORT_LABEL.smtp}</SelectItem>
+                  <SelectItem value="default">Whatever the workspace routes through</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={ensureIdentity.isPending}
+                onClick={() => ensureIdentity.mutate()}
+              >
+                {ensureIdentity.isPending ? 'Asking…' : 'Set up with this transport'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                // Nothing to write is not a job to offer. Every Cloudflare
+                // record is `observe`, so this button had no work to do and
+                // still toasted "Every record was written".
+                disabled={automate.isPending || managed}
+                title={
+                  managed
+                    ? 'This transport publishes its own records, so there is nothing for us to write.'
+                    : undefined
+                }
+                onClick={() => automate.mutate()}
+              >
+                {automate.isPending ? 'Writing…' : 'Write records for me'}
+              </Button>
+            </div>
+            <p className="m-0 max-w-[80ch] text-[13.5px] leading-relaxed text-muted">
+              {transport ? TRANSPORT_PREREQ[transport] : null}
+              {transport ? ' ' : null}
+              {transport ? (
+                <a
+                  className="text-accent underline-offset-2 hover:underline"
+                  href={TRANSPORT_GUIDE[transport]}
+                >
+                  How this transport is set up →
+                </a>
+              ) : (
+                <>
+                  Unbound, the records are the union across every transport this workspace could
+                  fall back to — so this domain publishes SPF includes authorising transports its
+                  mail will never leave through. Naming one is what makes the record list correct.
+                </>
+              )}
+            </p>
+            {managed ? (
+              <p className="m-0 max-w-[80ch] text-[13px] text-muted-2">
+                Every record for this domain is published by the transport, so there is nothing for
+                us to write into your zone — we only resolve them and report what we find.
+              </p>
+            ) : null}
+          </div>
+
+          <HairlineRule soft />
+
           <div className="flex items-start justify-between gap-6">
             <div className="min-w-0">
               <div className="text-[14.5px] font-medium">Open tracking</div>
@@ -544,7 +625,7 @@ function DomainDetail() {
               <code className="font-mono text-ink">
                 {returnPath ?? domain.custom_return_path}.{domain.name}
               </code>
-              , so changing it republishes the CNAME above and the domain needs verifying again.
+              , so changing it republishes the CNAME and the domain needs checking again.
             </p>
           </div>
 
@@ -605,3 +686,26 @@ function DomainDetail() {
     </>
   )
 }
+
+/** One authentication fact, stated in a sentence rather than a status word. */
+const AuthFact = ({
+  term,
+  state,
+  body,
+}: {
+  term: string
+  state: boolean | undefined
+  body: string
+}) => (
+  <div className="rounded-tile border border-line-soft bg-card p-3.5">
+    <dt className="flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.08em]">
+      <span>{term}</span>
+      <span
+        className={state === undefined ? 'text-muted-3' : state ? 'text-positive' : 'text-warning'}
+      >
+        {state === undefined ? 'not checked' : state ? 'passing' : 'failing'}
+      </span>
+    </dt>
+    <dd className="m-0 mt-1.5 text-[13px] leading-[1.6] text-muted">{body}</dd>
+  </div>
+)

@@ -87,6 +87,7 @@ export const CATALOG: Record<
     reportsEvents: true,
     managesIdentity: true,
     caveats: [
+      'Sending needs a Workers Paid plan: the `send_email` binding is not available on the free plan, and a deployment without it can only send in Test mode.',
       'Cloudflare writes the DNS records itself when you onboard a domain in its dashboard, so this product has none for you to copy.',
       'Messages to destinations you have not verified are capped at 5 MiB.',
       'The domain must already be on the same Cloudflare account.',

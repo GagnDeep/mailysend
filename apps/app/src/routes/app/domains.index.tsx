@@ -16,15 +16,19 @@ import {
 } from '@mailysend/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Check, ExternalLink, Globe, Minus, Plus, X } from 'lucide-react'
+import { Globe, Plus } from 'lucide-react'
 import { useId, useState } from 'react'
+import { AuthMark } from '~/components/app/auth-mark.tsx'
 import type { Column } from '~/components/app/data-table.tsx'
 import { DataTable } from '~/components/app/data-table.tsx'
 import { DnsRecordTable } from '~/components/app/dns-records.tsx'
 import { num, shortDate } from '~/components/app/format.ts'
+import { Handoff } from '~/components/app/handoff.tsx'
 import { PageHeader } from '~/components/app/page.tsx'
+import { dmarcState } from '~/components/app/readiness.ts'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { EmptyState, ErrorState, TableSkeleton } from '~/components/app/states.tsx'
+import { transportLabel } from '~/components/app/transports.ts'
 import type { DomainIdentityRecord, DomainRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
@@ -33,47 +37,6 @@ export const Route = createFileRoute('/app/domains/')({
   head: () => appHead('Domains'),
   component: Domains,
 })
-
-/**
- * The three authentication marks.
- *
- * `undefined` is its own state and is drawn as such: the list endpoint does not
- * report DKIM and SPF until a domain has been checked, and a hollow dash is
- * honest where a red cross would be an accusation.
- */
-const AuthMark = ({ label, state }: { label: string; state: boolean | undefined }) => {
-  const text =
-    state === undefined
-      ? `${label} not checked yet`
-      : state
-        ? `${label} passing`
-        : `${label} failing`
-  return (
-    <span className="inline-flex items-center gap-1" title={text}>
-      <span className="sr-only">{text}</span>
-      {state === undefined ? (
-        <Minus aria-hidden="true" className="size-3 text-muted-3" />
-      ) : state ? (
-        <Check aria-hidden="true" className="size-3 text-positive" />
-      ) : (
-        <X aria-hidden="true" className="size-3 text-warning" />
-      )}
-      <span aria-hidden="true" className="font-mono text-[11px] text-muted-2">
-        {label}
-      </span>
-    </span>
-  )
-}
-
-/**
- * Three states, not two. Null and undefined both mean nobody has read DNS for
- * this domain yet, which must not render as a tick — a domain that has never
- * been checked would otherwise claim a DMARC policy it may not have.
- */
-const dmarcState = (domain: DomainRecord): boolean | undefined => {
-  if (domain.dmarc_policy === undefined || domain.dmarc_policy === null) return undefined
-  return domain.dmarc_policy !== 'missing'
-}
 
 function Domains() {
   const api = useApi()
@@ -348,42 +311,30 @@ const AddDomainWizard = ({
               beneath it as "what we will check".
             */}
             {managed && identity?.external ? (
-              <div className="flex flex-col gap-3 rounded-code border border-line bg-tint p-4">
-                <span>
-                  <span className="block text-[14px] font-semibold text-ink">
-                    Cloudflare sets {domain.name} up for you
-                  </span>
-                  <span className="mt-1 block text-[13.5px] leading-[1.6] text-muted">
-                    In the Cloudflare dashboard go to <strong>Email</strong> →{' '}
-                    <strong>Email Sending</strong> and onboard this domain. Cloudflare writes every
-                    DNS record itself — there is nothing here to copy, and nothing to paste. Come
-                    back and press <strong>Check records</strong> when it is done.
-                  </span>
-                </span>
-                <span className="flex flex-wrap items-center gap-2">
-                  <Button asChild variant="primary">
-                    <a href={identity.external.url} target="_blank" rel="noopener noreferrer">
-                      {identity.external.label}
-                      <ExternalLink aria-hidden="true" className="size-[15px]" />
-                    </a>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={verify.isPending}
-                    onClick={() => {
-                      setStep(2)
-                      verify.mutate(domain.id)
-                    }}
-                  >
-                    {verify.isPending ? 'Checking…' : 'Check records'}
-                  </Button>
-                </span>
-                {identity.detail ? (
-                  <span className="block text-[12.5px] leading-[1.6] text-muted-2">
-                    {identity.detail}
-                  </span>
-                ) : null}
-              </div>
+              <Handoff
+                title={`${transportLabel(domain.provider)} sets ${domain.name} up for you`}
+                body={
+                  <>
+                    In its dashboard, onboard this domain. It writes every DNS record itself — there
+                    is nothing here to copy, and nothing to paste. Come back and press{' '}
+                    <strong>Check records</strong> when it is done.
+                  </>
+                }
+                href={identity.external.url}
+                linkLabel={identity.external.label}
+                detail={identity.detail ?? null}
+              >
+                <Button
+                  variant="outline"
+                  disabled={verify.isPending}
+                  onClick={() => {
+                    setStep(2)
+                    verify.mutate(domain.id)
+                  }}
+                >
+                  {verify.isPending ? 'Checking…' : 'Check records'}
+                </Button>
+              </Handoff>
             ) : (
               <>
                 <p className="m-0 text-[14px] text-muted">
@@ -409,11 +360,24 @@ const AddDomainWizard = ({
               </>
             )}
 
-            {step === 2 ? (
-              <p className="m-0 flex items-center gap-2 text-[13.5px] text-muted">
-                Current state: <StatusBadge status={domain.status} size="sm" />
-              </p>
-            ) : null}
+            {/*
+              The binding is decided at create time now, so say what it decided.
+              A domain created unbound published records authorising every
+              transport the router could fall back to; leaving that implicit is
+              how somebody ends up reading a record list they cannot account
+              for.
+            */}
+            <p className="m-0 flex flex-wrap items-center gap-2 text-[13.5px] text-muted">
+              {step === 2 ? (
+                <>
+                  Current state: <StatusBadge status={domain.status} size="sm" /> ·{' '}
+                </>
+              ) : null}
+              <span>
+                Sends through <strong>{transportLabel(domain.provider)}</strong>, which is what the
+                records below are for.
+              </span>
+            </p>
 
             {managed ? (
               <details className="rounded-code border border-line bg-paper p-3">

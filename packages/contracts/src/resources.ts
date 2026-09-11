@@ -95,10 +95,61 @@ export const Domain = z.object({
   /** The transport the records were derived from. Null = the workspace default. */
   provider: z.enum(['cloudflare', 'ses', 'resend', 'smtp']).nullable().optional(),
   /**
-   * How much of the last verification actually happened. Present on a verify
-   * response only. Without it a check that could reach the resolver for two of
-   * six records was indistinguishable from one that checked all six and found
-   * four missing — the same `pending`, and no reason to suspect the network.
+   * Can this domain send: verified *and* DKIM and SPF actually resolving.
+   *
+   * Narrower than `status` on purpose — a roll-up can read `verified` for a
+   * record set that predates a transport rebind.
+   */
+  sending_ready: z.boolean().optional(),
+  /**
+   * Everything the server honestly knows about receiving.
+   *
+   * There is deliberately no `ready` here. Cloudflare's Email Routing catch-all
+   * rule is not readable over its API, so the server can prove the MX points at
+   * Email Routing and that mailboxes exist, and cannot prove mail arrives — a
+   * boolean would be a claim nothing supports. The gap is named instead, and
+   * `last_inbound_at` is the only end-to-end proof that exists.
+   */
+  receiving: z
+    .object({
+      /** Null means nobody has run a receiving check yet, not that one failed. */
+      mx_status: z.enum(['pending', 'verified', 'failed', 'error']).nullable(),
+      mx_found: z.string().nullable(),
+      expected: z.string(),
+      checked_at: IsoDate.nullable(),
+      mailboxes: z.object({
+        count: z.number().int(),
+        catch_all: z.string().nullable(),
+      }),
+      catch_all: z.object({
+        observable: z.literal(false),
+        detail: z.string(),
+      }),
+      last_inbound_at: IsoDate.nullable(),
+    })
+    .optional(),
+  /**
+   * The most recent permanent send failure for this domain, if there is one.
+   *
+   * Surfaced here because the setting that fixes it is on this page — a domain
+   * bound to a transport the workspace has not configured fails every send, and
+   * says so nowhere a person would look.
+   */
+  last_send_error: z
+    .object({
+      email_id: z.string(),
+      provider: z.string().nullable(),
+      error: z.string(),
+      at: IsoDate,
+    })
+    .nullable()
+    .optional(),
+  /**
+   * How much of the last check actually happened — on a verify response, and on
+   * a GET, where it is derived from the stored rows. Without it a check that
+   * could reach the resolver for two of six records was indistinguishable from
+   * one that checked all six and found four missing — the same `pending`, and
+   * no reason to suspect the network.
    */
   checked: z
     .object({

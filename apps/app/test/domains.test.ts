@@ -277,9 +277,23 @@ describe('the MX preflight', () => {
       status: string
       found: string | null
       detail: string
+      checked_at: string
       mailboxes: { count: number; catch_all: string | null }
     }
   }
+
+  /** What the domain row remembers about receiving, after a check. */
+  const remembered = async (id: string) =>
+    await h.sql
+      .prepare(
+        'SELECT receiving_mx_status, receiving_mx_found, receiving_checked_at FROM domains WHERE id = ?',
+      )
+      .bind(id)
+      .first<{
+        receiving_mx_status: string | null
+        receiving_mx_found: string | null
+        receiving_checked_at: string | null
+      }>()
 
   it('reports error when the resolver will not answer, never a pass', async () => {
     const id = await domainWith('acme.dev', [])
@@ -289,6 +303,7 @@ describe('the MX preflight', () => {
     expect(body.status).toBe('error')
     expect(body.found).toBeNull()
     expect(body.detail).toContain('not evidence')
+    expect(await remembered(id)).toMatchObject({ receiving_mx_status: 'error' })
   })
 
   it('recognises Cloudflare Email Routing', async () => {
@@ -302,6 +317,10 @@ describe('the MX preflight', () => {
 
     const body = await check(id)
     expect(body.status).toBe('verified')
+    const row = await remembered(id)
+    expect(row?.receiving_mx_status).toBe('verified')
+    expect(row?.receiving_mx_found).toContain('mx.cloudflare.net')
+    expect(row?.receiving_checked_at).toBe(body.checked_at)
   })
 
   it('says so when the mail goes somewhere else', async () => {
@@ -316,6 +335,7 @@ describe('the MX preflight', () => {
     const body = await check(id)
     expect(body.status).toBe('failed')
     expect(body.found).toContain('google')
+    expect(await remembered(id)).toMatchObject({ receiving_mx_status: 'failed' })
   })
 
   it('calls a domain with no MX at all pending, not failed', async () => {
@@ -325,5 +345,135 @@ describe('the MX preflight', () => {
     const body = await check(id)
     expect(body.status).toBe('pending')
     expect(body.mailboxes.count).toBe(0)
+    expect(await remembered(id)).toMatchObject({ receiving_mx_status: 'pending' })
+  })
+
+  it('lets an error overwrite a previous pass, because we no longer know', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({
+      'acme.dev/MX': {
+        Status: 0,
+        Answer: [{ name: 'acme.dev', type: TYPE.MX, data: '10 route1.mx.cloudflare.net.' }],
+      },
+    })
+    expect((await check(id)).status).toBe('verified')
+
+    stubResolver({ 'acme.dev/MX': 'boom' })
+    expect((await check(id)).status).toBe('error')
+    // Not left reading `verified`: a resolver that would not answer means the
+    // last thing we established is no longer established.
+    expect(await remembered(id)).toMatchObject({ receiving_mx_status: 'error' })
+  })
+})
+
+/**
+ * `GET /v1/domains/:id` answers both halves of the question the page asks.
+ *
+ * It used to answer neither: no statement about receiving at all, and `checked`
+ * only on a verify response — so a page load could not distinguish a domain
+ * nobody had looked at from one where four of six records were missing, and had
+ * nothing to say about receiving but "press this button".
+ */
+describe('what a page load knows', () => {
+  const get = async (id: string) => {
+    const res = await h.fetch(`/v1/domains/${id}`, { cookie })
+    expect(res.status).toBe(200)
+    return (await res.json()) as {
+      sending_ready: boolean
+      checked: { total: number; resolved: number; errored: number; first_error?: string | null }
+      receiving: {
+        mx_status: string | null
+        mx_found: string | null
+        checked_at: string | null
+        mailboxes: { count: number; catch_all: string | null }
+        catch_all: { observable: boolean; detail: string }
+        last_inbound_at: string | null
+      }
+    }
+  }
+
+  it('resolves nothing of its own — the answer is whatever was last written', async () => {
+    const id = await domainWith('acme.dev', [
+      { record: 'TXT', name: 'acme.dev', value: 'v=spf1 ~all' },
+    ])
+    // No resolver stubbed at all. A GET that reached the network would throw.
+    const body = await get(id)
+    expect(body.receiving.mx_status).toBeNull()
+    expect(body.receiving.checked_at).toBeNull()
+    // Null is "nobody has looked", which is why a never-checked row counts as
+    // resolved: zero, not one.
+    expect(body.checked).toMatchObject({ total: 1, resolved: 0, errored: 0 })
+  })
+
+  it('carries the last MX observation without re-resolving it', async () => {
+    const id = await domainWith('acme.dev', [])
+    stubResolver({
+      'acme.dev/MX': {
+        Status: 0,
+        Answer: [{ name: 'acme.dev', type: TYPE.MX, data: '10 route1.mx.cloudflare.net.' }],
+      },
+    })
+    await h.fetch(`/v1/domains/${id}/receiving-check`, { method: 'POST', cookie })
+
+    const body = await get(id)
+    expect(body.receiving.mx_status).toBe('verified')
+    expect(body.receiving.mx_found).toContain('mx.cloudflare.net')
+    expect(body.receiving.checked_at).not.toBeNull()
+    expect(body.receiving.last_inbound_at).toBeNull()
+  })
+
+  it('never claims the domain is ready to receive, whatever it observed', async () => {
+    // Cloudflare's Email Routing catch-all rule is not readable over its API,
+    // so no combination of observations justifies a boolean here. A future
+    // field named `ready` under `receiving` would be a claim the server cannot
+    // support — this is the test that says so.
+    const id = await domainWith('acme.dev', [])
+    stubResolver({
+      'acme.dev/MX': {
+        Status: 0,
+        Answer: [{ name: 'acme.dev', type: TYPE.MX, data: '10 route1.mx.cloudflare.net.' }],
+      },
+    })
+    await h.fetch(`/v1/domains/${id}/receiving-check`, { method: 'POST', cookie })
+
+    const body = (await (await h.fetch(`/v1/domains/${id}`, { cookie })).json()) as Record<
+      string,
+      unknown
+    >
+    expect(Object.keys(body)).not.toContain('receiving_ready')
+    expect(JSON.stringify(body.receiving)).not.toMatch(/"ready"/)
+    expect((body.receiving as { catch_all: { observable: boolean } }).catch_all.observable).toBe(
+      false,
+    )
+  })
+
+  it('counts a partial verify as partial, rather than as a domain that failed', async () => {
+    const id = await domainWith('acme.dev', [
+      { record: 'TXT', name: 'acme.dev', value: 'v=spf1 include:_spf.mx.cloudflare.net ~all' },
+      { record: 'TXT', name: 'ms1._domainkey.acme.dev', value: 'v=DKIM1; p=AAAA', match: 'prefix' },
+    ])
+    stubResolver({
+      'acme.dev/TXT': {
+        Status: 0,
+        Answer: [
+          {
+            name: 'acme.dev',
+            type: TYPE.TXT,
+            data: '"v=spf1 include:_spf.mx.cloudflare.net ~all"',
+          },
+        ],
+      },
+      'ms1._domainkey.acme.dev/TXT': 'boom',
+    })
+    await h.fetch(`/v1/domains/${id}/verify`, { method: 'POST', cookie })
+
+    const body = await get(id)
+    expect(body.checked.total).toBe(2)
+    expect(body.checked.resolved + body.checked.errored).toBe(2)
+    expect(body.checked.errored).toBe(1)
+    expect(body.checked.first_error).toContain('fetch failed')
+    // One record resolved and one could not be looked up at all, which is not
+    // a domain anybody should be told to send from.
+    expect(body.sending_ready).toBe(false)
   })
 })

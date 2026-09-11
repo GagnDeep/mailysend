@@ -108,6 +108,9 @@ export const mailMessages = sqliteTable(
     // us — a loopback send that also arrives inbound must not appear twice.
     uniqueIndex('mail_messages_header').on(t.workspaceId, t.messageIdHeader),
     index('mail_messages_source').on(t.workspaceId, t.sourceId),
+    // "Has mail ever arrived for this domain" is a lookup by mailbox, which the
+    // domain page asks on every load. Without this it is a table scan.
+    index('mail_messages_mailbox').on(t.workspaceId, t.mailboxId, t.at),
   ],
 )
 

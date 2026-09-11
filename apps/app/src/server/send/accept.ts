@@ -44,6 +44,8 @@ interface DomainRow {
   custom_return_path: string
   open_tracking: number
   click_tracking: number
+  /** The transport this domain is bound to, when it names one. */
+  provider: string | null
 }
 
 /** Resolve and cache the sending domain for a `from` address. */
@@ -62,7 +64,7 @@ async function resolveDomain(ctx: Ctx, fromAddress: string): Promise<DomainRow> 
       (await ctx.sql
         .prepare(
           `SELECT id, name, status, dkim_selector, dkim_private_key, custom_return_path,
-                  open_tracking, click_tracking
+                  open_tracking, click_tracking, provider
              FROM domains WHERE workspace_id = ? AND name IN (?, ?)
             ORDER BY length(name) DESC LIMIT 1`,
         )
@@ -227,6 +229,8 @@ export async function acceptEmail(
   const emailId = newId('email')
   const createdAt = new Date().toISOString()
 
+  const pinned = (request.provider ?? domain.provider ?? null) as Envelope['provider'] | null
+
   const envelope: Envelope = {
     email_id: emailId,
     workspace_id: ctx.workspace.id,
@@ -246,7 +250,16 @@ export async function acceptEmail(
     ...(opts.broadcastId ? { broadcast_id: opts.broadcastId } : {}),
     ...(opts.automationId ? { automation_id: opts.automationId } : {}),
     ...(opts.contactId ? { contact_id: opts.contactId } : {}),
-    ...(request.provider ? { provider: request.provider } : {}),
+    /**
+     * The binding decides the transport, unless the caller overrode it.
+     *
+     * A bound domain publishes one transport's records, so failing over to
+     * another produces mail its own SPF does not authorise — silently
+     * spam-foldered, which is worse than an error. An explicit `provider` on the
+     * request still wins: that is a caller overriding their own configuration on
+     * purpose.
+     */
+    ...(pinned ? { provider: pinned } : {}),
     created_at: createdAt,
   }
 

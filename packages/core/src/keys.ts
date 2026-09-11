@@ -74,7 +74,17 @@ export const r2Key = {
 export const kvKey = {
   apiKey: (hash: string) => `ak:${hash}`,
   workspace: (workspaceId: string) => `ws:${workspaceId}`,
-  domain: (workspaceId: string, domain: string) => `dom:${workspaceId}:${domain.toLowerCase()}`,
+  /**
+   * The cached value is a row shape, not a scalar, so the key carries a version.
+   *
+   * Bump it whenever `resolveDomain`'s SELECT changes. Without a bump a rolling
+   * deploy keeps serving 300-second-old rows that are missing the column the new
+   * code depends on — when `provider` was added, a bound domain kept being
+   * routed by hash for five minutes after the deploy, which is exactly the
+   * failure the binding exists to prevent. Old keys are never read again and
+   * expire on their own TTL.
+   */
+  domain: (workspaceId: string, domain: string) => `dom:v2:${workspaceId}:${domain.toLowerCase()}`,
   suppression: (workspaceId: string, email: string) => `sup:${workspaceId}:${email.toLowerCase()}`,
   idempotency: (workspaceId: string, key: string) => `idem:${workspaceId}:${key}`,
   compiledTemplate: (workspaceId: string, templateId: string, version: number) =>

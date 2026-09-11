@@ -1,9 +1,10 @@
-import { Button, Callout, Input, Label, StatusBadge, Switch, toast } from '@mailysend/ui'
+import { Button, Input, Label, Switch, toast } from '@mailysend/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { type FormEvent, useId, useState } from 'react'
+import { Handoff } from '~/components/app/handoff.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
-import type { DomainRecord, ReceivingCheckResult } from '~/lib/api-client.ts'
+import type { DomainRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 
 /** The zone's Email Routing screen. `:account` and `:zone` resolve dashboard-side. */
@@ -11,12 +12,17 @@ const emailRoutingUrl = (domain: string) =>
   `https://dash.cloudflare.com/?to=/:account/${encodeURIComponent(domain)}/email/routing`
 
 /**
- * Receiving, as a first-class part of a domain rather than a footnote.
+ * The receiving setup: the Cloudflare hand-off, and the mailboxes mail lands in.
  *
  * Mailbox CRUD has existed in the API since inbound was written and has never
  * had a screen, so the only way to create the address that mail arrives at was
- * a curl command. Sending and receiving are two halves of one domain, and this
- * is the half that was missing.
+ * a curl command.
+ *
+ * This used to open with a callout explaining that receiving is separate from
+ * sending, carry its own Check-receiving button, and close by restating the
+ * *sending* status — three things the readiness header now says once, at the
+ * top, in order. What is left here is the work: the hand-off nobody here can
+ * do, and the addresses only this screen can create.
  */
 export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
   const api = useApi()
@@ -49,13 +55,6 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
     onError: (error) => toast.error(errorMessage(error)),
   })
 
-  // Observation only — the same DoH resolver the sending checks use, and the
-  // same four-word vocabulary, so `error` never launders itself into a pass.
-  const check = useMutation({
-    mutationFn: (): Promise<ReceivingCheckResult> => api.checkReceiving(domain.id),
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteMailbox(id),
     onSuccess: () => {
@@ -80,48 +79,22 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Callout variant="info" title="Receiving is separate from sending">
-        A verified sending domain does not receive mail. Two things have to be true, and they are
-        configured in different places: Cloudflare Email Routing has to deliver this domain{' '}
-        <strong>to this Worker</strong> (its catch-all rule, in the Cloudflare dashboard), and the
-        address has to exist <strong>here</strong> — either as a mailbox below, or through the
-        catch-all switch on one of them. Routing alone is not enough: an address with nowhere to
-        land is answered with a 550, which is why the first test message bounces.
-      </Callout>
-
-      <div className="flex flex-col gap-3 rounded-code border border-line bg-tint p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="min-w-0">
-            <span className="block text-[14px] font-semibold text-ink">
-              Set up receiving in Cloudflare
-            </span>
-            <span className="block text-[13px] text-muted">
-              Cloudflare dashboard → <strong>Email</strong> → <strong>Email Routing</strong>. Enable
-              it and Cloudflare publishes the MX records itself, then add a{' '}
-              <strong>catch-all</strong> rule with the action <strong>Send to a Worker</strong> and
-              choose this instance's script.
-            </span>
-          </span>
-          <Button asChild variant="primary">
-            <a href={emailRoutingUrl(domain.name)} target="_blank" rel="noreferrer">
-              Open Email Routing
-              <ExternalLink aria-hidden="true" className="size-[15px]" />
-            </a>
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={check.isPending}
-            onClick={() => check.mutate()}
-          >
-            {check.isPending ? 'Resolving MX…' : 'Check receiving'}
-          </Button>
-          {check.data ? <ReceivingResult result={check.data} /> : null}
-        </div>
-      </div>
+      <Handoff
+        title="Set up receiving in Cloudflare"
+        body={
+          <>
+            Cloudflare dashboard → <strong>Email</strong> → <strong>Email Routing</strong>. Enable
+            it and Cloudflare publishes the MX records itself, then add a <strong>catch-all</strong>{' '}
+            rule with the action <strong>Send to a Worker</strong> and choose this instance's
+            script.
+          </>
+        }
+        href={emailRoutingUrl(domain.name)}
+        linkLabel="Open Email Routing"
+        // The one step that cannot be checked from here, said where the person
+        // is standing when they could check it themselves.
+        detail={domain.receiving?.catch_all.detail ?? null}
+      />
 
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-2">
@@ -208,48 +181,6 @@ export function ReceivingPanel({ domain }: { domain: DomainRecord }) {
           ))}
         </ul>
       )}
-
-      <p className="m-0 text-[13.5px] text-muted">
-        Sending status: <StatusBadge status={domain.status} size="sm" /> — receiving has its own
-        setup and is not covered by that check.
-      </p>
     </div>
-  )
-}
-
-/**
- * The MX answer, said plainly.
- *
- * A verified MX is not a working setup and must not read like one: Cloudflare's
- * catch-all rule lives zone-side and cannot be observed from here, so the most
- * this can honestly report is that mail reaches Cloudflare at all. Everything
- * downstream of that is the mailbox count beside it.
- */
-function ReceivingResult({ result }: { result: ReceivingCheckResult }) {
-  const tone =
-    result.status === 'verified'
-      ? 'text-positive'
-      : result.status === 'failed'
-        ? 'text-warning'
-        : 'text-muted'
-  return (
-    <span className="min-w-0 flex-1 text-[13px] leading-[1.6]">
-      <span className={`font-mono text-[12px] uppercase tracking-[0.08em] ${tone}`}>
-        MX {result.status}
-      </span>
-      <span className="block text-muted">{result.detail}</span>
-      {result.found ? (
-        <span className="mt-0.5 block break-all font-mono text-[11.5px] text-muted-2">
-          found: {result.found} · expected: {result.expected}
-        </span>
-      ) : null}
-      <span className="mt-0.5 block text-[12.5px] text-muted-2">
-        {result.mailboxes.count === 0
-          ? 'No mailbox on this domain — nothing would be accepted even once routing is right.'
-          : result.mailboxes.catch_all
-            ? `${result.mailboxes.count} mailbox(es), catch-all on ${result.mailboxes.catch_all}.`
-            : `${result.mailboxes.count} mailbox(es), no catch-all — anything else is rejected.`}
-      </span>
-    </span>
   )
 }

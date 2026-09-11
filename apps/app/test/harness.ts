@@ -224,7 +224,14 @@ export async function claimFor(h: Harness, email = 'owner@acme.dev'): Promise<st
   return userId
 }
 
-/** Adds a verified sending domain, which is what unlocks the emailed code. */
+/**
+ * Adds a verified sending domain, which is what unlocks the emailed code.
+ *
+ * Deliberately unbound — no `provider`. A domain created through the API binds
+ * to a transport now and pins its sends to it; leaving this one unbound keeps
+ * every test that sends through it exercising the router's own selection, which
+ * is the path the rest of the suite is about. `binding.test.ts` covers the pin.
+ */
 export async function verifiedDomain(h: Harness, name = 'acme.dev'): Promise<string> {
   const now = new Date().toISOString()
   const id = `dom_${name.replace(/\W/g, '').toUpperCase().padEnd(26, '0').slice(0, 26)}`

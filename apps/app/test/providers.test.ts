@@ -205,8 +205,73 @@ describe('a domain’s records come from its bound transport', () => {
     expect(after).not.toEqual(before)
   })
 
+  it('binds a new domain to the transport the workspace would actually send through', async () => {
+    // Created unbound, a domain published records authorising every transport
+    // the router could yield — including ones its mail would never leave
+    // through. The binding is decided at create time now, from the router.
+    const created = (await (await create('fresh.dev')).json()) as {
+      id: string
+      provider: string | null
+    }
+    // This workspace's router picks SES first, so SES is what the records must
+    // authorise. Binding to the product default instead would publish
+    // Cloudflare's records and then pin the send to a transport the router does
+    // not carry.
+    const first = (await buildRouter(h.sql, DEFAULT_WORKSPACE, h.env)).providers[0]?.name
+    expect(created.provider).toBe(first)
+    const apexSpf = (await recordsFor(created.id)).filter(
+      (r) => r.name === 'fresh.dev' && r.record === 'TXT' && r.value.startsWith('v=spf1'),
+    )
+    expect(apexSpf).toHaveLength(1)
+    // One transport's record, not a union of three.
+    expect(apexSpf[0]?.value.split(/\s+/).filter((t) => t.startsWith('include:'))).toHaveLength(1)
+  })
+
+  it('binds a fresh deployment to Cloudflare, which needs no credentials to be right', async () => {
+    // The `?? 'cloudflare'` tail: `recordsOnlyProvider('cloudflare')` is the one
+    // transport that yields records with nothing configured, so a domain added
+    // before any transport still gets a publishable zone.
+    const bare = await harness()
+    const bareCookie = await sessionFor(bare, await claimFor(bare))
+    const created = (await (
+      await bare.fetch('/v1/domains', {
+        method: 'POST',
+        cookie: bareCookie,
+        body: JSON.stringify({ name: 'bare.dev' }),
+      })
+    ).json()) as { provider: string | null; records: { value: string }[] }
+    expect(created.provider).toBe('cloudflare')
+    expect(created.records.length).toBeGreaterThan(0)
+  })
+
+  it('falls back to Cloudflare when MS_DEFAULT_PROVIDER names a transport it cannot build', async () => {
+    // Binding `ses` here would filter the router to a name it does not have,
+    // leaving the domain with *zero* records — strictly worse than the union
+    // this change replaced. Pinned by a test because it is the failure a later
+    // "simplification" to `MS_DEFAULT_PROVIDER ?? 'cloudflare'` reintroduces.
+    const misconfigured = await harness({ MS_DEFAULT_PROVIDER: 'ses' } as never)
+    const itsCookie = await sessionFor(misconfigured, await claimFor(misconfigured))
+    const created = (await (
+      await misconfigured.fetch('/v1/domains', {
+        method: 'POST',
+        cookie: itsCookie,
+        body: JSON.stringify({ name: 'noses.dev' }),
+      })
+    ).json()) as { provider: string | null; records: { value: string }[] }
+    expect(created.provider).toBe('cloudflare')
+    expect(created.records.length).toBeGreaterThan(0)
+  })
+
   it('merges the union into one legal SPF record when nothing is bound', async () => {
+    // `provider: null` is the documented way back to the union, and an explicit
+    // PATCH is now the only way to reach it — which also exercises the
+    // re-derivation path that nothing else asserts.
     const created = (await (await create('unbound.dev')).json()) as { id: string }
+    await h.fetch(`/v1/domains/${created.id}`, {
+      method: 'PATCH',
+      cookie,
+      body: JSON.stringify({ provider: null }),
+    })
     const records = await recordsFor(created.id)
     const spf = records.filter(
       (r) => r.name === 'unbound.dev' && r.record === 'TXT' && r.value.startsWith('v=spf1'),

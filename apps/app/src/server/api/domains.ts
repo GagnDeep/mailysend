@@ -9,6 +9,7 @@ import {
   buildRouter,
   decryptCredentials,
   recordsOnlyProvider,
+  resolveDefaultProvider,
 } from '../services/providers.ts'
 import { type App, createRouter, json, page, parseLimit, withContext } from './base.ts'
 
@@ -63,6 +64,8 @@ domains.post('/', async (c) => {
     .first<{ id: string }>()
   if (existing) throw apiError('domain_already_exists', { param: 'name' })
 
+  const provider = body.provider ?? (await defaultBinding(ctx))
+
   const id = newId('domain')
   const now = new Date().toISOString()
   const selector = 'ms1'
@@ -84,7 +87,7 @@ domains.post('/', async (c) => {
       dkim.privateKey,
       dkim.publicKey,
       returnPath,
-      body.provider ?? null,
+      provider,
       now,
       now,
     )
@@ -94,10 +97,9 @@ domains.post('/', async (c) => {
     selector,
     returnPath,
     dkimPublicKey: dkim.publicKey,
-    provider: body.provider ?? null,
+    provider,
   })
-  await writeRecords(ctx, id, records)
-  ctx.background(ctx.cache.delete(kvKey.domain(ctx.workspace.id, name)))
+  await writeRecords(ctx, id, name, records)
 
   return json(
     {
@@ -108,7 +110,7 @@ domains.post('/', async (c) => {
       region: body.region ?? 'global',
       created_at: now,
       custom_return_path: returnPath,
-      provider: body.provider ?? null,
+      provider,
       open_tracking: true,
       click_tracking: true,
       records: records.map((r) => toDnsRecord(r, 'not_started', null)),
@@ -143,17 +145,30 @@ domains.get('/:id', async (c) => {
   const records = await ctx.sql
     .prepare(
       `SELECT record, name, value, priority, provider, purpose, origin, match_mode, status, found,
-              last_checked_at
+              error, last_checked_at
          FROM domain_dns_records WHERE workspace_id = ? AND domain_id = ?
         ORDER BY record, name`,
     )
     .bind(ctx.workspace.id, row.id)
     .all<DnsRow>()
 
+  const ready = readiness(records.results)
+
   return json({
     ...toDomain(row),
     records: records.results.map(fromDnsRow),
-    ...readiness(records.results),
+    ...ready,
+    /**
+     * Can this domain send, in one boolean.
+     *
+     * Not just `status`: `rollUpStatus` can read `verified` for a record set
+     * that predates a transport rebind, and a domain whose DKIM does not
+     * actually resolve is not a domain anybody should be told to send from.
+     */
+    sending_ready: row.status === 'verified' && ready.dkim_ready && ready.spf_ready,
+    ...checkedSummary(records.results),
+    receiving: await receivingState(ctx, row),
+    last_send_error: await lastSendError(ctx, row.id),
   })
 })
 
@@ -202,7 +217,7 @@ domains.patch('/:id', async (c) => {
         | Provider['name']
         | null,
     })
-    await writeRecords(ctx, row.id, records)
+    await writeRecords(ctx, row.id, row.name, records)
   }
 
   ctx.background(ctx.cache.delete(kvKey.domain(ctx.workspace.id, row.name)))
@@ -404,6 +419,109 @@ function readiness(
 }
 
 /**
+ * The most recent send this domain could not complete.
+ *
+ * A permanent failure is otherwise invisible until somebody reads a log — which
+ * includes the new "bound to a transport you have not configured" error, whose
+ * whole point is that a person has to go and fix a setting. The domain page is
+ * where that setting lives, so the failure belongs on it.
+ */
+async function lastSendError(ctx: Ctx, domainId: string) {
+  const row = await ctx.sql
+    .prepare(
+      `SELECT id, provider, error_message, created_at
+         FROM messages
+        WHERE workspace_id = ? AND domain_id = ? AND environment = ?
+          AND status = 'failed' AND error_message IS NOT NULL
+        ORDER BY id DESC LIMIT 1`,
+    )
+    .bind(ctx.workspace.id, domainId, ctx.actor.environment)
+    .first<{ id: string; provider: string | null; error_message: string; created_at: string }>()
+  return row
+    ? {
+        email_id: row.id,
+        provider: row.provider,
+        error: row.error_message,
+        at: row.created_at,
+      }
+    : null
+}
+
+/**
+ * How much of the stored answer is actually an answer.
+ *
+ * The verify response has always carried this; a GET never did, so a page load
+ * could not say "4 of 6 records resolve" and had to present a `pending` domain
+ * as though nobody had ever looked. Derived from `domain_dns_records`, which
+ * already stores `status`, `error` and `last_checked_at` per row, rather than
+ * denormalised onto `domains` — a copy there would be a second truth that
+ * `writeRecords` has to remember to clear, and forgetting is what produced the
+ * stale `verified` this file has already been bitten by once.
+ */
+function checkedSummary(
+  rows: { status: string; error?: string | null; last_checked_at: string | null }[],
+) {
+  // A row nobody has looked at is not a row that resolved.
+  const looked = rows.filter((r) => r.last_checked_at !== null)
+  const errored = looked.filter((r) => r.status === 'error')
+  return {
+    checked: {
+      total: rows.length,
+      resolved: looked.length - errored.length,
+      errored: errored.length,
+      ...(errored.length > 0 ? { first_error: errored[0]?.error ?? null } : {}),
+    },
+  }
+}
+
+/**
+ * Everything the server honestly knows about receiving, as separate named facts.
+ *
+ * Deliberately not a boolean. Cloudflare's Email Routing catch-all rule is not
+ * readable over its API, so the server can prove an MX points at Email Routing
+ * and that mailboxes exist, and cannot prove that mail arrives. A
+ * `receiving_ready` field would be a claim nothing here supports, so the gap is
+ * named — `catch_all.observable: false` — and the operator confirms that one
+ * step with their own eyes.
+ *
+ * No network I/O: the MX columns are whatever the last receiving check wrote.
+ * Mailboxes are counted live, because a mailbox added a minute ago should not
+ * have to wait on a DNS check to appear.
+ */
+async function receivingState(ctx: Ctx, row: DomainRow) {
+  return {
+    /** Null means nobody has looked yet, which is not the same as `pending`. */
+    mx_status: row.receiving_mx_status,
+    mx_found: row.receiving_mx_found,
+    expected: '*.mx.cloudflare.net',
+    checked_at: row.receiving_checked_at,
+    mailboxes: await mailboxSummary(ctx, row.name),
+    catch_all: {
+      observable: false as const,
+      detail:
+        "Cloudflare's Email Routing catch-all rule is not readable over its API, so whether it is bound to this Worker can only be confirmed on the Email Routing page.",
+    },
+    /** The only end-to-end proof there is; everything else is configuration. */
+    last_inbound_at: await lastInboundAt(ctx, row.name),
+  }
+}
+
+/** When mail last actually landed for this domain, or null if it never has. */
+async function lastInboundAt(ctx: Ctx, domain: string): Promise<string | null> {
+  const hit = await ctx.sql
+    .prepare(
+      `SELECT at FROM mail_messages
+        WHERE workspace_id = ? AND direction = 'in' AND environment = 'live'
+          AND mailbox_id IN (SELECT id FROM inbound_mailboxes
+                              WHERE workspace_id = ? AND (domain = ? OR address LIKE ?))
+        ORDER BY at DESC LIMIT 1`,
+    )
+    .bind(ctx.workspace.id, ctx.workspace.id, domain, `%@${domain}`)
+    .first<{ at: string }>()
+  return hit?.at ?? null
+}
+
+/**
  * `POST /v1/domains/:id/receiving-check` — is this domain's MX pointed at us?
  *
  * Receiving has always been the half of a domain the product could not check.
@@ -421,16 +539,23 @@ domains.post('/:id/receiving-check', async (c) => {
   requireScope(ctx.actor, 'domains:read')
   const row = await loadDomain(ctx, c.req.param('id'))
 
+  const checkedAt = new Date().toISOString()
+
   let answers: DohAnswer[]
   try {
     answers = await resolve(row.name, 'MX')
   } catch (err) {
+    // An `error` overwrites a previous `verified` on purpose: a resolver that
+    // would not answer means we no longer know, and "we no longer know" is the
+    // honest state to render.
+    await rememberMx(ctx, row.id, 'error', null, checkedAt)
     return json({
       object: 'receiving_check',
       domain: row.name,
       status: 'error' as const,
       found: null,
       expected: '*.mx.cloudflare.net',
+      checked_at: checkedAt,
       detail: `The MX lookup did not complete: ${err instanceof Error ? err.message : String(err)}. That is not evidence the domain is wrong — try again.`,
       mailboxes: await mailboxSummary(ctx, row.name),
     })
@@ -450,16 +575,43 @@ domains.post('/:id/receiving-check', async (c) => {
         ? 'This domain publishes no MX at all, so nothing can deliver mail to it. Enable Email Routing on the zone and Cloudflare publishes the records itself.'
         : `This domain's mail is delivered somewhere else (${found}). Receiving through MailySend needs the MX pointed at Cloudflare Email Routing; changing it moves *all* mail for this domain.`
 
+  await rememberMx(ctx, row.id, status, found, checkedAt)
+
   return json({
     object: 'receiving_check',
     domain: row.name,
     status,
     found,
     expected: '*.mx.cloudflare.net',
+    checked_at: checkedAt,
     detail,
     mailboxes: await mailboxSummary(ctx, row.name),
   })
 })
+
+/**
+ * Memoises the MX observation so the next page load starts from a fact.
+ *
+ * No cache bust: `resolveDomain` on the send path does not read these columns,
+ * and busting for a receiving observation would throw away a hot sending row
+ * for nothing.
+ */
+async function rememberMx(
+  ctx: Ctx,
+  domainId: string,
+  status: 'pending' | 'verified' | 'failed' | 'error',
+  found: string | null,
+  checkedAt: string,
+): Promise<void> {
+  await ctx.sql
+    .prepare(
+      `UPDATE domains SET receiving_mx_status = ?, receiving_mx_found = ?,
+              receiving_checked_at = ?, updated_at = ?
+        WHERE id = ? AND workspace_id = ?`,
+    )
+    .bind(status, found, checkedAt, checkedAt, domainId, ctx.workspace.id)
+    .run()
+}
 
 /**
  * The other half of "why did nothing arrive": routing can be perfect and the
@@ -540,6 +692,7 @@ domains.post('/:id/identity', async (c) => {
     await writeRecords(
       ctx,
       row.id,
+      row.name,
       state.records.map((record) => ({ ...record, provider: provider.name as ProviderTag })),
     )
   }
@@ -817,6 +970,34 @@ interface RequiredRecord extends DnsRequirement {
 }
 
 /**
+ * The transport a domain created right now should be bound to.
+ *
+ * A new domain used to be created unbound, which made `requiredRecords()` union
+ * every transport the router could yield — so the customer published records
+ * authorising transports their mail would never leave through, and an apex SPF
+ * that had to be merged to stay legal. Binding at create time to the transport
+ * the workspace would *actually* send through makes the published records a true
+ * statement about this domain's mail.
+ *
+ * The router comes first because it is the thing that will pick: a workspace
+ * with SES configured sends through SES, and binding such a domain to Cloudflare
+ * would publish Cloudflare's records and then pin the send to a transport the
+ * router does not carry.
+ *
+ * A static `MS_DEFAULT_PROVIDER ?? 'cloudflare'` would be wrong for a concrete
+ * reason worth writing down: with `MS_DEFAULT_PROVIDER=ses` and no SES keys it
+ * binds `ses`, `requiredRecords()` filters the router to a name it does not
+ * have, and the domain gets *zero* records — strictly worse than the union. The
+ * `'cloudflare'` tail is safe only because `recordsOnlyProvider('cloudflare')`
+ * is the one transport that yields records with no credentials.
+ */
+async function defaultBinding(ctx: Ctx): Promise<Provider['name']> {
+  const router = await buildRouter(ctx.sql, ctx.workspace.id, ctx.env)
+  const first = router.providers[0]?.name as Provider['name'] | undefined
+  return first ?? (await resolveDefaultProvider(ctx.env)) ?? 'cloudflare'
+}
+
+/**
  * What this domain actually has to publish.
  *
  * When the domain names a transport, that transport alone decides — which is
@@ -945,7 +1126,23 @@ const dnsRecordId = (domainId: string, r: RequiredRecord): string => {
   return `${domainId}:${r.record}:${r.name.toLowerCase()}:${hash.toString(36)}`
 }
 
-async function writeRecords(ctx: Ctx, domainId: string, records: RequiredRecord[]): Promise<void> {
+/**
+ * Rewrites the record set, and invalidates the cached row that just became a lie.
+ *
+ * The bust lives here rather than at each call site because one call site
+ * forgot it: `POST /:id/identity` reset `status` to `not_started` while
+ * `accept.ts` went on reading a cached `verified` row from KV, so live sends
+ * kept being accepted for up to 300 seconds against a domain whose records had
+ * been thrown away. The domain name is a parameter for exactly that reason —
+ * the cache key needs it, so the caller cannot omit the bust without also
+ * failing to compile.
+ */
+async function writeRecords(
+  ctx: Ctx,
+  domainId: string,
+  domainName: string,
+  records: RequiredRecord[],
+): Promise<void> {
   const statements = [
     // Every row is about to be re-inserted as `not_started`, so the domain's own
     // `verified` is now a claim about records that no longer exist. Leaving it
@@ -984,6 +1181,7 @@ async function writeRecords(ctx: Ctx, domainId: string, records: RequiredRecord[
     ),
   ]
   await ctx.sql.batch(statements)
+  ctx.background(ctx.cache.delete(kvKey.domain(ctx.workspace.id, domainName)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1144,6 +1342,10 @@ interface DomainRow {
   click_tracking: number
   tls?: string
   dmarc_policy: string | null
+  /** Null means nobody has run a receiving check yet — not that one failed. */
+  receiving_mx_status: string | null
+  receiving_mx_found: string | null
+  receiving_checked_at: string | null
   learned_daily_quota: number | null
   last_verified_at: string | null
   provider: string | null
@@ -1171,7 +1373,8 @@ async function loadDomain(ctx: Ctx, id: string): Promise<DomainRow> {
   const row = await ctx.sql
     .prepare(
       `SELECT id, name, status, region, dkim_selector, custom_return_path, open_tracking,
-              click_tracking, tls, dmarc_policy, learned_daily_quota, last_verified_at, provider,
+              click_tracking, tls, dmarc_policy, receiving_mx_status, receiving_mx_found,
+              receiving_checked_at, learned_daily_quota, last_verified_at, provider,
               created_at
          FROM domains WHERE id = ? AND workspace_id = ?`,
     )

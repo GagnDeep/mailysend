@@ -280,6 +280,27 @@ async function attempt(job: SendJob, env: Env, sql: Sql): Promise<void> {
     )
   }
 
+  /**
+   * A pin the router cannot satisfy, named.
+   *
+   * `select()` returns `null` for an unsatisfiable pin, so `send` fell through
+   * to "No sending provider is configured" — a lie when three transports are
+   * configured and the domain is bound to a fourth. Checked here rather than in
+   * the router because only this layer knows the pin came from a domain binding
+   * and can say which domain to go and look at.
+   */
+  if (envelope.provider && !router.providers.some((p) => p.name === envelope.provider)) {
+    throw new SendError(
+      'permanent',
+      envelope.provider,
+      `\`${envelope.domain.name}\` is bound to the ${envelope.provider} transport, and this ` +
+        `workspace has no working ${envelope.provider} configuration. Configure it under ` +
+        'Settings → Transports, or rebind the domain to a transport that is configured. ' +
+        'This send was not failed over, because the records published for this domain ' +
+        'authorise that transport and no other.',
+    )
+  }
+
   try {
     const result = await router.send(outbound, envelope.provider ? { pin: envelope.provider } : {})
     await recordSent(sql, env, envelope, result)

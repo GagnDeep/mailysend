@@ -37,6 +37,26 @@ export const domains = sqliteTable(
       .default('opportunistic'),
     dmarcPolicy: text('dmarc_policy'),
     /**
+     * The last MX observation, memoised so a page load can say something about
+     * receiving without resolving anything.
+     *
+     * Named `mx` and not `receiving` on purpose. A verified MX proves mail for
+     * this domain reaches Cloudflare Email Routing; it proves nothing about
+     * whether Email Routing's catch-all rule is bound to this Worker, which is
+     * not readable over Cloudflare's API. There is deliberately no
+     * `receiving_ready` column, because there is no observation that would
+     * justify setting one.
+     *
+     * Null is not `pending`: null is "nobody has looked", `pending` is "we
+     * looked and the domain publishes no MX at all" — the same distinction
+     * `dmarc_policy` already draws.
+     */
+    receivingMxStatus: text('receiving_mx_status', {
+      enum: ['pending', 'verified', 'failed', 'error'],
+    }),
+    receivingMxFound: text('receiving_mx_found'),
+    receivingCheckedAt: text('receiving_checked_at'),
+    /**
      * Learned by SendingDomainDO from provider rejections, never assumed.
      * Cloudflare's daily quota ramps with reputation and is not published, so the
      * only honest way to know it is to observe where sends start failing.
