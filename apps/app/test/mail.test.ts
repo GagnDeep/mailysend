@@ -172,6 +172,53 @@ describe('receiving', () => {
     expect(boxes.results[0]?.domain).toBe('acme.dev')
   })
 
+  /**
+   * The bytes reach R2 with their length declared.
+   *
+   * R2 rejects a stream it cannot size — *"Provided readable stream must have
+   * a known length"* — and `message.raw` is exactly that kind of stream. The
+   * exception was thrown inside Cloudflare's mail pipeline and reached the
+   * sender as `upstream (worker:…) temporary error: worker script threw an
+   * exception`, with nothing in the product to show for it.
+   *
+   * No test here could see it: this file runs in node, where the fake bucket
+   * takes any stream. So the runtime API is stubbed instead, and what is
+   * asserted is the thing that was missing — that the handler declares the
+   * size it was given rather than handing R2 a bare stream.
+   */
+  it('gives R2 a stream whose length it can know', async () => {
+    const declared: number[] = []
+    class FakeFixedLengthStream extends TransformStream {
+      constructor(size: number) {
+        super()
+        declared.push(size)
+      }
+    }
+    const globals = globalThis as { FixedLengthStream?: unknown }
+    const had = 'FixedLengthStream' in globals
+    globals.FixedLengthStream = FakeFixedLengthStream
+
+    try {
+      const raw = mime({ to: 'sized@acme.dev' })
+      await handleInboundEmail(
+        {
+          from: 'ana@example.com',
+          to: 'sized@acme.dev',
+          raw: new Response(raw).body!,
+          rawSize: raw.length,
+          headers: new Headers(),
+          setReject: () => {},
+        },
+        h.env,
+      )
+      expect(declared).toEqual([raw.length])
+      const stored = await h.blob.list({ prefix: 'rawin/' })
+      expect(stored.objects).toHaveLength(1)
+    } finally {
+      if (!had) globals.FixedLengthStream = undefined
+    }
+  })
+
   /** And the second message reuses the mailbox the first one created. */
   it('adopts a domain once, not once per message', async () => {
     for (const to of ['one@acme.dev', 'two@acme.dev']) {

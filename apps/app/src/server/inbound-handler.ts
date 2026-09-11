@@ -186,6 +186,42 @@ async function adoptDomain(
   return row ? { ...row, matched: 'catch_all' as const } : null
 }
 
+/**
+ * R2 refuses a stream whose length it cannot know.
+ *
+ * `message.raw` is a bare `ReadableStream`, and `BUCKET.put` rejects one of
+ * those with *"Provided readable stream must have a known length (request or
+ * response body or readable half of FixedLengthStream)"* — an exception thrown
+ * inside Cloudflare's mail pipeline, which the sender sees as
+ * `upstream (worker:…) temporary error: worker script threw an exception` and
+ * which no test in this repo could reach: `apps/app/test` runs in a node
+ * environment whose fake bucket accepts any stream at all.
+ *
+ * This deployment went a long time without hitting it because every inbound
+ * message was rejected at the mailbox lookup and never got as far as R2. The
+ * first message that was accepted was the first one to reach this line.
+ *
+ * `FixedLengthStream` is the documented way to declare that length, and
+ * `rawSize` is the number the runtime already hands us, so the bytes are still
+ * streamed rather than buffered. It only exists on the Workers runtime; under
+ * node the raw stream is passed through unchanged, which is what the fake
+ * bucket wants anyway.
+ */
+function withKnownLength(raw: ReadableStream, size: number): ReadableStream {
+  const Fixed = (
+    globalThis as unknown as {
+      FixedLengthStream?: new (
+        n: number,
+      ) => {
+        readable: ReadableStream
+        writable: WritableStream
+      }
+    }
+  ).FixedLengthStream
+  if (typeof Fixed !== 'function') return raw
+  return raw.pipeThrough(new Fixed(size) as unknown as ReadableWritablePair)
+}
+
 export async function handleInboundEmail(message: EmailMessageLike, env: Env): Promise<void> {
   const to = message.to.toLowerCase()
   const workspaceId = await resolveWorkspace(env, to)
@@ -218,9 +254,10 @@ export async function handleInboundEmail(message: EmailMessageLike, env: Env): P
   const inboundId = newId('inbound')
   const rawKey = r2Key.rawInbound(workspaceId, inboundId)
 
-  // `message.raw` is a stream and is passed straight through — buffering a
-  // 25 MB message here would be the one thing this handler must not do.
-  await env.BUCKET.put(rawKey, message.raw, {
+  // Streamed, not buffered — a 25 MB message held in memory here is the one
+  // thing this handler must not do — but with its length declared, because R2
+  // will not take a stream without one. See `withKnownLength`.
+  await env.BUCKET.put(rawKey, withKnownLength(message.raw, message.rawSize), {
     httpMetadata: { contentType: 'message/rfc822' },
     customMetadata: { from: message.from, to, size: String(message.rawSize) },
   })
