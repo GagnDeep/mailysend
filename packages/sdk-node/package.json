@@ -1,9 +1,9 @@
 {
   "name": "mailysend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
-  "description": "The official MailySend SDK. Resend-compatible, dependency-free, runs anywhere fetch does.",
+  "description": "The MailySend SDK and CLI. Resend-compatible, dependency-free, runs anywhere fetch does.",
   "homepage": "https://mailysend.com/docs#sdks",
   "repository": {
     "type": "git",
@@ -22,6 +22,9 @@
     "self-hosted",
     "sdk"
   ],
+  "bin": {
+    "mailysend": "./dist/cli.js"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
@@ -48,9 +51,22 @@
   "engines": {
     "node": ">=20"
   },
+  "peerDependencies": {
+    "@react-email/render": "*",
+    "mjml": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-email/render": {
+      "optional": true
+    },
+    "mjml": {
+      "optional": true
+    }
+  },
   "scripts": {
-    "build": "pnpm run build:js && pnpm run build:types",
-    "build:js": "esbuild src/index.ts src/compat.ts --bundle --format=esm --platform=neutral --target=es2022 --outdir=dist",
+    "build": "pnpm run build:cli && pnpm run build:js && pnpm run build:types",
+    "build:cli": "pnpm --filter @mailysend/cli run build && node -e \"const f=require('node:fs');f.mkdirSync('dist',{recursive:true});f.copyFileSync('../../cli/dist/mailysend.js','dist/cli.js')\"",
+    "build:js": "esbuild src/index.ts src/compat.ts --bundle --format=esm --platform=neutral --target=es2022 --outdir=dist --external:@react-email/render",
     "build:types": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "prepublishOnly": "pnpm run build"
