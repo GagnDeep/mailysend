@@ -1,4 +1,5 @@
 import { newId, r2Key } from '@mailysend/core'
+import { compileLogFilters, LOG_COLUMNS } from '../api/logs.ts'
 import { tenancyFor } from '../context.ts'
 import type { Env } from '../env.ts'
 
@@ -12,14 +13,45 @@ import type { Env } from '../env.ts'
  * querying AE back out.
  */
 
+/**
+ * `logs.export` is the shape `GET /v1/logs/export` actually sends. The union
+ * used to declare `{ type: 'export', query }`, which nothing ever produced —
+ * so the job fell through to the query branch with `format` and `filters`
+ * sitting unread on it, and every export came back as the whole workspace in
+ * CSV whatever had been asked for.
+ */
 export type ExportJob =
   | { type: 'compact'; workspace_id: string; month: string; prefix: string }
-  | { type: 'export'; workspace_id: string; export_id: string; query: Record<string, unknown> }
+  | {
+      type: 'logs.export'
+      workspace_id: string
+      export_id: string
+      environment: string
+      format: 'csv' | 'ndjson'
+      filters: Record<string, string>
+      requested_by?: string | null
+      created_at?: string
+    }
 
 export async function runExport(job: ExportJob, env: Env): Promise<void> {
   if (job.type === 'compact') return compactMonth(job, env)
-  return runQueryExport(job, env)
+  if (job.type === 'logs.export') return runQueryExport(job, env)
+  // Dispatched by name rather than by elimination. The queue also carries
+  // `placement.test`, which `POST /v1/analytics/placement-tests` produces and
+  // nothing consumes; falling through to the export branch ran the wrong job
+  // against it instead of saying so.
+  console.warn(`[export] no handler for job type ${(job as { type: string }).type}`)
 }
+
+/**
+ * A hard ceiling, stated rather than discovered.
+ *
+ * The worker builds the file in memory, so "all of it" is not an option it can
+ * honour. The export says how many rows it holds and whether it was cut short,
+ * which is the difference between a truncated file and a truncated file you
+ * know about.
+ */
+const MAX_ROWS = 100_000
 
 /**
  * Compaction.
@@ -55,26 +87,46 @@ async function compactMonth(job: Extract<ExportJob, { type: 'compact' }>, env: E
 }
 
 async function runQueryExport(
-  job: Extract<ExportJob, { type: 'export' }>,
+  job: Extract<ExportJob, { type: 'logs.export' }>,
   env: Env,
 ): Promise<void> {
   const sql = tenancyFor(env).db(job.workspace_id)
+  const format = job.format === 'ndjson' ? 'ndjson' : 'csv'
+
+  // The same compiler `GET /v1/logs` uses, so the file is the page the operator
+  // was looking at rather than an approximation of it.
+  const filters = compileLogFilters(
+    job.workspace_id,
+    job.environment,
+    new URLSearchParams(job.filters ?? {}),
+  )
+
   const { results } = await sql
     .prepare(
-      `SELECT id, from_address, to_addresses, subject, status, provider, provider_message_id,
-              open_count, click_count, sent_at, delivered_at, created_at
-         FROM messages WHERE workspace_id = ? ORDER BY id DESC LIMIT 100000`,
+      `SELECT ${LOG_COLUMNS} FROM messages
+        WHERE ${filters.where}
+        ORDER BY id DESC LIMIT ?`,
     )
-    .bind(job.workspace_id)
+    .bind(...filters.args, MAX_ROWS + 1)
     .all<Record<string, unknown>>()
 
-  const header = Object.keys(results[0] ?? { id: '' }).join(',')
-  const rows = results.map((row) => Object.values(row).map(csvCell).join(','))
-  const key = r2Key.export(job.workspace_id, job.export_id, 'messages.csv')
-  await env.BUCKET.put(key, [header, ...rows].join('\n'), {
+  const truncated = results.length > MAX_ROWS
+  const rows = truncated ? results.slice(0, MAX_ROWS) : results
+
+  const file = format === 'ndjson' ? 'messages.ndjson' : 'messages.csv'
+  const body =
+    format === 'ndjson'
+      ? rows.map((row) => JSON.stringify(row)).join('\n')
+      : [
+          Object.keys(rows[0] ?? { id: '' }).join(','),
+          ...rows.map((row) => Object.values(row).map(csvCell).join(',')),
+        ].join('\n')
+
+  const key = r2Key.export(job.workspace_id, job.export_id, file)
+  await env.BUCKET.put(key, body, {
     httpMetadata: {
-      contentType: 'text/csv',
-      contentDisposition: 'attachment; filename="messages.csv"',
+      contentType: format === 'ndjson' ? 'application/x-ndjson' : 'text/csv',
+      contentDisposition: `attachment; filename="${file}"`,
     },
   })
 
@@ -89,7 +141,14 @@ async function runQueryExport(
     .bind(
       job.workspace_id,
       `export:${job.export_id}`,
-      JSON.stringify({ status: 'ready', key, rows: results.length }),
+      JSON.stringify({
+        status: 'complete',
+        key,
+        rows: rows.length,
+        format,
+        truncated,
+        max_rows: MAX_ROWS,
+      }),
       new Date().toISOString(),
     )
     .run()

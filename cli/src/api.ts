@@ -87,6 +87,28 @@ export class ApiClient {
     return this.request<T>(path, { method: 'PATCH', body })
   }
 
+  put<T>(path: string, body?: unknown) {
+    return this.request<T>(path, { method: 'PUT', body })
+  }
+
+  /**
+   * The raw response, for the one endpoint whose body is a file rather than
+   * JSON. It goes through here rather than a bare `fetch(url)` so the download
+   * carries the same `Authorization` header as everything else — the
+   * alternative is a pre-signed URL, which is a bearer token for the data
+   * sitting in a query string.
+   */
+  async stream(path: string, query?: RequestOptions['query']): Promise<Response> {
+    const response = await fetch(this.url(path, query ?? {}), {
+      headers: { authorization: `Bearer ${this.#apiKey}` },
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new ApiCallError(response.status, (safeJson(text) ?? {}) as Partial<ErrorBody>)
+    }
+    return response
+  }
+
   delete<T>(path: string) {
     return this.request<T>(path, { method: 'DELETE' })
   }

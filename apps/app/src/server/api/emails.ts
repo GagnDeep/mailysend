@@ -228,7 +228,7 @@ emails.get('/:id/events', async (c) => {
   if (!ctx.features.eventDetail) {
     throw apiError('not_implemented', {
       message:
-        'Per-event detail is disabled on this deployment (EVENT_DETAIL=off). Timelines are reconstructed from the archive; use /v1/exports instead.',
+        'Per-event detail is disabled on this deployment (EVENT_DETAIL=off). Timelines are reconstructed from the archive; use GET /v1/logs/export instead.',
     })
   }
   const rows = await ctx.sql

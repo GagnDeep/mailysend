@@ -12,6 +12,7 @@ import { broadcasts } from './broadcasts.ts'
 import { contacts } from './contacts.ts'
 import { domains } from './domains.ts'
 import { emails } from './emails.ts'
+import { exports } from './exports.ts'
 import { inbound } from './inbound.ts'
 import { instance } from './instance.ts'
 import { logs } from './logs.ts'
@@ -70,6 +71,7 @@ api.route('/templates', templates)
 api.route('/suppressions', suppressions)
 api.route('/webhooks', webhooks)
 api.route('/logs', logs)
+api.route('/exports', exports)
 api.route('/analytics', analytics)
 api.route('/inbound', inbound)
 api.route('/mail', mail)

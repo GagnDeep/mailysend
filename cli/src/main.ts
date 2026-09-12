@@ -6,8 +6,6 @@ import { domainsFlags, domainsSet, domainsSetFlags, domainsVerify } from './comm
 import { importResend, importResendFlags } from './commands/import-resend.ts'
 import { login, loginFlags } from './commands/login.ts'
 import {
-  alertsAdd,
-  alertsFlags,
   exportData,
   exportFlags,
   rollback,
@@ -71,8 +69,8 @@ export const ENTRIES: Entry[] = [
   },
   {
     match: ['tail'],
-    summary: 'Stream live events from the workspace',
-    usage: 'mailysend tail [--filter email.bounced] [--json]',
+    summary: 'Follow the message log',
+    usage: 'mailysend tail [--status bounced] [--json]',
     flags: tailFlags,
     run: tail,
   },
@@ -135,17 +133,10 @@ export const ENTRIES: Entry[] = [
   },
   {
     match: ['export'],
-    summary: 'Export contacts, logs or events',
-    usage: 'mailysend export --resource contacts -o contacts.csv',
+    summary: 'Export the message log to a file',
+    usage: 'mailysend export --status bounced --format ndjson -o bounces.ndjson',
     flags: exportFlags,
     run: exportData,
-  },
-  {
-    match: ['alerts', 'add'],
-    summary: 'Create a deliverability alert',
-    usage: 'mailysend alerts add --metric bounce_rate --above 0.05 --target ops@acme.com',
-    flags: alertsFlags,
-    run: alertsAdd,
   },
   {
     match: ['login'],

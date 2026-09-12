@@ -52,10 +52,19 @@ interface Filters {
  * Filters compile to conditions on `messages`, with tags as an EXISTS against
  * `message_tags` rather than a JOIN — a JOIN would multiply rows by tag count
  * and quietly break both the page size and the cursor.
+ *
+ * Exported because the export worker compiles the same filter set against the
+ * same table. It used to ignore the filters entirely and dump the workspace;
+ * sharing the compiler is what makes "the export is the page you were looking
+ * at" true rather than aspirational.
  */
-function buildFilters(ctx: Ctx, q: URLSearchParams): Filters {
+export function compileLogFilters(
+  workspaceId: string,
+  environment: string,
+  q: URLSearchParams,
+): Filters {
   const clauses = ['workspace_id = ?', 'environment = ?']
-  const args: unknown[] = [ctx.workspace.id, ctx.actor.environment]
+  const args: unknown[] = [workspaceId, environment]
 
   const status = q.get('status')
   if (status) {
@@ -167,7 +176,7 @@ const toLog = (row: LogRow) => ({
   created_at: row.created_at,
 })
 
-const COLUMNS = `id, from_address, to_addresses, subject, status, provider, provider_message_id,
+export const LOG_COLUMNS = `id, from_address, to_addresses, subject, status, provider, provider_message_id,
                  domain_id, broadcast_id, automation_id, contact_id, open_count, click_count,
                  bounce_class, smtp_code, smtp_response, error_message, size_bytes, attempts,
                  scheduled_at, sent_at, delivered_at, created_at`
@@ -177,11 +186,11 @@ logs.get('/', async (c) => {
   const q = new URL(c.req.url).searchParams
   const limit = parseLimit(q.get('limit') ?? undefined)
   const cursor = q.get('cursor')
-  const filters = buildFilters(ctx, q)
+  const filters = compileLogFilters(ctx.workspace.id, ctx.actor.environment, q)
 
   const rows = await ctx.sql
     .prepare(
-      `SELECT ${COLUMNS} FROM messages
+      `SELECT ${LOG_COLUMNS} FROM messages
         WHERE ${filters.where} ${cursor ? 'AND id < ?' : ''}
         ORDER BY id DESC LIMIT ?`,
     )
@@ -210,7 +219,7 @@ logs.get('/export', async (c) => {
   }
   // Built (and thrown away) here so a bad filter is a 422 now rather than a
   // failed job the user only discovers when the email never arrives.
-  buildFilters(ctx, q)
+  compileLogFilters(ctx.workspace.id, ctx.actor.environment, q)
 
   const id = newId('event')
   await ctx.env.EXPORT_QUEUE.send({
@@ -234,7 +243,7 @@ logs.get('/:id', async (c) => {
   const id = c.req.param('id')
 
   const row = await ctx.sql
-    .prepare(`SELECT ${COLUMNS} FROM messages WHERE id = ? AND workspace_id = ?`)
+    .prepare(`SELECT ${LOG_COLUMNS} FROM messages WHERE id = ? AND workspace_id = ?`)
     .bind(id, ctx.workspace.id)
     .first<LogRow>()
   if (!row) throw apiError('not_found')

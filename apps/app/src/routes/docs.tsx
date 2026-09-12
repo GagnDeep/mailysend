@@ -822,12 +822,12 @@ function DocsPage() {
               className="mt-3.5"
               copyable
               lines={[
-                { kind: 'command', text: 'npx mailysend login' },
+                { kind: 'command', text: 'npx mailysend login --url https://mail.acme.dev' },
                 {
                   kind: 'command',
                   text: 'npx mailysend send --from hi@acme.dev --to me@acme.dev --template tpl_welcome',
                 },
-                { kind: 'command', text: 'npx mailysend tail --filter email.bounced' },
+                { kind: 'command', text: 'npx mailysend tail --status bounced' },
                 { kind: 'command', text: 'npx mailysend domains verify acme.dev' },
                 ...DEPLOY_LINES.filter((line) => line.kind === 'command'),
               ]}

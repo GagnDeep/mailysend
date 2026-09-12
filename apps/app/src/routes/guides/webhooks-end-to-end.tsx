@@ -613,10 +613,10 @@ function Page() {
               <strong className="text-ink">One honest limit.</strong> Replay rebuilds the body from
               the stored event, so it needs that event to still be in the detail store. Past that
               retention it cannot be replayed and the API says so explicitly rather than delivering
-              you a plausible-looking reconstruction — the error names <Mono>/v1/exports</Mono> as
-              where to retrieve it from the archive instead. A webhook body invented after the fact
-              would be worse than an error, because you would have no way to tell it apart from a
-              real one.
+              you a plausible-looking reconstruction — the error names{' '}
+              <Mono>GET /v1/logs/export</Mono> as where to retrieve it from the message log instead.
+              A webhook body invented after the fact would be worse than an error, because you would
+              have no way to tell it apart from a real one.
             </p>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               If you are wiring up the credential side of this as well, the{' '}

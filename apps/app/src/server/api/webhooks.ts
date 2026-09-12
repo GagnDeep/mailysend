@@ -220,7 +220,7 @@ webhooks.post('/:id/deliveries/:delivery_id/replay', async (c) => {
   if (!payload) {
     throw apiError('not_found', {
       message:
-        'The event behind that delivery is no longer in the detail store, so it cannot be replayed. Use /v1/exports to retrieve it from the archive.',
+        'The event behind that delivery is no longer in the detail store, so it cannot be replayed. Use GET /v1/logs/export to retrieve it from the message log.',
     })
   }
 

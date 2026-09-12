@@ -97,25 +97,23 @@ const TEMPLATE_ROWS = [
 ]
 
 /**
- * Flags as the CLI spells them: `--from`/`--to` bound the window, `--output`
- * names the file, and the formats are the two the export job can write.
- * `--above` takes a fraction or a percentage; `0.08%` is the second.
+ * Flags as the CLI spells them: `--status` narrows to delivery states,
+ * `--from`/`--to` bound the window, `--output` names the file, and the formats
+ * are the two the export job can write.
+ *
+ * What is exported is the message log — the same rows, through the same filter
+ * compiler, as the page above. This block used to end with an `alerts add`
+ * invocation; there was no such command, no route behind it and no evaluator,
+ * so it has gone rather than been rephrased.
  */
 const EXPORT_LINES: TerminalLine[] = [
   {
     kind: 'command',
-    text: 'mailysend export --resource events --from 2026-08-13 --format ndjson \\',
+    text: 'mailysend export --status bounced,complained --from 2026-08-13 \\',
   },
-  { kind: 'output', text: '    -o events.ndjson' },
-  { kind: 'comment', text: 'writing  412,908 events · ndjson · 41 MB' },
-  { kind: 'success', text: '✓ done   events.ndjson' },
-  { kind: 'output', text: '' },
-  { kind: 'command', text: 'mailysend alerts add \\' },
-  {
-    kind: 'output',
-    text: '    --metric complaint_rate --above 0.08% --channel slack --target $SLACK_WEBHOOK',
-  },
-  { kind: 'success', text: '✓ alert  al_3Vd created' },
+  { kind: 'output', text: '    --format ndjson -o events.ndjson' },
+  { kind: 'comment', text: 'preparing  message log · ndjson' },
+  { kind: 'success', text: '✓ done   events.ndjson — 412,908 rows' },
 ]
 
 const filterChip = (label: string, active = false) => (
@@ -341,7 +339,7 @@ function AnalyticsPage() {
             <SectionHeader
               eyebrow="RAW DATA"
               title="Your events, your warehouse."
-              lede="Charts are the summary; the events are the truth. Every event is queryable over the API, streamable to a webhook, and exportable to object storage on a schedule — so analytics never becomes a reason you can’t leave."
+              lede="Charts are the summary; the events are the truth. Every event is queryable over the API, streamable to a webhook, and exportable to CSV or NDJSON from the CLI — so analytics never becomes a reason you can’t leave."
             />
             <a
               href="/docs#analytics"
@@ -352,7 +350,7 @@ function AnalyticsPage() {
           </div>
           <Terminal
             lines={EXPORT_LINES}
-            caption="EXPORT &amp; ALERTS"
+            caption="EXPORT"
             copyable
             className="min-w-0 rounded-card"
           />
