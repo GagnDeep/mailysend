@@ -1,7 +1,7 @@
 import { MailySendConnectionError, MailySendError } from './error.ts'
 import type { ErrorBody } from './types.ts'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 
 export interface ClientOptions {
   /** `ms_live_…` or `ms_test_…`. Falls back to `MAILYSEND_API_KEY` in the environment. */

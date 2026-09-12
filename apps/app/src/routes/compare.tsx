@@ -158,8 +158,7 @@ const STEPS = [
   {
     step: 2,
     title: 'Import your data',
-    description:
-      'Audiences, contacts, suppression list and 30 days of history, over their API or a CSV.',
+    description: 'Audiences, contacts and sending domains, over their API, resumably.',
   },
   {
     step: 3,
@@ -179,20 +178,28 @@ const STEPS = [
   },
 ]
 
+/**
+ * Every line here is a command the CLI actually accepts, with the flags it
+ * actually spells. `test/documented-commands.test.ts` keeps it that way.
+ *
+ * The last step is `traffic --set resend=100`, not `rollback`: `rollback` rolls
+ * a *template* back to an earlier version, and the way back from a traffic
+ * shift is the same command that made it.
+ */
 const MIGRATE_LINES: TerminalLine[] = [
-  { kind: 'command', text: 'npx mailysend import resend --key re_xxx --history 30d' },
+  { kind: 'command', text: 'npx mailysend import resend --resend-key re_xxx' },
   {
     kind: 'success',
-    text: '✓ 3 audiences · 28,700 contacts · 1,412 suppressions · 412k events',
+    text: '✓ 3 audiences · 28,700 contacts · 6 domains',
   },
   { kind: 'output', text: '' },
   { kind: 'command', text: 'npx mailysend domains set acme.dev --provider resend' },
   { kind: 'success', text: '✓ control plane switched · wire unchanged' },
   { kind: 'output', text: '' },
-  { kind: 'command', text: 'npx mailysend traffic acme.dev --cloudflare 10%' },
+  { kind: 'command', text: 'npx mailysend traffic --set cloudflare=10,resend=90' },
   { kind: 'success', text: '✓ 10% via cloudflare · placement dashboard live' },
   { kind: 'output', text: '' },
-  { kind: 'command', text: 'npx mailysend rollback' },
+  { kind: 'command', text: 'npx mailysend traffic --set resend=100' },
   { kind: 'success', text: '✓ back to 100% resend · 1.2s' },
 ]
 

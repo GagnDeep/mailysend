@@ -50,7 +50,11 @@ export const Route = createFileRoute('/docs')({
 })
 
 const DNS_RECORDS = [
-  ['TXT', 'send.yourdomain.com', 'v=spf1 include:spf.mailysend.com ~all'],
+  // The include names the transport that actually sends, not a hosted
+  // MailySend — there isn't one. This is the Cloudflare Email Service value
+  // that `packages/providers/src/adapters/cloudflare.ts` issues by default;
+  // SES and Resend domains get `include:amazonses.com` instead.
+  ['TXT', 'send.yourdomain.com', 'v=spf1 include:_spf.mx.cloudflare.net ~all'],
   ['TXT', 'ms1._domainkey', 'p=MIGfMA0GCSq… (2048-bit DKIM)'],
   ['TXT', '_dmarc', 'v=DMARC1; p=none; rua=mailto:dmarc@…'],
 ]
@@ -497,16 +501,21 @@ function DocsPage() {
             </Code>
           </AnchorSection>
 
-          <AnchorSection anchor="templates" heading="Templates (JSX, MJML, Handlebars)">
+          <AnchorSection anchor="templates" heading="Templates (react-email, MJML, Handlebars)">
             <Lede>
-              Store templates server-side, version every change, and send by{' '}
-              <Mono>template_id</Mono> — so marketing can fix a typo without a deploy. Or render
-              React locally and send HTML. Both paths preview against 40 clients.
+              Templates are{' '}
+              <a href="https://react.email" rel="noreferrer">
+                react-email
+              </a>{' '}
+              components — the same <Mono>@react-email/components</Mono> you already write. Store
+              them server-side, version every change, and send by <Mono>template_id</Mono> so
+              marketing can fix a typo without a deploy. Or render locally with <Mono>react</Mono>{' '}
+              and send the HTML. <Mono>.mjml</Mono> and <Mono>.hbs</Mono> files push the same way.
             </Lede>
             <Code>
-              <Com>{'// templates/LoginCode.jsx'}</Com>
+              <Com>{'// emails/LoginCode.tsx'}</Com>
               {'\nimport { Html, Text, Button } from '}
-              <Str>'@mailysend/jsx'</Str>
+              <Str>'@react-email/components'</Str>
               {
                 ';\n\nexport default ({ code }) => (\n  <Html>\n    <Text>Your code is {code}</Text>\n    <Button href='
               }
@@ -514,6 +523,14 @@ function DocsPage() {
               {'>Verify</Button>\n  </Html>\n);\n\n'}
               <Com>$ npx mailysend templates push # versioned, instant rollback</Com>
             </Code>
+            <Lede>
+              <Mono>templates push</Mono> compiles a <em>subset</em> of JSX to a data-only AST:
+              fifteen react-email components, plain HTML tags, <Mono>{'{expr}'}</Mono>,{' '}
+              <Mono>{'{cond && …}'}</Mono>, <Mono>{'{items.map(…)}'}</Mono> and the <Mono>f.*</Mono>{' '}
+              filters. Anything else is refused at push time with a diagnostic pointing at the line.
+              Nothing is ever evaluated when the mail renders, which is why a template cannot become
+              code execution.
+            </Lede>
           </AnchorSection>
 
           <AnchorSection anchor="audiences" heading="Audiences & contacts">
@@ -727,7 +744,9 @@ function DocsPage() {
           <AnchorSection anchor="smtp" heading="SMTP relay">
             <div className="rounded-tile border border-line bg-card p-[18px] font-mono text-[13px] leading-[2] text-ink">
               <div>
-                host<span className="text-muted-2"> ····· </span>smtp.mailysend.com
+                {/* The relay is a container you run — see the note below —
+                    so this host is yours, not one we operate. */}
+                host<span className="text-muted-2"> ····· </span>smtp.yourdomain.com
               </div>
               <div>
                 port<span className="text-muted-2"> ····· </span>587 (STARTTLS) · 465 (TLS) · 2587
@@ -786,6 +805,12 @@ function DocsPage() {
               beside it, because the block is `copyable` — every line here is
               something a reader will paste into a shell, so a flag that does
               not exist is a failed command rather than a typo in prose.
+
+              That check is now `cli/test/documented-commands.test.ts`, which
+              reads every `mailysend …` on this site and resolves it against
+              ENTRIES and the FlagSpecs. It was written because this comment was
+              the only place the claim existed, and six invocations elsewhere on
+              the site had drifted out from under it.
 
               `tail` used to read `--tag receipt --status bounced`; it takes
               neither, and the thing it does take is `--filter`, a list of event

@@ -92,10 +92,10 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     anchor: 'templates',
     group: 'SENDING',
-    navLabel: 'Templates (JSX)',
-    headline: 'Templates (JSX, MJML, Handlebars)',
+    navLabel: 'Templates (react-email)',
+    headline: 'Templates (react-email, MJML, Handlebars)',
     description:
-      'Version server-side templates and send by template_id, or render React locally and send HTML.',
+      'Push react-email components, MJML or Handlebars, version every change and send by template_id — or render React locally with the SDK and send the HTML.',
   },
   {
     anchor: 'audiences',

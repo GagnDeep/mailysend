@@ -96,13 +96,25 @@ const TEMPLATE_ROWS = [
   { label: 'tpl_winback', value: '97.4% · 1.8s', intent: 'muted' as const },
 ]
 
+/**
+ * Flags as the CLI spells them: `--from`/`--to` bound the window, `--output`
+ * names the file, and the formats are the two the export job can write.
+ * `--above` takes a fraction or a percentage; `0.08%` is the second.
+ */
 const EXPORT_LINES: TerminalLine[] = [
-  { kind: 'command', text: 'mailysend export --range 30d --to r2://acme-mail/events' },
-  { kind: 'comment', text: 'writing  412,908 events · parquet · 41 MB' },
-  { kind: 'success', text: '✓ done   r2://acme-mail/events/2026-09/*.parquet' },
+  {
+    kind: 'command',
+    text: 'mailysend export --resource events --from 2026-08-13 --format ndjson \\',
+  },
+  { kind: 'output', text: '    -o events.ndjson' },
+  { kind: 'comment', text: 'writing  412,908 events · ndjson · 41 MB' },
+  { kind: 'success', text: '✓ done   events.ndjson' },
   { kind: 'output', text: '' },
   { kind: 'command', text: 'mailysend alerts add \\' },
-  { kind: 'output', text: '    --metric complaint_rate --above 0.08% --notify slack' },
+  {
+    kind: 'output',
+    text: '    --metric complaint_rate --above 0.08% --channel slack --target $SLACK_WEBHOOK',
+  },
   { kind: 'success', text: '✓ alert  al_3Vd created' },
 ]
 

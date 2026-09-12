@@ -70,7 +70,7 @@ const C = ({ children }: { children: string }) => <span className="text-on-dark-
  * Resend integration, and that is the strongest thing this project has to say:
  * the official client resolves its base URL as
  * `process.env.RESEND_BASE_URL || 'https://api.resend.com'` (verified in
- * resend@6.27.0), so adopting MailySend is an environment variable rather than
+ * resend@6.28.0), so adopting MailySend is an environment variable rather than
  * a rewrite. Opening with `import { MailySend } from 'mailysend'` asked the
  * reader to learn a new SDK before they had a reason to, and buried the claim
  * that actually distinguishes the product. The first-party SDK keeps the tab
@@ -293,9 +293,9 @@ const PRODUCT_CARDS = [
   },
   {
     kicker: 'AUTHORING',
-    title: 'Templates in JSX',
+    title: 'Templates in react-email',
     description:
-      'Write email as React components, preview across 40 clients, version every template, render to HTML and plain text at the edge.',
+      'Write email with @react-email/components, preview the rendered HTML and plain-text fallback, version every template, render at the edge.',
     tags: ['react', 'mjml', 'handlebars'],
   },
 ]
@@ -332,9 +332,9 @@ const SURFACES = [
     code: ':587',
   },
   {
-    title: 'JSX email templates',
-    body: 'Component library + 40-client preview:',
-    code: 'npm i @mailysend/jsx',
+    title: 'react-email templates',
+    body: 'The components you already write, pushed and versioned:',
+    code: 'npm i @react-email/components',
   },
   {
     title: 'MCP server & agent skill',
@@ -962,7 +962,7 @@ function HomePage() {
         The AFTER block deliberately keeps `import { Resend } from 'resend'`. The
         official client resolves its base URL as
         `process.env.RESEND_BASE_URL || 'https://api.resend.com'` (verified in
-        resend@6.27.0), so the migration is an environment variable and not an
+        resend@6.28.0), so the migration is an environment variable and not an
         edit — which is a strictly stronger claim than swapping the import for
         `mailysend/compat`, and the one the README leads with. The shim and the
         first-party SDK stay in the prose: they are the explicit alternative, not
