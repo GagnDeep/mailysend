@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { OWNERSHIP_BADGE } from '~/components/marketing/claims.ts'
-import { DEPLOY_DURATION_LONG } from '~/components/marketing/deploy.tsx'
+import { DEPLOY_DURATION_LONG, DEPLOY_LINES } from '~/components/marketing/deploy.tsx'
 import { PageShell } from '~/components/marketing/page-shell.tsx'
 import {
   AnchorSection,
@@ -732,6 +732,18 @@ function DocsPage() {
                 </li>
               ))}
             </ul>
+            {/*
+              These are checked against `cli/src/main.ts` and the flag specs
+              beside it, because the block is `copyable` — every line here is
+              something a reader will paste into a shell, so a flag that does
+              not exist is a failed command rather than a typo in prose.
+
+              `tail` used to read `--tag receipt --status bounced`; it takes
+              neither, and the thing it does take is `--filter`, a list of event
+              types. `deploy --domain acme.dev` never existed either — see the
+              note on DEPLOY_LINES in components/marketing/deploy.tsx, which is
+              where the correct deploy pair lives.
+            */}
             <Terminal
               className="mt-3.5"
               copyable
@@ -739,11 +751,11 @@ function DocsPage() {
                 { kind: 'command', text: 'npx mailysend login' },
                 {
                   kind: 'command',
-                  text: 'npx mailysend send --to me@acme.dev --template tpl_welcome',
+                  text: 'npx mailysend send --from hi@acme.dev --to me@acme.dev --template tpl_welcome',
                 },
-                { kind: 'command', text: 'npx mailysend tail --tag receipt --status bounced' },
+                { kind: 'command', text: 'npx mailysend tail --filter email.bounced' },
                 { kind: 'command', text: 'npx mailysend domains verify acme.dev' },
-                { kind: 'command', text: 'npx mailysend deploy --domain acme.dev   # self-host' },
+                ...DEPLOY_LINES.filter((line) => line.kind === 'command'),
               ]}
             />
           </AnchorSection>
