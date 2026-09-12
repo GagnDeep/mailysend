@@ -2,7 +2,7 @@ import { apiError } from '@mailysend/contracts'
 import { base64url, hmacHex, timingSafeEqual } from '@mailysend/core'
 import { tenancyFor } from '../context.ts'
 import { getEnv } from '../env.ts'
-import { issueSession, normalizeEmail, sessionCookie } from '../session.ts'
+import { endDemoCookie, issueSession, normalizeEmail, sessionCookie } from '../session.ts'
 import { createRouter } from './base.ts'
 
 /**
@@ -320,6 +320,8 @@ oidc.get('/callback', async (c) => {
       // The flow cookie has done its job; leaving it set is a replayable
       // verifier sitting in the browser.
       ['set-cookie', flowCookie('', env.MS_PUBLIC_URL, 0)],
+      // And a session ends the demo tour — see `endDemoCookie`.
+      ['set-cookie', endDemoCookie],
     ],
   })
 })

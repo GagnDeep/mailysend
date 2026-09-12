@@ -93,6 +93,15 @@ export const PUBLIC_PAGES: PublicPage[] = [
     llms: { order: 50, heading: 'Product tour' },
   },
   {
+    path: '/demo',
+    label: 'Live demo',
+    blurb: 'The real dashboard, filled with sample data',
+    group: 'Product',
+    priority: 0.8,
+    changefreq: 'monthly',
+    llms: { order: 55, heading: 'Live demo' },
+  },
+  {
     path: '/use-cases',
     label: 'Use cases',
     blurb: 'OTPs, receipts, drips, inbound, agents',

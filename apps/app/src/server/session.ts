@@ -66,12 +66,30 @@ export async function issueSession(
   return token
 }
 
+/**
+ * Signing in ends the demo tour.
+ *
+ * On a shop-window deployment the same browser can hold both — the tour cookie
+ * lives eight hours and somebody who looked round and then signed in is the
+ * ordinary sequence, not a corner case. The client short-circuits every `/v1`
+ * call while the tour cookie is set, so leaving it would show a signed-in
+ * operator Acme's fixtures instead of their own mail. It has to be cleared
+ * here rather than in the browser: `ms_session` is `HttpOnly`, so no script
+ * can see that a session now exists.
+ */
+export const endDemoCookie = 'ms_demo_tour=; Path=/; Max-Age=0; SameSite=Lax; Secure'
+
 /** The whole response a successful sign-in produces, wherever it came from. */
-export const sessionResponse = (token: string, workspaceId: string, publicUrl: string): Response =>
-  Response.json(
-    { object: 'session', workspace_id: workspaceId },
-    { headers: { 'set-cookie': sessionCookie(token, publicUrl, SESSION_TTL_MS / 1000) } },
-  )
+export const sessionResponse = (
+  token: string,
+  workspaceId: string,
+  publicUrl: string,
+): Response => {
+  const headers = new Headers()
+  headers.append('set-cookie', sessionCookie(token, publicUrl, SESSION_TTL_MS / 1000))
+  headers.append('set-cookie', endDemoCookie)
+  return Response.json({ object: 'session', workspace_id: workspaceId }, { headers })
+}
 
 export const clientIp = (request: Request): string =>
   request.headers.get('cf-connecting-ip') ??

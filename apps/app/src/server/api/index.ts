@@ -10,6 +10,7 @@ import { automations } from './automations.ts'
 import { errorResponse, type Vars, withContext } from './base.ts'
 import { broadcasts } from './broadcasts.ts'
 import { contacts } from './contacts.ts'
+import { demo } from './demo.ts'
 import { domains } from './domains.ts'
 import { emails } from './emails.ts'
 import { exports } from './exports.ts'
@@ -86,6 +87,10 @@ api.route('/auth', auth)
 // deployment gets its first human. Both refuse to do anything once the instance
 // has an owner, which is the property that makes them safe to leave open.
 api.route('/instance', instance)
+// Unauthenticated too, and only mounted with anything behind it on a shop
+// window: `/v1/demo` files an address and hands back a cookie that is not a
+// credential. See the file for why that is safe.
+api.route('/demo', demo)
 api.route('/setup', setup)
 
 /**

@@ -338,6 +338,19 @@ function SignInPage() {
         </a>{' '}
         — {DEPLOY_DURATION} — then open <code className="font-mono text-[13.5px]">/setup</code> on
         your own domain.
+        {/* Only on the shop window. On somebody's own instance `/demo` says so
+            rather than opening, but a link to it here would still be an
+            invitation to a fake version of the dashboard they are signing into. */}
+        {instance?.landing === 'marketing' ? (
+          <>
+            {' '}
+            Or{' '}
+            <a href="/demo" className={AUTH_LINK}>
+              look round the dashboard first
+            </a>{' '}
+            with sample data — no account needed.
+          </>
+        ) : null}
       </p>
       <p className="mt-3.5 text-[13.5px] leading-[1.7] text-muted-2">
         Locked out with no passkey and no codes? Run{' '}

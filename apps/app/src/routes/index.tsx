@@ -546,15 +546,29 @@ function HomePage() {
             */}
             <GitHubButton />
             <Button asChild size="lg" variant="outline">
-              <a href="#compat">Swap Resend in one line</a>
+              <a href="/demo">Open the live demo</a>
             </Button>
           </div>
-          <a
-            href="/docs#quickstart"
-            className="mt-[18px] border-muted-3 border-b pb-0.5 text-[15px] text-muted no-underline hover:border-accent hover:text-accent"
-          >
-            or read the four-step quickstart
-          </a>
+          {/* Two "or"s rather than a fourth button: the demo is the thing to
+              promote, and the row above is already at the width where a fourth
+              action stops reading as a choice. */}
+          <p className="mt-[18px] m-0 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[15px] text-muted">
+            <a
+              href="#compat"
+              className="border-muted-3 border-b pb-0.5 text-muted no-underline hover:border-accent hover:text-accent"
+            >
+              or swap Resend in one line
+            </a>
+            <span aria-hidden="true" className="text-muted-3">
+              ·
+            </span>
+            <a
+              href="/docs#quickstart"
+              className="border-muted-3 border-b pb-0.5 text-muted no-underline hover:border-accent hover:text-accent"
+            >
+              read the four-step quickstart
+            </a>
+          </p>
           <div className="mt-[30px] flex flex-wrap justify-center gap-x-[22px] gap-y-2 font-mono text-[11.5px] tracking-[0.06em] text-muted-2">
             <span>MIT LICENSED</span>
             <span aria-hidden="true">·</span>
@@ -639,10 +653,10 @@ function HomePage() {
             description="Every event — accepted, delivered, opened, bounced — streams to your dashboard and your webhook."
           >
             <a
-              href="/dashboard-tour"
+              href="/demo"
               className="mt-3.5 inline-block text-[14px] font-semibold text-accent-on-dark no-underline hover:text-paper"
             >
-              See the dashboard →
+              Open the dashboard →
             </a>
           </StepCard>
         </div>
@@ -884,14 +898,19 @@ function HomePage() {
               payload you sent, the SMTP conversation, and every webhook attempt with its response
               code.
             </p>
-            <Button asChild>
-              <a href="/dashboard-tour">
-                Take the product tour
-                <span aria-hidden="true" className="font-mono text-[13px]">
-                  →
-                </span>
-              </a>
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button asChild>
+                <a href="/demo">
+                  Open the live demo
+                  <span aria-hidden="true" className="font-mono text-[13px]">
+                    →
+                  </span>
+                </a>
+              </Button>
+              <Button asChild variant="outline">
+                <a href="/dashboard-tour">Take the product tour</a>
+              </Button>
+            </div>
           </div>
 
           <div className="min-w-0 overflow-hidden rounded-card border border-line bg-card shadow-lg">

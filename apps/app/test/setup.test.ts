@@ -151,6 +151,11 @@ describe('the CLI claim', () => {
     expect(response.status).toBe(200)
     expect(h.cookieFrom(response)).toMatch(/^ms_session=/)
     expect(await isClaimed(h.sql)).toBe(true)
+    // The same response ends any demo tour this browser was in. The client
+    // answers every `/v1` call from fixtures while that cookie is set, and a
+    // signed-in operator must see their own mail — `ms_session` is `HttpOnly`,
+    // so no script could defer to it on its own.
+    expect(response.headers.getSetCookie().join(' ')).toContain('ms_demo_tour=;')
   })
 
   it('spends the nonce exactly once', async () => {

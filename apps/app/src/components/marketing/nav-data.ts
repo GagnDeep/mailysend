@@ -25,8 +25,13 @@ export interface NavGroup {
 
 export const PRODUCT_GROUP: NavGroup = {
   label: 'Product',
-  matches: ['/dashboard-tour', '/analytics', '/use-cases', '/stack'],
+  matches: ['/demo', '/dashboard-tour', '/analytics', '/use-cases', '/stack'],
   items: [
+    {
+      label: 'Live demo',
+      href: '/demo',
+      description: 'The real dashboard, filled with sample data',
+    },
     {
       label: 'Product tour',
       href: '/dashboard-tour',
@@ -76,6 +81,7 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
     title: 'PRODUCT',
     links: [
       { label: 'Overview', href: '/' },
+      { label: 'Live demo', href: '/demo' },
       { label: 'Product tour', href: '/dashboard-tour' },
       { label: 'Use cases', href: '/use-cases' },
       { label: 'Analytics', href: '/analytics' },

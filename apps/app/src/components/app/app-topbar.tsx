@@ -19,6 +19,7 @@ import {
 import { Link } from '@tanstack/react-router'
 import { Check, ChevronsUpDown, LogOut, Menu, Search, Settings, Users } from 'lucide-react'
 import { useState } from 'react'
+import { endDemo, useDemo } from '~/lib/demo/state.ts'
 import { AppSidebar } from './app-sidebar.tsx'
 import { useCommandPalette } from './command-palette.tsx'
 import { EnvironmentSwitcher } from './env-switcher.tsx'
@@ -76,6 +77,7 @@ const WorkspaceSwitcher = () => {
 
 const UserMenu = () => {
   const { user, userLoading } = useAppScope()
+  const demo = useDemo()
 
   if (userLoading) return <Skeleton className="size-8 rounded-pill" />
 
@@ -113,16 +115,32 @@ const UserMenu = () => {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {/* A real form POST, not a fetch: signing out must work even if the
-            client bundle has failed, which is exactly when someone wants out. */}
-        <DropdownMenuItem asChild>
-          <form method="post" action="/auth/sign-out">
-            <button type="submit" className="flex w-full items-center gap-2 text-left">
-              <LogOut aria-hidden="true" className="size-3.5" />
-              Sign out
-            </button>
-          </form>
-        </DropdownMenuItem>
+        {/* In the tour there is no session to end, and "Sign out" would post to
+            an endpoint that clears a cookie nobody holds — leaving the visitor
+            exactly where they were, which reads as a broken button. */}
+        {demo ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              void endDemo().then(() => {
+                window.location.href = '/'
+              })
+            }}
+          >
+            <LogOut aria-hidden="true" className="size-3.5" />
+            Leave the demo
+          </DropdownMenuItem>
+        ) : (
+          /* A real form POST, not a fetch: signing out must work even if the
+             client bundle has failed, which is exactly when someone wants out. */
+          <DropdownMenuItem asChild>
+            <form method="post" action="/auth/sign-out">
+              <button type="submit" className="flex w-full items-center gap-2 text-left">
+                <LogOut aria-hidden="true" className="size-3.5" />
+                Sign out
+              </button>
+            </form>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

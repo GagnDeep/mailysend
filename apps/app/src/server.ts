@@ -1,5 +1,6 @@
 import { queueRole } from '@mailysend/core'
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
+import { DEMO_COOKIE } from './server/api/demo.ts'
 import { api } from './server/api/index.ts'
 import { actorFromSession } from './server/auth.ts'
 import { configure, isClaimed } from './server/bootstrap.ts'
@@ -63,7 +64,17 @@ async function route(request: Request, env: Env, _ctx: ExecutionContextLike): Pr
     const sql = tenancyFor(env).db('')
     if (!(await isClaimed(sql))) return redirect('/setup')
     if (!(await actorFromSession(request, sql))) {
-      return redirect(`/sign-in?next=${encodeURIComponent(pathname + url.search)}`)
+      // The demo tour is the one way past this without a session, and only on
+      // a shop window. It is not an authentication bypass: the shell rendered
+      // here holds no data, every screen inside it is served from fixtures in
+      // the browser bundle, and a `/v1` request carrying this cookie and no
+      // session is still anonymous and still gets a 401.
+      const touring =
+        env.MS_LANDING === 'marketing' &&
+        (request.headers.get('cookie') ?? '').includes(`${DEMO_COOKIE}=1`)
+      if (!touring) {
+        return redirect(`/sign-in?next=${encodeURIComponent(pathname + url.search)}`)
+      }
     }
   }
 

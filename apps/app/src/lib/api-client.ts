@@ -16,6 +16,15 @@ import {
   Webhook,
 } from '@mailysend/contracts'
 import { z } from 'zod'
+import { DemoReadOnly, demoRawMessage, demoResponse } from './demo/router.ts'
+import { isDemo } from './demo/state.ts'
+
+/**
+ * The `code` on the tour's refusal. Exported because `errorMessage()` special-
+ * cases it: this is the product working as designed, not a failure with a
+ * support code worth printing.
+ */
+export const DEMO_CODE = 'demo_read_only'
 
 /**
  * The dashboard's only door to `/v1`.
@@ -107,6 +116,36 @@ export async function request<T>(
   init: RequestInitEx = {},
 ): Promise<T> {
   const { body, query, scope, headers, ...rest } = init
+
+  /**
+   * The product tour, served from the bundle.
+   *
+   * Every screen in the dashboard reaches the network through this function and
+   * nowhere else, so this one branch is what makes a demo possible without a
+   * second copy of any screen. The fixture goes through the same `schema.parse`
+   * the real response would have: a fixture that drifts from the contract is
+   * then a loud failure on the screen that reads it rather than a quietly wrong
+   * number, which is the only way a dataset this size stays honest.
+   *
+   * Nothing is written and nothing is sent. A mutation raises `DemoReadOnly`,
+   * which the screens already render the way they render any other refusal.
+   */
+  if (isDemo()) {
+    const method = (rest.method ?? 'GET').toUpperCase()
+    try {
+      return schema.parse(demoResponse(method, path, query))
+    } catch (error) {
+      if (error instanceof DemoReadOnly) {
+        throw new ApiClientError(
+          403,
+          { statusCode: 403, name: 'demo', message: error.message, code: DEMO_CODE },
+          error.message,
+        )
+      }
+      throw error
+    }
+  }
+
   const response = await fetch(`${baseUrl()}/v1${path}${buildQuery(query)}`, {
     ...rest,
     credentials: 'include',
@@ -1100,6 +1139,8 @@ export const createApiClient = (scope: RequestScope) => {
     listMailHeaders: (id: string) => get(`/mail/messages/${id}/headers`, list(MailHeader)),
     /** Not a JSON call: the raw `.eml` is bytes, and the reader shows them verbatim. */
     getMailRaw: async (id: string): Promise<string> => {
+      // Not routed through `request()`, so the tour has to be handled here too.
+      if (isDemo()) return demoRawMessage(id)
       const response = await fetch(`${baseUrl()}/v1/mail/messages/${id}/raw`, {
         credentials: 'include',
         headers: { [ENV_HEADER]: scope.environment },
@@ -1109,6 +1150,9 @@ export const createApiClient = (scope: RequestScope) => {
     },
     /** Fetched with credentials in the parent so the opaque-origin frame needs none. */
     getMailAttachmentBlob: async (id: string): Promise<Blob> => {
+      if (isDemo()) {
+        throw new ApiClientError(403, null, 'Attachments are not part of the demo data.')
+      }
       const response = await fetch(`${baseUrl()}/v1/mail/attachments/${id}`, {
         credentials: 'include',
         headers: { [ENV_HEADER]: scope.environment },
@@ -1117,6 +1161,7 @@ export const createApiClient = (scope: RequestScope) => {
       return response.blob()
     },
     uploadMailAttachment: async (file: File): Promise<MailUploadRecord> => {
+      if (isDemo()) throw new ApiClientError(403, null, new DemoReadOnly().message)
       const form = new FormData()
       form.set('file', file)
       const response = await fetch(`${baseUrl()}/v1/mail/attachments`, {

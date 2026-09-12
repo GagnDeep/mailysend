@@ -14,6 +14,7 @@ import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as CompareRouteImport } from './routes/compare'
 import { Route as DashboardTourRouteImport } from './routes/dashboard-tour'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResourcesRouteImport } from './routes/resources'
@@ -106,6 +107,11 @@ const CompareRoute = CompareRouteImport.update({
 const DashboardTourRoute = DashboardTourRouteImport.update({
   id: '/dashboard-tour',
   path: '/dashboard-tour',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsRoute = DocsRouteImport.update({
@@ -474,6 +480,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/compare': typeof CompareRoute
   '/dashboard-tour': typeof DashboardTourRoute
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
@@ -548,6 +555,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/compare': typeof CompareRoute
   '/dashboard-tour': typeof DashboardTourRoute
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
@@ -624,6 +632,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/compare': typeof CompareRoute
   '/dashboard-tour': typeof DashboardTourRoute
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/pricing': typeof PricingRoute
   '/resources': typeof ResourcesRoute
@@ -701,6 +710,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/compare'
     | '/dashboard-tour'
+    | '/demo'
     | '/docs'
     | '/pricing'
     | '/resources'
@@ -775,6 +785,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/compare'
     | '/dashboard-tour'
+    | '/demo'
     | '/docs'
     | '/pricing'
     | '/resources'
@@ -850,6 +861,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/compare'
     | '/dashboard-tour'
+    | '/demo'
     | '/docs'
     | '/pricing'
     | '/resources'
@@ -926,6 +938,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   CompareRoute: typeof CompareRoute
   DashboardTourRoute: typeof DashboardTourRoute
+  DemoRoute: typeof DemoRoute
   DocsRoute: typeof DocsRoute
   PricingRoute: typeof PricingRoute
   ResourcesRoute: typeof ResourcesRoute
@@ -1001,6 +1014,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard-tour'
       fullPath: '/dashboard-tour'
       preLoaderRoute: typeof DashboardTourRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -1556,6 +1576,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   CompareRoute: CompareRoute,
   DashboardTourRoute: DashboardTourRoute,
+  DemoRoute: DemoRoute,
   DocsRoute: DocsRoute,
   PricingRoute: PricingRoute,
   ResourcesRoute: ResourcesRoute,

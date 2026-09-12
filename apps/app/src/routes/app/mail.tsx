@@ -38,6 +38,7 @@ import { MailShortcuts } from '~/components/app/mail-shortcuts.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { EmptyState, ErrorState, TableSkeleton } from '~/components/app/states.tsx'
 import type { MailDraftRecord, MailThreadRecord } from '~/lib/api-client.ts'
+import { isDemo } from '~/lib/demo/state.ts'
 import { SEARCH_OPERATORS } from '~/lib/mail-search.ts'
 import { qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
@@ -1121,6 +1122,11 @@ function ThreadRow({ thread, active, cursored, checked, onCheck, onOpen, onStar 
 function useMailLiveUpdates(onEvent: () => void) {
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // The tour has no session, and `/v1/live` is session-only by design. Every
+    // other call it makes is answered from fixtures before it reaches the
+    // network; this one would reach it, be refused, and retry with backoff
+    // forever behind a banner that says nothing here is real.
+    if (isDemo()) return
     const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/v1/live`
     let socket: WebSocket | null = null
     let timer: ReturnType<typeof setTimeout> | null = null

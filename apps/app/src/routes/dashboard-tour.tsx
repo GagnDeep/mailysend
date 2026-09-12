@@ -436,11 +436,20 @@ AND country IN ('DE','FR')`}
             <div>
               <h2 className="ms-display-2">This, on your own domain, today.</h2>
               <p className="mt-3.5 max-w-[46ch] text-[16.5px] leading-[1.6] text-on-dark-3">
-                One click provisions it in your Cloudflare account. Nothing to cancel later.
+                One click provisions it in your Cloudflare account. Nothing to cancel later — or
+                click through the real thing first, filled with sample data.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <DeployButton chip="1-CLICK" variant="accent" size="lg" />
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="border-on-dark-3 text-paper hover:border-paper"
+              >
+                <a href="/demo">Open the live demo</a>
+              </Button>
               <Button asChild variant="ghost" className="text-on-dark-3 hover:text-paper">
                 <a href="/docs#quickstart">or read the quickstart first →</a>
               </Button>

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { AppSidebar } from '~/components/app/app-sidebar.tsx'
 import { AppTopbar } from '~/components/app/app-topbar.tsx'
 import { CommandPaletteProvider } from '~/components/app/command-palette.tsx'
+import { DemoBanner } from '~/components/app/demo-banner.tsx'
 import { EnvironmentBanner } from '~/components/app/env-switcher.tsx'
 import { RequireSession } from '~/components/app/require-session.tsx'
 import { AppScopeProvider } from '~/components/app/scope.tsx'
@@ -69,6 +70,9 @@ function AppLayout() {
                 </aside>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <AppTopbar />
+                  {/* Above the environment banner: "none of this is real" is a
+                      bigger fact than "this is the test environment". */}
+                  <DemoBanner />
                   <EnvironmentBanner />
                   {/* A mail client is an application, not a document: it wants
                       the whole viewport and three panes that scroll on their

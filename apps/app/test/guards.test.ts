@@ -65,6 +65,30 @@ describe('/app', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
 
+  /**
+   * The tour's cookie relaxes this redirect and nothing else. It is checked
+   * here rather than only in `demo-api.test.ts` because this is the place the
+   * check lives, and because getting it wrong in the other direction — letting
+   * the cookie through on a self-hosted instance — would put a fake dashboard
+   * in front of somebody expecting their own.
+   */
+  it('lets the demo tour render the shell on a shop window', async () => {
+    await claim()
+    const response = await get('/app/logs', envFor({ MS_LANDING: 'marketing' }), {
+      cookie: 'ms_demo_tour=1',
+    })
+    expect(response.status).not.toBe(302)
+  })
+
+  it("ignores the tour cookie on somebody's own instance", async () => {
+    await claim()
+    const response = await get('/app', envFor({ MS_LANDING: 'app' }), {
+      cookie: 'ms_demo_tour=1',
+    })
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toContain('/sign-in')
+  })
+
   it('refuses a session cookie that is not a session', async () => {
     await claim()
     const response = await get('/app', envFor(), { cookie: 'ms_session=not-a-real-token' })

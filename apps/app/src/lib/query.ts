@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { ApiClientError, type Environment } from './api-client.ts'
+import { ApiClientError, DEMO_CODE, type Environment } from './api-client.ts'
 
 /**
  * Query keys.
@@ -126,7 +126,11 @@ export const errorMessage = (error: unknown): string => {
     // still more use than a shrug: a reader who is told "502" knows to try
     // again and a reader told "Something went wrong" does not.
     const detail = error.body?.message
-    if (detail) return error.code ? `${detail} (${error.code})` : detail
+    // The code in parentheses is for a failure somebody might have to report.
+    // The demo's refusal is the product working as designed, and appending
+    // `(demo_read_only)` to a finished English sentence only makes it look
+    // like something broke.
+    if (detail) return error.code && error.code !== DEMO_CODE ? `${detail} (${error.code})` : detail
     if (error.status === 0 || error.status >= 500) {
       return `The server did not complete that request (${error.status || 'no response'}). Nothing was changed — try again.`
     }

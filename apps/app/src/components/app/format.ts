@@ -16,8 +16,16 @@ export const pct = (value: number | null | undefined, digits = 1): string =>
 export const ratio = (numerator: number, denominator: number, digits = 1): string =>
   denominator === 0 ? '—' : `${((numerator / denominator) * 100).toFixed(digits)}%`
 
+/**
+ * An hourly rollup's key is `YYYY-MM-DD/HH` (`hourKey`, packages/core/src/time.ts),
+ * which `Date` cannot parse — the Overview's chart was labelling every bar with
+ * the raw key. Normalise it to an instant before formatting.
+ */
+const HOUR_BUCKET = /^(\d{4}-\d{2}-\d{2})\/(\d{2})$/
+
 export const clockTime = (iso: string): string => {
-  const date = new Date(iso)
+  const hour = HOUR_BUCKET.exec(iso)
+  const date = new Date(hour ? `${hour[1]}T${hour[2]}:00:00Z` : iso)
   if (Number.isNaN(date.getTime())) return iso
   return date.toLocaleTimeString(undefined, { hour12: false })
 }

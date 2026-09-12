@@ -10,8 +10,11 @@ export const Kbd = ({ className, keys, children, ...props }: KbdProps) => {
   if (keys) {
     return (
       <span className="inline-flex items-center gap-1">
-        {keys.map((key) => (
-          <Kbd key={key} className={className} {...props}>
+        {/* Indexed, because a chord can repeat a key — `G G` opens agents —
+            and keying on the character itself made React drop the second cap. */}
+        {keys.map((key, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: position is the identity here
+          <Kbd key={`${key}-${index}`} className={className} {...props}>
             {key}
           </Kbd>
         ))}
