@@ -12,7 +12,9 @@ npm install mailysend
 ```ts
 import { MailySend } from 'mailysend'
 
-const mailysend = new MailySend(process.env.MAILYSEND_API_KEY)
+const mailysend = new MailySend(process.env.MAILYSEND_API_KEY, {
+  baseUrl: process.env.MAILYSEND_BASE_URL, // https://mail.acme.com
+})
 
 const { id } = await mailysend.emails.send({
   from: 'Acme <hello@acme.com>',
@@ -22,21 +24,33 @@ const { id } = await mailysend.emails.send({
 })
 ```
 
-The key is read from `MAILYSEND_API_KEY` if you do not pass one. Point `baseUrl`
-at your own deployment if you self-host:
+Both arguments fall back to the environment — `MAILYSEND_API_KEY` and
+`MAILYSEND_BASE_URL` — so in most apps the constructor is `new MailySend()`.
 
-```ts
-const mailysend = new MailySend(key, { baseUrl: 'https://mail.acme.com' })
-```
+The base URL is **required**, and there is no default. MailySend is deployed
+into your own Cloudflare account, so there is no address this client could guess
+that would be right for anybody; it is whatever URL your deployment answers on,
+with no trailing `/v1`. A missing one is refused at construction rather than
+allowed to surface later as a DNS failure a long way from its cause.
 
 ## Coming from Resend
 
-Change the import. That is the migration.
+Change the import, and point `RESEND_BASE_URL` at your deployment.
 
 ```diff
+  // RESEND_BASE_URL=https://mail.acme.com
 - import { Resend } from 'resend'
 + import { Resend } from 'mailysend/compat'
 ```
+
+`compat` reads `RESEND_BASE_URL` before `MAILYSEND_BASE_URL`, and `RESEND_API_KEY`
+before `MAILYSEND_API_KEY` — so an app that has already repointed that variable
+needs the import line and nothing else.
+
+You may not need this package at all. The official `resend` client resolves its
+host as `process.env.RESEND_BASE_URL || 'https://api.resend.com'`, so setting
+that variable moves an existing integration without changing a line of code.
+`compat` is for when you would rather be explicit about it.
 
 `mailysend/compat` reproduces Resend's method names, parameter names and
 `{ data, error }` return shape exactly — including the part where it never

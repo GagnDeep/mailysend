@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "description": "The official MailySend SDK. Resend-compatible, dependency-free, runs anywhere fetch does.",
-  "homepage": "https://mailysend.com/docs/sdk",
+  "homepage": "https://mailysend.com/docs#sdks",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/GagnDeep/mailysend.git",
@@ -14,9 +14,13 @@
     "email",
     "mailysend",
     "resend",
+    "resend-compatible",
     "transactional",
+    "broadcast",
     "smtp",
-    "cloudflare-workers"
+    "cloudflare-workers",
+    "self-hosted",
+    "sdk"
   ],
   "sideEffects": false,
   "exports": {
@@ -38,7 +42,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -47,11 +52,15 @@
     "build": "pnpm run build:js && pnpm run build:types",
     "build:js": "esbuild src/index.ts src/compat.ts --bundle --format=esm --platform=neutral --target=es2022 --outdir=dist",
     "build:types": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
     "@mailysend/contracts": "workspace:*",
     "esbuild": "^0.28.2",
     "zod": "^4.5.4"
+  },
+  "bugs": {
+    "url": "https://github.com/GagnDeep/mailysend/issues"
   }
 }

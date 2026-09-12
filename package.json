@@ -23,7 +23,8 @@
     "format": "biome format --write .",
     "db:generate": "pnpm --filter @mailysend/db generate",
     "provision": "tsx scripts/provision.ts",
-    "deploy:cf": "pnpm --filter @mailysend/app run deploy:cf && pnpm --filter @mailysend/track run deploy:cf"
+    "deploy:cf": "pnpm --filter @mailysend/app run deploy:cf && pnpm --filter @mailysend/track run deploy:cf",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",

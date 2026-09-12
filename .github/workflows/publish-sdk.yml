@@ -1,0 +1,55 @@
+# Publishes `mailysend` to npm.
+#
+# Triggered by hand, on a version you have already committed — the workflow
+# never bumps anything, so what ships is exactly what is in the tree and the tag
+# points at it.
+#
+# `pnpm publish`, not `npm publish`, and that is not a style preference. The
+# package keeps `exports` on `src/*.ts` so the workspace needs no build step,
+# and rewrites them to `dist/*.js` through `publishConfig.exports`. pnpm applies
+# `publishConfig`; npm ignores it and would ship a manifest pointing at `src/`,
+# which `files` excludes. `verify:package` is the gate that proves it either
+# way: it installs the real tarball into a throwaway project and imports it.
+name: Publish SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify the tarball without publishing
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Sigstore provenance: npm records which workflow, commit and runner built
+      # the tarball, and shows it on the package page.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      # The whole suite, not just the SDK's: the SDK's types are asserted
+      # against @mailysend/contracts at compile time, so a contract change that
+      # breaks the API breaks the SDK here rather than on somebody's laptop.
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - run: pnpm --filter mailysend build
+      - run: pnpm run verify:package
+
+      - if: ${{ !inputs.dry_run }}
+        run: pnpm publish --access public --no-git-checks --provenance
+        working-directory: packages/sdk-node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

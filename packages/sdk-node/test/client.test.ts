@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
+import { VERSION } from '../src/http.ts'
 import { API_KEY, BASE_URL, bodyOf, harness, json } from './helpers.ts'
 
 describe('transport', () => {
@@ -341,5 +343,23 @@ describe('inbound', () => {
     expect(h.call(1).url.pathname).toBe('/v1/inbound/threads/thr_1')
     expect(h.call(2).url.pathname).toBe('/v1/inbound/threads/thr_1/reply')
     expect(h.call(3).url.pathname).toBe('/v1/inbound/messages/inb_1')
+  })
+})
+
+describe('the published package', () => {
+  /**
+   * `VERSION` is a literal in `src/http.ts` because the published bundle has no
+   * package.json to read at runtime — it is bundled for Workers and Deno as
+   * much as for Node. That makes it the one value that can silently disagree
+   * with what npm actually shipped, and it is the value every request announces
+   * in its `user-agent`, so a stale one misattributes traffic in the server's
+   * own logs. Bump one, and this fails until you bump the other.
+   */
+  it('announces the version it was published as', async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+
+    expect(VERSION).toBe(manifest.version)
   })
 })
