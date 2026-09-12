@@ -4,7 +4,7 @@
  * Hand-rolled rather than a dependency, for one reason that matters more than
  * bundle size: a CLI that prints to a pipe must print *parseable* text. Every
  * helper here degrades to plain ASCII when stdout is not a TTY, so
- * `mailysend logs | grep` behaves and `mailysend send --json` is valid JSON on
+ * `mailysend tail | grep` behaves and `mailysend send --json` is valid JSON on
  * stdout with nothing else mixed in.
  *
  * There are no progress bars. A bar drawn from a count we do not have is a
@@ -173,4 +173,26 @@ export const relativeTime = (iso: string): string => {
     if (abs >= ms) return `${Math.round(delta / ms)}${suffix}`
   }
   return 'now'
+}
+
+/**
+ * A yes/no question, on stderr so `--json` on stdout stays parseable.
+ *
+ * Off a TTY there is nobody to answer, and blocking a CI job forever on a
+ * prompt is worse than refusing it: the answer is no, and the message says
+ * which flag makes it yes.
+ */
+export const confirm = async (question: string): Promise<boolean> => {
+  if (process.stdin.isTTY !== true) {
+    err(`${question} — no terminal to ask on. Pass --yes to proceed.`)
+    return false
+  }
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stderr })
+  try {
+    const answer = await rl.question(`${question} ${style.dim('[y/N]')} `)
+    return /^y(es)?$/i.test(answer.trim())
+  } finally {
+    rl.close()
+  }
 }

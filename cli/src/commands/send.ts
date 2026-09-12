@@ -39,7 +39,11 @@ export const send = async (ctx: CommandContext) => {
   const recipients = to.length > 0 ? to : positional
 
   if (recipients.length === 0) throw new CliError('No recipients. Pass --to someone@example.com')
-  if (!flags.from) {
+  // A per-shell default sender is the flag people set once and never pass
+  // again, so the hint below has to be true: read it here rather than advertise
+  // an environment variable nothing consults.
+  const from = (flags.from as string | undefined) ?? process.env.MAILYSEND_FROM
+  if (!from) {
     throw new CliError('No sender.', { hint: 'Pass --from, or set MAILYSEND_FROM.' })
   }
   if (!flags.subject) throw new CliError('No subject. Pass --subject')
@@ -57,7 +61,7 @@ export const send = async (ctx: CommandContext) => {
 
   const tags = parseTags(flags.tag as string[])
   const body = {
-    from: flags.from,
+    from,
     to: recipients,
     subject: flags.subject,
     ...((flags.cc as string[]).length > 0 ? { cc: flags.cc } : {}),
@@ -91,5 +95,8 @@ export const send = async (ctx: CommandContext) => {
   ])
   out()
   ok(flags.scheduledAt === undefined ? 'Queued for delivery.' : 'Scheduled.')
-  note(`mailysend logs ${response.id}`)
+  // `--filter` selects event *types*, not ids, so pointing it at the message
+  // id would print nothing forever. `tail` on its own is the command that
+  // shows this message being delivered.
+  note('mailysend tail   # watch it deliver')
 }

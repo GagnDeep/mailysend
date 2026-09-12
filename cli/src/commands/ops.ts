@@ -7,7 +7,7 @@ import { ApiClient } from '../api.ts'
 import type { FlagSpecs } from '../args.ts'
 import { CliError, type CommandContext } from '../command.ts'
 import { readState, resolveCredentials, writeState } from '../config.ts'
-import { kv, note, ok, out, Progress, style, table } from '../term.ts'
+import { confirm, kv, note, ok, out, Progress, style, table } from '../term.ts'
 
 // ---------------------------------------------------------------------------
 // traffic
@@ -133,6 +133,18 @@ export const rollback = async (ctx: CommandContext) => {
 
   if (to === undefined) throw new CliError('There is no earlier version to roll back to.')
 
+  // `--yes` documented a confirmation that did not exist, which made it the
+  // more surprising half of the pair: a rollback changes what production is
+  // sending on the next message, and it was doing that without asking.
+  const current = ordered[0]?.version
+  if (ctx.args.flags.yes !== true) {
+    const what = current === undefined ? `${target}` : `${target} from v${current}`
+    if (!(await confirm(`Roll ${what} back to v${to}?`))) {
+      note('Nothing was rolled back.')
+      return
+    }
+  }
+
   const result = await client.post<{ version: number }>(`/templates/${id}/rollback`, {
     version: to,
   })
@@ -208,18 +220,39 @@ export const exportData = async (ctx: CommandContext) => {
 
 export const alertsFlags: FlagSpecs = {
   metric: { kind: 'string', describe: 'bounce_rate | complaint_rate | delivery_rate | volume' },
-  above: { kind: 'number', describe: 'Fire when the metric goes above this' },
-  below: { kind: 'number', describe: 'Fire when the metric goes below this' },
+  above: {
+    kind: 'string',
+    describe: 'Fire above this — a fraction (0.0008) or a percentage (0.08%)',
+  },
+  below: { kind: 'string', describe: 'Fire below this — a fraction (0.99) or a percentage (99%)' },
   window: { kind: 'string', describe: 'Evaluation window', default: '1h' },
   domain: { kind: 'string', describe: 'Limit to one sending domain' },
   channel: { kind: 'string', describe: 'email | webhook | slack', default: 'email' },
   target: { kind: 'string', describe: 'Address or URL to notify' },
 }
 
+/**
+ * A threshold, written either way round.
+ *
+ * The API stores rates as fractions, and a complaint-rate alert is set at
+ * 0.0008 — a number nobody types confidently. Everyone reaches for `0.08%`
+ * instead, and reading that as `NaN` is exactly the class of quiet failure this
+ * command should not have. Both spellings are accepted; `%` divides by 100.
+ */
+const threshold = (raw: string | undefined, flag: string): number | undefined => {
+  if (raw === undefined) return undefined
+  const percent = raw.trim().endsWith('%')
+  const value = Number(percent ? raw.trim().slice(0, -1) : raw)
+  if (!Number.isFinite(value)) {
+    throw new CliError(`--${flag} expects a number or a percentage, got "${raw}"`)
+  }
+  return percent ? value / 100 : value
+}
+
 export const alertsAdd = async (ctx: CommandContext) => {
   const metric = ctx.args.flags.metric as string | undefined
-  const above = ctx.args.flags.above as number | undefined
-  const below = ctx.args.flags.below as number | undefined
+  const above = threshold(ctx.args.flags.above as string | undefined, 'above')
+  const below = threshold(ctx.args.flags.below as string | undefined, 'below')
   const target = ctx.args.flags.target as string | undefined
 
   if (!metric) throw new CliError('Which metric? --metric bounce_rate')
@@ -276,7 +309,12 @@ export const upgrade = async (ctx: CommandContext, currentVersion: string) => {
 
   let latest = cached?.latest
   if (!fresh) {
-    const response = await fetch('https://registry.npmjs.org/@mailysend/cli/latest')
+    // `mailysend`, not `@mailysend/cli`. The CLI ships inside the `mailysend`
+    // package as its `bin` — one name for the library and the command, which
+    // is what every `npx mailysend …` in the docs assumes. `@mailysend/cli` is
+    // a workspace build unit and has never been published; asking npm for it
+    // returned a 404 and turned `upgrade` into an error message.
+    const response = await fetch('https://registry.npmjs.org/mailysend/latest')
     if (!response.ok) throw new CliError(`The npm registry returned ${response.status}.`)
     latest = ((await response.json()) as { version: string }).version
     await writeState('version-check', { latest, checkedAt: Date.now() })
@@ -298,5 +336,5 @@ export const upgrade = async (ctx: CommandContext, currentVersion: string) => {
   }
   if (ctx.args.flags.check === true) return
   note('To upgrade:')
-  out(`  ${style.cyan('npm i -g @mailysend/cli@latest')}`)
+  out(`  ${style.cyan('npm i -g mailysend@latest')}`)
 }

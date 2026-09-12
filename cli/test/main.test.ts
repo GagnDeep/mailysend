@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main, VERSION } from '../src/main.ts'
 
@@ -69,5 +71,20 @@ describe('dispatch', () => {
   it('surfaces a command hint when there is one', async () => {
     expect(await main(['import', 'resend'])).toBe(1)
     expect(stderr).toContain('RESEND_API_KEY')
+  })
+})
+
+describe('the version it announces', () => {
+  it('is the version the published package declares', async () => {
+    // `--version` is the first thing anybody runs and the last thing anybody
+    // remembers to bump. The CLI ships as the `bin` of `mailysend`, so that
+    // manifest — not `cli/package.json` — is the number a user sees on npm.
+    const manifest = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL('../../packages/sdk-node/package.json', import.meta.url)),
+        'utf8',
+      ),
+    ) as { version: string }
+    expect(VERSION).toBe(manifest.version)
   })
 })

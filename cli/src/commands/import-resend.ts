@@ -26,7 +26,7 @@ const RESEND_API = 'https://api.resend.com'
 
 export const importResendFlags: FlagSpecs = {
   'resend-key': { kind: 'string', describe: 'Resend API key (or RESEND_API_KEY)' },
-  only: { kind: 'list', describe: 'Limit to some resources: audiences,contacts,domains,templates' },
+  only: { kind: 'list', describe: 'Limit to some resources: audiences,contacts,domains' },
   restart: { kind: 'boolean', describe: 'Discard the checkpoint and import from scratch' },
   'dry-run': { kind: 'boolean', short: 'n', describe: 'Report what would be imported' },
 }
@@ -34,6 +34,17 @@ export const importResendFlags: FlagSpecs = {
 type Resource = 'audiences' | 'contacts' | 'domains' | 'templates'
 
 const ALL: Resource[] = ['audiences', 'contacts', 'domains', 'templates']
+
+/**
+ * What `--only` advertises, which is not all of `ALL`.
+ *
+ * `templates` stays in `ALL` because the checkpoint and the summary are keyed
+ * by it, but Resend has no template API to read from — `--only templates` could
+ * only ever move zero records, and a flag value that documents a no-op is worse
+ * than one that is not offered. The advice it used to carry is printed at the
+ * end of every import instead.
+ */
+const SELECTABLE: Resource[] = ['audiences', 'contacts', 'domains']
 
 interface Checkpoint {
   version: 1
@@ -220,7 +231,7 @@ export const importResend = async (ctx: CommandContext) => {
   const resources = (requested.length > 0 ? requested : ALL).filter((name): name is Resource =>
     (ALL as string[]).includes(name),
   )
-  if (resources.length === 0) throw new CliError(`--only takes any of: ${ALL.join(', ')}`)
+  if (resources.length === 0) throw new CliError(`--only takes any of: ${SELECTABLE.join(', ')}`)
 
   const account = accountFingerprint(resendKey)
   const stateName = `import-resend-${account}`
@@ -286,12 +297,10 @@ export const importResend = async (ctx: CommandContext) => {
 
   progress.stop()
 
-  if (resources.includes('templates')) {
-    // Resend has no template API to read from; saying so is more use than a
-    // silent zero in the summary table.
-    warn('Resend exposes no template API, so templates cannot be read automatically.')
-    note('  Export them from the Resend dashboard and run `mailysend templates push`.')
-  }
+  // Resend has no template API to read from; saying so on every import is more
+  // use than a silent zero in the summary table.
+  warn('Resend exposes no template API, so templates cannot be read automatically.')
+  note('  Export them from the Resend dashboard and run `mailysend templates push`.')
 
   out()
   kv([
