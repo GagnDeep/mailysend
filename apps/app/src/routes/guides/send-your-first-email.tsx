@@ -27,7 +27,7 @@ const CURL_CODE = `curl https://your-worker.workers.dev/v1/emails \\
 const NODE_CODE = `// npm i mailysend   — or keep the resend SDK and repoint it
 import { MailySend } from 'mailysend'
 
-const ms = new MailySend({ apiKey: process.env.MS_API_KEY, baseUrl: process.env.MS_BASE_URL })
+const ms = new MailySend(process.env.MS_API_KEY, { baseUrl: process.env.MS_BASE_URL })
 
 const { id } = await ms.emails.send({
   from: 'Acme <hello@yourdomain.com>',
@@ -99,7 +99,7 @@ const SEND_SAMPLES = [
         <Key>const</Key>
         {' ms = '}
         <Key>new</Key>
-        {' MailySend({ apiKey: process.env.MS_API_KEY, baseUrl: process.env.MS_BASE_URL })\n\n'}
+        {' MailySend(process.env.MS_API_KEY, { baseUrl: process.env.MS_BASE_URL })\n\n'}
         <Key>const</Key>
         {' { id } = '}
         <Key>await</Key>

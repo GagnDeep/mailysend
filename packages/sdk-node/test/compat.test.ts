@@ -333,13 +333,36 @@ describe('broadcasts', () => {
 })
 
 describe('construction', () => {
+  /**
+   * The point of this entry point. The official `resend` client resolves its
+   * host as `process.env.RESEND_BASE_URL || 'https://api.resend.com'`, so an
+   * app that has already pointed that variable at its deployment must not be
+   * told it has no base URL when it swaps the import.
+   */
+  it('prefers RESEND_BASE_URL, so the variable that moves resend moves this too', () => {
+    const previousResendBase = process.env.RESEND_BASE_URL
+    const previousMailyBase = process.env.MAILYSEND_BASE_URL
+    process.env.RESEND_BASE_URL = 'https://mail.example.test/v1'
+    process.env.MAILYSEND_BASE_URL = 'https://wrong.example.test'
+
+    expect(new Resend('re_x').emails).toBeDefined()
+    expect(() => new Resend('re_x')).not.toThrow()
+
+    if (previousResendBase === undefined) delete process.env.RESEND_BASE_URL
+    else process.env.RESEND_BASE_URL = previousResendBase
+    if (previousMailyBase === undefined) delete process.env.MAILYSEND_BASE_URL
+    else process.env.MAILYSEND_BASE_URL = previousMailyBase
+  })
+
   it('prefers RESEND_API_KEY, so a migrating app needs no env change', () => {
     const previousResend = process.env.RESEND_API_KEY
     const previousMaily = process.env.MAILYSEND_API_KEY
     process.env.RESEND_API_KEY = 're_from_env'
     delete process.env.MAILYSEND_API_KEY
 
-    expect(() => new Resend()).not.toThrow()
+    // Supplied for the same reason as in errors.test.ts: with no hosted
+    // MailySend there is no default host, and this test is about the key.
+    expect(() => new Resend(undefined, { baseUrl: BASE_URL })).not.toThrow()
 
     if (previousResend === undefined) delete process.env.RESEND_API_KEY
     else process.env.RESEND_API_KEY = previousResend

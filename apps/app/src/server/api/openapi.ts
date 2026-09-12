@@ -251,13 +251,32 @@ const freeform = (description: string): JsonSchema => ({ type: 'object', descrip
 
 export async function openApiDocument(): Promise<object> {
   const { getEnv } = await import('../env.ts')
-  let publicUrl = 'https://api.mailysend.com'
+  // Templated, because outside a request there is no correct absolute URL to
+  // fall back to. This used to read `https://api.mailysend.com`, a name that
+  // has never resolved and never will: there is no hosted MailySend, so the
+  // server *is* whatever the operator deployed. OpenAPI server variables are
+  // the construct for exactly that, and a generator turns them into a required
+  // constructor argument rather than a default that fails at DNS.
+  let publicUrl: string | null = null
   try {
     publicUrl = getEnv().MS_PUBLIC_URL.replace(/\/$/, '')
   } catch {
-    // Generated outside a request (CI, SDK codegen). The servers entry is then
-    // the documented default rather than a wrong absolute URL.
+    // Generated outside a request (CI, SDK codegen).
   }
+  const servers = publicUrl
+    ? [{ url: `${publicUrl}/v1`, description: 'This deployment' }]
+    : [
+        {
+          url: '{deployment}/v1',
+          description: 'Your deployment',
+          variables: {
+            deployment: {
+              default: 'https://mailysend.example',
+              description: 'The origin you deployed MailySend to, with no trailing slash.',
+            },
+          },
+        },
+      ]
 
   const schemas: Record<string, JsonSchema> = {}
   for (const [name, entry] of Object.entries(SCHEMAS)) {
@@ -274,7 +293,7 @@ export async function openApiDocument(): Promise<object> {
         'unchanged; everything beyond that surface is additive.',
       license: { name: 'AGPL-3.0-or-later' },
     },
-    servers: [{ url: `${publicUrl}/v1`, description: 'This deployment' }],
+    servers,
     security: [{ bearerAuth: [] }],
     tags: [
       { name: 'emails', description: 'Send and inspect individual messages.' },

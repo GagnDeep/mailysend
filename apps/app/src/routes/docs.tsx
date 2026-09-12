@@ -186,8 +186,10 @@ function DocsPage() {
         <p className="ms-eyebrow m-0 text-[11.5px]">DOCUMENTATION · API v1 · MIT LICENSED</p>
         <h1 className="ms-display-1 mt-3.5 mb-3">Docs</h1>
         <p className="m-0 max-w-[66ch] text-[17.5px] leading-[1.6] text-muted">
-          Fifteen minutes end to end, or jump straight to your endpoint. One base URL for
-          everything: <MonoChip size="md">https://api.mailysend.com/v1</MonoChip>
+          Fifteen minutes end to end, or jump straight to your endpoint. One base URL for everything
+          — your own deployment, plus <MonoChip size="md">/v1</MonoChip>. The samples below write it
+          as <MonoChip size="md">https://your-deployment/v1</MonoChip>; there is no hosted MailySend
+          API to point at instead.
         </p>
       </div>
 
@@ -205,7 +207,7 @@ function DocsPage() {
             </Lede>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {[
-                ['BASE URL', 'api.mailysend.com/v1'],
+                ['BASE URL', 'your-deployment/v1'],
                 ['AUTH', 'Bearer ms_live_…'],
                 ['FORMAT', 'JSON · UTF-8'],
               ].map(([label, value]) => (
@@ -232,7 +234,9 @@ function DocsPage() {
                   <Str>'mailysend'</Str>
                   {';\nconst ms = new MailySend(process.env.'}
                   <Key>MAILYSEND_API_KEY</Key>
-                  {');\n\nconst { data, error } = await ms.emails.send({\n  from: '}
+                  {', {\n  baseUrl: process.env.'}
+                  <Key>MAILYSEND_BASE_URL</Key>
+                  {',\n});\n\nconst { data, error } = await ms.emails.send({\n  from: '}
                   <Str>'MailySend &lt;hello@yourdomain.com&gt;'</Str>
                   {',\n  to: ['}
                   <Str>'user@example.com'</Str>
@@ -303,7 +307,7 @@ function DocsPage() {
               key can’t read your logs or export contacts.
             </Lede>
             <Code>
-              {'curl https://api.mailysend.com/v1/api-keys \\\n  -H '}
+              {'curl https://your-deployment/v1/api-keys \\\n  -H '}
               <Str>"Authorization: Bearer $MAILYSEND_API_KEY"</Str>
               {' \\\n  -d \'{ "name": '}
               <Str>"prod worker"</Str>
@@ -761,7 +765,7 @@ function DocsPage() {
               {': {\n      '}
               <Key>"url"</Key>
               {': '}
-              <Str>"https://api.mailysend.com/mcp"</Str>
+              <Str>"https://your-deployment/mcp"</Str>
               {',\n      '}
               <Key>"headers"</Key>
               {': { '}

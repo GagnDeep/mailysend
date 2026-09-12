@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MailySend, MailySendError } from '../src/index.ts'
-import { harness, json } from './helpers.ts'
+import { BASE_URL, harness, json } from './helpers.ts'
 
 describe('MailySendError', () => {
   it('carries every ErrorBody field plus the transport status and request id', async () => {
@@ -77,7 +77,7 @@ describe('construction', () => {
     process.env.MAILYSEND_API_KEY = ''
     process.env.RESEND_API_KEY = ''
 
-    expect(() => new MailySend()).toThrow(/Missing API key/)
+    expect(() => new MailySend(undefined, { baseUrl: BASE_URL })).toThrow(/Missing API key/)
 
     if (previous === undefined) delete process.env.MAILYSEND_API_KEY
     else process.env.MAILYSEND_API_KEY = previous
@@ -85,11 +85,41 @@ describe('construction', () => {
     else process.env.RESEND_API_KEY = previousResend
   })
 
+  /**
+   * The client used to default to `https://api.mailysend.com`, a name that has
+   * never resolved. MailySend is deployed into the caller's own account, so
+   * every guess is wrong for somebody — and that particular guess turned a
+   * forgotten setting into a DNS failure several frames away from its cause.
+   */
+  it('refuses to build a client with no base url at all', () => {
+    const previous = process.env.MAILYSEND_BASE_URL
+    delete process.env.MAILYSEND_BASE_URL
+
+    expect(() => new MailySend('ms_live_x')).toThrow(/Missing base URL/)
+
+    if (previous !== undefined) process.env.MAILYSEND_BASE_URL = previous
+  })
+
+  it('reads MAILYSEND_BASE_URL from the environment', () => {
+    const previous = process.env.MAILYSEND_BASE_URL
+    process.env.MAILYSEND_BASE_URL = 'https://mail.example.test/'
+
+    // The trailing slash is deliberate: it has to come off, or every path
+    // built from it doubles the separator.
+    expect(new MailySend('ms_live_x').http.baseUrl).toBe('https://mail.example.test')
+
+    if (previous === undefined) delete process.env.MAILYSEND_BASE_URL
+    else process.env.MAILYSEND_BASE_URL = previous
+  })
+
   it('reads MAILYSEND_API_KEY from the environment', () => {
     const previous = process.env.MAILYSEND_API_KEY
     process.env.MAILYSEND_API_KEY = 'ms_live_from_env'
 
-    expect(() => new MailySend()).not.toThrow()
+    // `baseUrl` is passed rather than left to a default because there is no
+    // default any more: the client has no host to guess. This test is about
+    // where the *key* comes from, so the address is supplied and stays out of it.
+    expect(() => new MailySend(undefined, { baseUrl: BASE_URL })).not.toThrow()
 
     if (previous === undefined) delete process.env.MAILYSEND_API_KEY
     else process.env.MAILYSEND_API_KEY = previous

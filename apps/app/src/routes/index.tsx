@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   CodeTabs,
-  CommandStrip,
   ComparisonTable,
   CTABand,
   Eyebrow,
@@ -21,7 +20,6 @@ import {
 import { createFileRoute } from '@tanstack/react-router'
 import {
   DEPLOY_DURATION,
-  DEPLOY_RANGE,
   DeployButton,
   DeployTerminal,
   SelfHostGuideLink,
@@ -93,7 +91,9 @@ await resend.emails.send({
 
 const NODE_CODE = `import { MailySend } from 'mailysend';
 
-const ms = new MailySend(process.env.MAILYSEND_API_KEY);
+const ms = new MailySend(process.env.MAILYSEND_API_KEY, {
+  baseUrl: process.env.MAILYSEND_BASE_URL,
+});
 
 await ms.emails.send({
   from: 'you@yourdomain.com',
@@ -167,7 +167,9 @@ const HERO_SAMPLES = [
         <S>{"'mailysend'"}</S>
         {';\n\nconst ms = new MailySend('}
         <S>process.env.MAILYSEND_API_KEY</S>
-        {');\n\nawait ms.emails.send({\n  from: '}
+        {', {\n  baseUrl: '}
+        <S>process.env.MAILYSEND_BASE_URL</S>
+        {',\n});\n\nawait ms.emails.send({\n  from: '}
         <S>{"'you@yourdomain.com'"}</S>
         {',\n  to: '}
         <S>{"'user@example.com'"}</S>
@@ -553,12 +555,7 @@ function HomePage() {
           >
             or read the 3-minute quickstart
           </a>
-          <CommandStrip
-            command="npx mailysend deploy --domain acme.dev"
-            note={DEPLOY_RANGE}
-            className="mt-[26px] max-w-full"
-          />
-          <div className="mt-4 flex flex-wrap justify-center gap-x-[22px] gap-y-2 font-mono text-[11.5px] tracking-[0.06em] text-muted-2">
+          <div className="mt-[30px] flex flex-wrap justify-center gap-x-[22px] gap-y-2 font-mono text-[11.5px] tracking-[0.06em] text-muted-2">
             <span>MIT LICENSED</span>
             <span aria-hidden="true">·</span>
             <span>YOUR ACCOUNT, YOUR DATA</span>

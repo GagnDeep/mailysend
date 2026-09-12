@@ -492,7 +492,19 @@ export class Resend {
     // set, and asking people to rename an environment variable is exactly the
     // second line this entry point exists to avoid.
     const key = apiKey ?? readEnv('RESEND_API_KEY') ?? readEnv('MAILYSEND_API_KEY')
-    const http = new HttpClient({ ...options, ...(key ? { apiKey: key } : {}) })
+    // `RESEND_BASE_URL` for the same reason, and it matters more here than the
+    // key does: pointing that variable at a deployment is the entire migration
+    // the README leads with, because the official `resend` client resolves its
+    // host as `process.env.RESEND_BASE_URL || 'https://api.resend.com'`. An app
+    // that swapped its import to `mailysend/compat` and changed nothing else
+    // would otherwise be told it has no base URL while one is sitting in the
+    // environment.
+    const base = options.baseUrl ?? readEnv('RESEND_BASE_URL') ?? readEnv('MAILYSEND_BASE_URL')
+    const http = new HttpClient({
+      ...options,
+      ...(key ? { apiKey: key } : {}),
+      ...(base ? { baseUrl: base } : {}),
+    })
 
     const emails = new Emails(http)
     const audiences = new Audiences(http)

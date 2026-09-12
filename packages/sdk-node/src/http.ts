@@ -6,7 +6,11 @@ export const VERSION = '0.1.0'
 export interface ClientOptions {
   /** `ms_live_…` or `ms_test_…`. Falls back to `MAILYSEND_API_KEY` in the environment. */
   apiKey?: string
-  /** Point this at a self-hosted deployment. Trailing slashes are fine. */
+  /**
+   * The origin you deployed MailySend to. Required — there is no hosted
+   * MailySend to default to. Falls back to `MAILYSEND_BASE_URL` in the
+   * environment. Trailing slashes are fine.
+   */
   baseUrl?: string
   /** Attempts after the first. 0 disables retrying entirely. */
   maxRetries?: number
@@ -43,7 +47,6 @@ export const asQuery = (params: object | undefined): Query | undefined => {
   return out
 }
 
-const DEFAULT_BASE_URL = 'https://api.mailysend.com'
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_TIMEOUT_MS = 60_000
 const BASE_BACKOFF_MS = 500
@@ -150,10 +153,20 @@ export class HttpClient {
       )
     }
     this.#apiKey = apiKey
-    this.baseUrl = (options.baseUrl ?? readEnv('MAILYSEND_BASE_URL') ?? DEFAULT_BASE_URL).replace(
-      /\/+$/,
-      '',
-    )
+    // There is no default host. MailySend is deployed into the caller's own
+    // Cloudflare account, so there is no address this client could guess that
+    // would be right for anyone — and the one it used to guess,
+    // `https://api.mailysend.com`, does not resolve, which turned a
+    // configuration mistake into a DNS error a long way from its cause. Same
+    // treatment as the missing API key above: say what is missing, up front.
+    const baseUrl = options.baseUrl ?? readEnv('MAILYSEND_BASE_URL')
+    if (!baseUrl) {
+      throw new Error(
+        'Missing base URL. Pass one to the client or set MAILYSEND_BASE_URL in the environment — ' +
+          'it is the origin you deployed MailySend to, e.g. https://mail.example.com.',
+      )
+    }
+    this.baseUrl = baseUrl.replace(/\/+$/, '')
     this.#maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.#baseBackoffMs = options.baseBackoffMs ?? BASE_BACKOFF_MS
