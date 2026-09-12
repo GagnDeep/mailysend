@@ -10,6 +10,17 @@ export const domainsFlags: FlagSpecs = {
   json: { kind: 'boolean', describe: 'Print the domain record as JSON' },
 }
 
+export const domainsSetFlags: FlagSpecs = {
+  provider: {
+    kind: 'string',
+    describe: 'Pin this domain to one transport: cloudflare, ses, resend, smtp, or none',
+  },
+  unset: { kind: 'boolean', describe: 'Return the domain to the workspace routing rules' },
+  json: { kind: 'boolean', describe: 'Print the updated domain record as JSON' },
+}
+
+const PROVIDERS = ['cloudflare', 'ses', 'resend', 'smtp'] as const
+
 interface DnsRecord {
   record: string
   name: string
@@ -24,6 +35,7 @@ interface Domain {
   id: string
   name: string
   status: string
+  provider?: string | null
   records?: DnsRecord[]
   dkim_ready?: boolean
   spf_ready?: boolean
@@ -85,11 +97,9 @@ export const domainsVerify = async (ctx: CommandContext) => {
   const verify = () => client.post<Domain>(`/domains/${domain.id}/verify`)
   let current = await verify()
 
-  if (ctx.args.flags.json === true) {
-    out(JSON.stringify(current, null, 2))
-    return
-  }
-
+  // `--wait` is honoured before `--json` returns: a script that asked to wait
+  // and got the first, still-pending answer would have been told the domain
+  // failed to verify when it had not finished trying.
   if (ctx.args.flags.wait === true && current.status !== 'verified') {
     const deadline = Date.now() + Number(ctx.args.flags.timeout ?? 600) * 1000
     const progress = new Progress(`Waiting for ${domain.name} to verify`)
@@ -100,6 +110,11 @@ export const domainsVerify = async (ctx: CommandContext) => {
       current = await verify()
     }
     progress.stop()
+  }
+
+  if (ctx.args.flags.json === true) {
+    out(JSON.stringify(current, null, 2))
+    return
   }
 
   out()
@@ -116,4 +131,50 @@ export const domainsVerify = async (ctx: CommandContext) => {
 
   note('Add the records above at your DNS provider, then run this again.')
   if (ctx.args.flags.wait !== true) note('`--wait` polls until it verifies.')
+}
+
+/**
+ * Binds one domain to one transport — the migration move, and the way back.
+ *
+ * This is a thin command over `PATCH /v1/domains/:id`, which the dashboard
+ * already exposes. `--provider none` (or `--unset`) sends `null`, which returns
+ * the domain to the workspace's routing rules; a cutover you cannot reverse
+ * from the same tool you did it with is not a cutover anyone should run.
+ */
+export const domainsSet = async (ctx: CommandContext) => {
+  const target = ctx.args.positionals[2]
+  if (!target) {
+    throw new CliError('Which domain? `mailysend domains set acme.com --provider resend`')
+  }
+
+  const raw = ctx.args.flags.provider as string | undefined
+  const unset = ctx.args.flags.unset === true || raw === 'none'
+  if (!unset && raw === undefined) {
+    throw new CliError('Pass --provider <cloudflare|ses|resend|smtp>, or --provider none.')
+  }
+  if (!unset && !PROVIDERS.includes(raw as (typeof PROVIDERS)[number])) {
+    throw new CliError(`Unknown provider: ${raw}`, {
+      hint: `One of ${PROVIDERS.join(', ')} — or \`none\` to unpin.`,
+    })
+  }
+
+  const client = new ApiClient(await resolveCredentials(ctx.global))
+  const domain = await findDomain(client, target)
+  const updated = await client.patch<Domain>(`/domains/${domain.id}`, {
+    provider: unset ? null : raw,
+  })
+
+  if (ctx.args.flags.json === true) {
+    out(JSON.stringify(updated, null, 2))
+    return
+  }
+
+  out()
+  if (unset) {
+    ok(`${updated.name} follows the workspace routing rules again.`)
+    note('`mailysend traffic` shows what those rules currently split.')
+    return
+  }
+  ok(`${updated.name} now sends through ${style.cyan(String(updated.provider ?? raw))}.`)
+  note('Records that differ by transport are reissued — run `mailysend domains verify` to see.')
 }

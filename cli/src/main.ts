@@ -2,7 +2,7 @@ import { ApiCallError } from './api.ts'
 import { ArgError, type FlagSpecs, helpFor, parseArgs } from './args.ts'
 import { CliError, type CommandContext, type GlobalOptions } from './command.ts'
 import { claim, claimFlags } from './commands/claim.ts'
-import { domainsFlags, domainsVerify } from './commands/domains.ts'
+import { domainsFlags, domainsSet, domainsSetFlags, domainsVerify } from './commands/domains.ts'
 import { importResend, importResendFlags } from './commands/import-resend.ts'
 import { login, loginFlags } from './commands/login.ts'
 import {
@@ -22,17 +22,17 @@ import { send, sendFlags } from './commands/send.ts'
 import { tail, tailFlags } from './commands/tail.ts'
 import { templatesFlags, templatesPush } from './commands/templates.ts'
 import { deploy, deployFlags, dev, devFlags } from './commands/wrangler.ts'
-import { NotLoggedIn } from './config.ts'
+import { NoBaseUrl, NotLoggedIn } from './config.ts'
 import { err, fail, hint, out, style } from './term.ts'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 
 /**
  * Subcommands are matched on the first one or two positionals, because a few
  * of them read naturally as a phrase (`domains verify`, `import resend`) and
  * flattening those into `domains-verify` would be worse to type and to read.
  */
-interface Entry {
+export interface Entry {
   match: string[]
   summary: string
   usage: string
@@ -40,7 +40,7 @@ interface Entry {
   run(ctx: CommandContext): Promise<void>
 }
 
-const ENTRIES: Entry[] = [
+export const ENTRIES: Entry[] = [
   {
     match: ['provision'],
     summary: 'Create the queues and analytics datasets the Deploy button cannot',
@@ -92,8 +92,15 @@ const ENTRIES: Entry[] = [
     run: domainsVerify,
   },
   {
+    match: ['domains', 'set'],
+    summary: 'Pin a domain to one transport, or unpin it',
+    usage: 'mailysend domains set acme.com --provider resend',
+    flags: domainsSetFlags,
+    run: domainsSet,
+  },
+  {
     match: ['templates', 'push'],
-    summary: 'Compile JSX templates and upload them',
+    summary: 'Compile react-email, MJML or Handlebars templates and upload them',
     usage: 'mailysend templates push ./emails [--dry-run]',
     flags: templatesFlags,
     run: templatesPush,
@@ -149,7 +156,7 @@ const ENTRIES: Entry[] = [
   },
 ]
 
-const GLOBAL_FLAGS: FlagSpecs = {
+export const GLOBAL_FLAGS: FlagSpecs = {
   'api-key': { kind: 'string', describe: 'Override the stored API key' },
   'base-url': { kind: 'string', describe: 'Point at a different deployment' },
   profile: { kind: 'string', describe: 'Use a named profile from the config file' },
@@ -206,7 +213,14 @@ export const main = async (argv: string[]): Promise<number> => {
     return 2
   }
 
-  const specs: FlagSpecs = { ...entry.flags, ...GLOBAL_FLAGS }
+  // Globals first, so a command's own spec wins the merge. The other order
+  // silently dropped `-p` from `login` and `claim`: the global `profile` spec
+  // has no short, and overwriting theirs meant `byShort` never saw `p`.
+  const specs: FlagSpecs = { ...GLOBAL_FLAGS, ...entry.flags }
+  // Same specs, the command's own first, because that is the order a reader
+  // wants them in. The parse order above is about which spec wins, not which
+  // is printed.
+  const helpSpecs: FlagSpecs = { ...entry.flags, ...specs }
 
   let parsed: ReturnType<typeof parseArgs>
   try {
@@ -214,12 +228,15 @@ export const main = async (argv: string[]): Promise<number> => {
   } catch (error) {
     if (!(error instanceof ArgError)) throw error
     fail(error.message)
-    err(helpFor(entry.usage, entry.summary, entry.flags))
+    err(helpFor(entry.usage, entry.summary, helpSpecs))
     return 2
   }
 
   if (parsed.flags.help === true) {
-    out(helpFor(entry.usage, entry.summary, entry.flags))
+    // `specs`, not `entry.flags`: a command with no flags of its own was
+    // printing an empty Options block while `--base-url` and `--profile` were
+    // the two things its reader most needed.
+    out(helpFor(entry.usage, entry.summary, helpSpecs))
     return 0
   }
 
@@ -246,7 +263,7 @@ const report = (error: unknown): number => {
     return error.exitCode
   }
 
-  if (error instanceof NotLoggedIn) {
+  if (error instanceof NoBaseUrl || error instanceof NotLoggedIn) {
     err()
     fail(error.message)
     err()
