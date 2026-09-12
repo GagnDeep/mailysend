@@ -30,7 +30,13 @@ export const SendEmailRequest = z
 
     html: z.string().max(2_000_000).optional(),
     text: z.string().max(2_000_000).optional(),
-    /** Pre-rendered React Email output. Resend's SDK renders client-side and sends html. */
+    /**
+     * Pre-rendered React Email output, and only ever that. Both `resend` and
+     * `mailysend` render the element in the client — see
+     * `packages/sdk-node/src/render.ts` — so a React element never reaches this
+     * schema, and widening it to an object would mean accepting a serialized
+     * component tree the server would have to evaluate. It must stay a string.
+     */
     react: z.string().max(2_000_000).optional(),
 
     headers: z.record(z.string().max(128), z.string().max(2048)).optional(),

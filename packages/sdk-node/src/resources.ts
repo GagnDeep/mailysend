@@ -1,5 +1,6 @@
 import type { HttpClient, RequestOptions } from './http.ts'
 import { asQuery } from './http.ts'
+import { withRenderedReact } from './render.ts'
 import type * as T from './types.ts'
 
 /**
@@ -21,8 +22,17 @@ abstract class Resource {
 // ---------------------------------------------------------------------------
 
 export class Emails extends Resource {
-  send(body: T.SendEmailRequest, options?: RequestOptions): Promise<T.SendEmailResponse> {
-    return this.http.request({ method: 'POST', path: '/v1/emails', body, options })
+  /**
+   * `react` is rendered here rather than on the server — see `render.ts`. What
+   * leaves this method is always HTML.
+   */
+  async send(body: T.SendEmailRequest, options?: RequestOptions): Promise<T.SendEmailResponse> {
+    return this.http.request({
+      method: 'POST',
+      path: '/v1/emails',
+      body: await withRenderedReact(body),
+      options,
+    })
   }
 
   /**
@@ -30,8 +40,13 @@ export class Emails extends Resource {
    * the response carries `{ index, error }` in its place, so the caller can tell
    * which one failed without diffing arrays.
    */
-  batch(body: T.BatchSendRequest, options?: RequestOptions): Promise<T.BatchSendResponse> {
-    return this.http.request({ method: 'POST', path: '/v1/emails/batch', body, options })
+  async batch(body: T.BatchSendRequest, options?: RequestOptions): Promise<T.BatchSendResponse> {
+    return this.http.request({
+      method: 'POST',
+      path: '/v1/emails/batch',
+      body: await Promise.all(body.map(withRenderedReact)),
+      options,
+    })
   }
 
   list(params?: T.ListEmailsParams, options?: RequestOptions): Promise<T.ListResponse<T.Email>> {

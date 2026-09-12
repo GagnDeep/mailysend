@@ -81,6 +81,15 @@ export interface ResendCreateEmailOptions
   scheduledAt?: string
 }
 
+/**
+ * `react` is deliberately *not* handled here. It passes through to
+ * `Emails.send`, which renders it to `html` and drops it — one implementation
+ * for both entry points, so `mailysend/compat` and `mailysend` cannot disagree
+ * about what `resend.emails.send({ react: <Welcome /> })` puts on the wire. A
+ * missing `@react-email/render` surfaces through `captured()` as
+ * `{ data: null, error }`: the never-throws contract above has no exceptions,
+ * least of all one on the field people migrate with.
+ */
 const toSendRequest = (payload: ResendCreateEmailOptions): T.SendEmailRequest => {
   const { replyTo, reply_to, scheduledAt, scheduled_at, ...rest } = payload
   const resolvedReplyTo = reply_to ?? replyTo

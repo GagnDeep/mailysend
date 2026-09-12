@@ -126,8 +126,16 @@ export interface SendEmailRequest {
 
   html?: string
   text?: string
-  /** Pre-rendered React Email output. */
-  react?: string
+  /**
+   * A React Email element, which the client renders to `html` before sending —
+   * `@react-email/render` is an optional peer dependency, loaded only if you
+   * use this field. A string is accepted too and passed through as already
+   * rendered. Either way `react` never reaches the wire.
+   *
+   * Typed `unknown` rather than `ReactElement` so that `@types/react` stays out
+   * of the dependency graph of people who do not send React.
+   */
+  react?: unknown
 
   headers?: Record<string, string>
   attachments?: Attachment[]

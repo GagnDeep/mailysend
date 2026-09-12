@@ -61,6 +61,29 @@ so responses come back in the shape your existing code already destructures.
 Write new code against `MailySend` from `mailysend`; `compat` is for the
 codebase you are moving, not the one you are starting.
 
+## React Email
+
+`react` takes a [React Email](https://react.email) element and works the same
+way it does in `resend` — the client renders it to HTML and posts that, so the
+element never reaches the wire.
+
+```tsx
+import { Html, Text, Button } from '@react-email/components'
+
+await mailysend.emails.send({
+  from: 'Acme <hello@acme.com>',
+  to: 'ada@example.com',
+  subject: 'Your login code',
+  react: <LoginCode code="814205" />,
+})
+```
+
+`@react-email/render` is an **optional peer dependency**, imported only when you
+pass `react` — which is why the first line of this README is still true for
+everybody else. Install it directly, or get it with
+`npm i @react-email/components`. A string in `react` is treated as already
+rendered and passed through.
+
 ## The full surface
 
 Every `/v1` resource is on the client:

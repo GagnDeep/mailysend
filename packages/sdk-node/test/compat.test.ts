@@ -145,6 +145,36 @@ describe('emails', () => {
     expect(result.error?.name).toBe('missing_required_field')
     expect(c.calls()).toBe(0)
   })
+
+  it('sends a pre-rendered react string as html and never as react', async () => {
+    const c = compat([json({ id: 'em_1' })])
+    await c.resend.emails.send({
+      from: 'a@example.com',
+      to: 'b@example.com',
+      subject: 'Hi',
+      react: '<p>Your code is 814205</p>',
+    })
+
+    expect(bodyOf(c.call().init)).toMatchObject({ html: '<p>Your code is 814205</p>' })
+    expect(bodyOf(c.call().init)).not.toHaveProperty('react')
+  })
+
+  // The point of the never-throws contract: an app that swaps `from 'resend'`
+  // for `from 'mailysend/compat'` without installing the renderer gets an error
+  // object naming the package, not an exception through code with no try/catch.
+  it('reports a missing @react-email/render as an error rather than a throw', async () => {
+    const c = compat([])
+    const result = await c.resend.emails.send({
+      from: 'a@example.com',
+      to: 'b@example.com',
+      subject: 'Hi',
+      react: { $$typeof: Symbol.for('react.element'), type: 'Login', props: {} },
+    })
+
+    expect(result.data).toBeNull()
+    expect(result.error?.message).toContain('@react-email/render')
+    expect(c.calls()).toBe(0)
+  })
 })
 
 describe('batch', () => {
