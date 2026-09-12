@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, extname, join, relative, resolve } from 'node:path'
+import { extractHandlebarsVariables, renderMjml } from '@mailysend/templates'
 import { ApiClient } from '../api.ts'
 import type { FlagSpecs } from '../args.ts'
 import { CliError, type CommandContext } from '../command.ts'
@@ -9,12 +10,45 @@ import { resolveCredentials } from '../config.ts'
 import { note, ok, out, Progress, style, table } from '../term.ts'
 
 export const templatesFlags: FlagSpecs = {
-  dir: { kind: 'string', describe: 'Directory to scan for .tsx templates', default: 'emails' },
+  dir: {
+    kind: 'string',
+    describe: 'Directory to scan for .tsx, .jsx, .mjml and .hbs templates',
+    default: 'emails',
+  },
   subject: { kind: 'string', describe: 'Subject line for the pushed version' },
   slug: { kind: 'string', describe: 'Slug to publish under (single-file pushes only)' },
   'dry-run': { kind: 'boolean', short: 'n', describe: 'Compile and print, upload nothing' },
-  json: { kind: 'boolean', describe: 'Emit the compiled AST as JSON' },
+  json: { kind: 'boolean', describe: 'Emit the compiled body as JSON' },
   publish: { kind: 'boolean', describe: 'Publish the new version immediately', default: true },
+}
+
+/**
+ * What `templates push` accepts, and what each extension becomes on the server.
+ *
+ * The three paths differ in where the compile happens, not in what is stored:
+ *
+ *   - `.tsx` / `.jsx` — a react-email component, compiled here to a data-only
+ *     AST. The render worker walks JSON and never evaluates anything.
+ *   - `.mjml` — compiled here too, because MJML is a build step and is not
+ *     Worker-safe (see `packages/templates/src/mjml.ts`). What is stored is the
+ *     HTML it produced, and the `.mjml` file stays the thing you edit.
+ *   - `.hbs` / `.handlebars` — stored as written; the merge pass at send time
+ *     is the interpreter in `packages/templates/src/handlebars.ts`.
+ *
+ * MJML whose output still carries `{{…}}` is stored as `handlebars`, since the
+ * merge pass runs after MJML and those braces are meant for it.
+ */
+const EXTENSIONS = /\.(tsx|jsx|mjml|hbs|handlebars)$/
+
+type Engine = 'jsx-ast' | 'handlebars' | 'html'
+
+interface Compiled {
+  file: string
+  slug: string
+  engine: Engine
+  ast?: unknown
+  html?: string
+  variables: string[]
 }
 
 interface TemplateRecord {
@@ -22,6 +56,7 @@ interface TemplateRecord {
   slug: string
   name: string
   version: number
+  engine?: Engine
 }
 
 const slugify = (file: string): string =>
@@ -44,7 +79,7 @@ const collect = async (target: string): Promise<string[]> => {
         if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) await walk(path)
         continue
       }
-      if (/\.(tsx|jsx)$/.test(entry.name)) found.push(path)
+      if (EXTENSIONS.test(entry.name)) found.push(path)
     }
   }
   await walk(target)
@@ -52,9 +87,15 @@ const collect = async (target: string): Promise<string[]> => {
 }
 
 export const templatesPush = async (ctx: CommandContext) => {
-  const target = resolve(ctx.args.positionals[1] ?? String(ctx.args.flags.dir ?? 'emails'))
+  // [2], not [1]: `templates push ./emails` parses as three positionals, and
+  // reading the second one made a bare `templates push` look for a directory
+  // called `push` — the default `--dir` was unreachable from the command the
+  // docs print.
+  const target = resolve(ctx.args.positionals[2] ?? String(ctx.args.flags.dir ?? 'emails'))
   const files = await collect(target)
-  if (files.length === 0) throw new CliError(`No .tsx or .jsx templates under ${target}`)
+  if (files.length === 0) {
+    throw new CliError(`No .tsx, .jsx, .mjml or .hbs templates under ${target}`)
+  }
 
   const slugOverride = ctx.args.flags.slug as string | undefined
   if (slugOverride !== undefined && files.length > 1) {
@@ -64,12 +105,57 @@ export const templatesPush = async (ctx: CommandContext) => {
   // Compile everything before uploading anything. A half-pushed directory
   // leaves the workspace in a state no one asked for, and the compiler is
   // fast enough that there is no reason to interleave.
-  const compiled: { file: string; slug: string; ast: unknown; variables: string[] }[] = []
+  const compiled: Compiled[] = []
   let failed = 0
 
   for (const file of files) {
     const source = await readFile(file, 'utf8')
     const shown = relative(process.cwd(), file)
+    const slug = slugOverride ?? slugify(file)
+    const ext = extname(file).toLowerCase()
+
+    if (ext === '.hbs' || ext === '.handlebars') {
+      compiled.push({
+        file: shown,
+        slug,
+        engine: 'handlebars',
+        html: source,
+        variables: extractHandlebarsVariables(source),
+      })
+      continue
+    }
+
+    if (ext === '.mjml') {
+      // `MjmlUnavailableError`'s own advice is "run `mailysend templates
+      // push`" — which is what is running. Inside this command the missing
+      // peer is the whole story, so it is told the same way `@react-email/render`
+      // is told in the SDK: name the package, name the install.
+      let html: string
+      try {
+        html = (await renderMjml(source)).html
+      } catch (error) {
+        const message = (error as Error).message
+        throw new CliError(
+          message.includes('not installed')
+            ? `${shown}: MJML is not installed.`
+            : `${shown}: ${message}`,
+          message.includes('not installed')
+            ? { hint: 'It is an optional peer — `npm i -D mjml`, then push again.' }
+            : {},
+        )
+      }
+      compiled.push({
+        file: shown,
+        slug,
+        // MJML runs first and the merge pass runs second, so braces that
+        // survived the compile are still variables.
+        engine: html.includes('{{') ? 'handlebars' : 'html',
+        html,
+        variables: extractHandlebarsVariables(html),
+      })
+      continue
+    }
+
     const result = compileJsxToAst(source, { filename: shown })
     if (!result.ok) {
       reportDiagnostics(shown, result.diagnostics)
@@ -78,7 +164,8 @@ export const templatesPush = async (ctx: CommandContext) => {
     }
     compiled.push({
       file: shown,
-      slug: slugOverride ?? slugify(file),
+      slug,
+      engine: 'jsx-ast',
       ast: result.ast,
       variables: result.variables,
     })
@@ -87,23 +174,21 @@ export const templatesPush = async (ctx: CommandContext) => {
   if (failed > 0) throw new CliError(`${failed} of ${files.length} templates did not compile`)
 
   if (ctx.args.flags.json === true) {
-    out(
-      JSON.stringify(
-        compiled.length === 1 ? compiled[0]?.ast : compiled.map((c) => c.ast),
-        null,
-        2,
-      ),
-    )
+    // `--json` is documented as the compiled AST, and only JSX has one. An
+    // `.mjml` or `.hbs` push emits its body instead of a silent `null`.
+    const payload = compiled.map((c) => (c.engine === 'jsx-ast' ? c.ast : c.html))
+    out(JSON.stringify(payload.length === 1 ? payload[0] : payload, null, 2))
     return
   }
 
   if (ctx.args.flags.dryRun === true) {
     out()
     table(
-      [{ header: 'template' }, { header: 'slug' }, { header: 'variables' }],
+      [{ header: 'template' }, { header: 'slug' }, { header: 'engine' }, { header: 'variables' }],
       compiled.map((c) => [
         c.file,
         style.cyan(c.slug),
+        c.engine,
         c.variables.length === 0 ? style.dim('none') : c.variables.join(', '),
       ]),
     )
@@ -125,13 +210,15 @@ export const templatesPush = async (ctx: CommandContext) => {
     const found = existing.get(entry.slug)
     const subject = ctx.args.flags.subject as string | undefined
 
+    const body = entry.engine === 'jsx-ast' ? { ast: entry.ast } : { html: entry.html }
+
     if (!found) {
       const created = await client.post<TemplateRecord>('/templates', {
         name: basename(entry.file, extname(entry.file)),
         slug: entry.slug,
-        engine: 'jsx-ast',
+        engine: entry.engine,
         ...(subject === undefined ? {} : { subject }),
-        ast: entry.ast,
+        ...body,
       })
       results.push([
         entry.file,
@@ -140,11 +227,19 @@ export const templatesPush = async (ctx: CommandContext) => {
         `v${created.version ?? 1}`,
       ])
     } else {
+      // The engine belongs to the template, not the version: the server reads
+      // it off the existing row. A file whose extension changed therefore needs
+      // a new slug, and says so rather than pushing a body the engine cannot
+      // render.
+      if (found.engine && found.engine !== entry.engine) {
+        throw new CliError(
+          `${entry.file}: template \`${entry.slug}\` is a ${found.engine} template; ` +
+            'an engine cannot change in place. Push it under a different --slug.',
+        )
+      }
       const version = await client.post<{ version: number }>(`/templates/${found.id}/versions`, {
-        engine: 'jsx-ast',
         ...(subject === undefined ? {} : { subject }),
-        ast: entry.ast,
-        variables: entry.variables,
+        ...body,
       })
       if (ctx.args.flags.publish !== false) {
         await client.post(`/templates/${found.id}/publish`, { version: version.version })

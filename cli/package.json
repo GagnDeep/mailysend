@@ -1,6 +1,6 @@
 {
   "name": "@mailysend/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "description": "The MailySend command line: deploy, tail, send, push templates, migrate off Resend.",
@@ -28,6 +28,8 @@
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
-    "esbuild": "^0.28.2"
-  }
+    "esbuild": "^0.28.2",
+    "mjml": "^5.4.1"
+  },
+  "private": true
 }
