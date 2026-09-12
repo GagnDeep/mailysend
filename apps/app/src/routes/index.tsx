@@ -65,6 +65,32 @@ const A = ({ children }: { children: string }) => (
 )
 const C = ({ children }: { children: string }) => <span className="text-on-dark-5">{children}</span>
 
+/**
+ * The hero leads with the `resend` client, not with ours.
+ *
+ * The README's first code block is a three-line diff against an existing
+ * Resend integration, and that is the strongest thing this project has to say:
+ * the official client resolves its base URL as
+ * `process.env.RESEND_BASE_URL || 'https://api.resend.com'` (verified in
+ * resend@6.27.0), so adopting MailySend is an environment variable rather than
+ * a rewrite. Opening with `import { MailySend } from 'mailysend'` asked the
+ * reader to learn a new SDK before they had a reason to, and buried the claim
+ * that actually distinguishes the product. The first-party SDK keeps the tab
+ * immediately after it, for whoever is starting fresh.
+ */
+const RESEND_CODE = `// .env — RESEND_BASE_URL=https://your-deployment/v1
+
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.MAILYSEND_API_KEY);
+
+await resend.emails.send({
+  from: 'you@yourdomain.com',
+  to: 'user@example.com',
+  subject: 'Your login code',
+  react: <LoginCode code="814205" />,
+});`
+
 const NODE_CODE = `import { MailySend } from 'mailysend';
 
 const ms = new MailySend(process.env.MAILYSEND_API_KEY);
@@ -76,18 +102,10 @@ await ms.emails.send({
   react: <LoginCode code="814205" />,
 });`
 
-const PYTHON_CODE = `import mailysend
-
-ms = mailysend.Client(api_key="ms_live_...")
-
-ms.emails.send(
-    from_="you@yourdomain.com",
-    to="user@example.com",
-    subject="Your login code",
-    html="<p>Code: <b>814205</b></p>",
-)`
-
-const CURL_CODE = `curl https://api.mailysend.com/v1/emails \\
+// There is no api.mailysend.com — the name does not resolve, and the whole
+// argument of this page is that the API is the deployment in *your* account.
+// A sample pointed at a hosted endpoint contradicts the sentence above it.
+const CURL_CODE = `curl https://your-deployment/v1/emails \\
   -H "Authorization: Bearer $MAILYSEND_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -113,8 +131,33 @@ export default {
 
 const HERO_SAMPLES = [
   {
+    value: 'resend',
+    label: 'resend',
+    code: RESEND_CODE,
+    children: (
+      <>
+        <C>{'// .env — RESEND_BASE_URL=https://your-deployment/v1'}</C>
+        {'\n\nimport '}
+        <A>{'{ Resend }'}</A>
+        {' from '}
+        <S>{"'resend'"}</S>
+        {';\n\nconst resend = new Resend('}
+        <S>process.env.MAILYSEND_API_KEY</S>
+        {');\n\nawait resend.emails.send({\n  from: '}
+        <S>{"'you@yourdomain.com'"}</S>
+        {',\n  to: '}
+        <S>{"'user@example.com'"}</S>
+        {',\n  subject: '}
+        <S>{"'Your login code'"}</S>
+        {',\n  react: <LoginCode code='}
+        <S>"814205"</S>
+        {' />,\n});'}
+      </>
+    ),
+  },
+  {
     value: 'node',
-    label: 'node',
+    label: 'mailysend',
     code: NODE_CODE,
     children: (
       <>
@@ -137,32 +180,12 @@ const HERO_SAMPLES = [
     ),
   },
   {
-    value: 'python',
-    label: 'python',
-    code: PYTHON_CODE,
-    children: (
-      <>
-        {'import mailysend\n\nms = mailysend.Client(api_key='}
-        <S>"ms_live_..."</S>
-        {')\n\nms.emails.send(\n    from_='}
-        <S>"you@yourdomain.com"</S>
-        {',\n    to='}
-        <S>"user@example.com"</S>
-        {',\n    subject='}
-        <S>"Your login code"</S>
-        {',\n    html='}
-        <S>{'"<p>Code: <b>814205</b></p>"'}</S>
-        {',\n)'}
-      </>
-    ),
-  },
-  {
     value: 'curl',
     label: 'curl',
     code: CURL_CODE,
     children: (
       <>
-        {'curl https://api.mailysend.com/v1/emails \\\n  -H '}
+        {'curl https://your-deployment/v1/emails \\\n  -H '}
         <S>"Authorization: Bearer $MAILYSEND_API_KEY"</S>
         {' \\\n  -H '}
         <S>"Content-Type: application/json"</S>
