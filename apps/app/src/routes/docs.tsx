@@ -3,7 +3,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { OWNERSHIP_BADGE } from '~/components/marketing/claims.ts'
-import { DEPLOY_DURATION_LONG, DEPLOY_LINES } from '~/components/marketing/deploy.tsx'
+import {
+  DEPLOY_DURATION_LONG,
+  DEPLOY_LINES,
+  DeployButton,
+  DeployTerminal,
+  SelfHostGuideLink,
+} from '~/components/marketing/deploy.tsx'
 import { PageShell } from '~/components/marketing/page-shell.tsx'
 import {
   AnchorSection,
@@ -219,39 +225,82 @@ function DocsPage() {
             </div>
           </AnchorSection>
 
+          {/*
+            Deploy is step one, and it has to be, because every other step in
+            this list addresses a deployment that does not exist yet.
+
+            The order used to be install-SDK, send, tail, which reads as though
+            there were a hosted MailySend to hold an API key for. There is not:
+            the API a reader is about to call is the Worker in their own
+            Cloudflare account, so until that Worker exists there is no base
+            URL, no domain and no key. Opening on `npm install` asked people to
+            configure a client against nothing.
+          */}
           <AnchorSection anchor="quickstart" heading="Quickstart">
-            <Lede>Three minutes from zero to a delivered email.</Lede>
+            <Lede>
+              Four steps from an empty Cloudflare account to a delivered email. The first one is a
+              button.
+            </Lede>
             <div className="flex flex-col gap-3.5">
-              <StepCard step={1} title="Install the SDK" variant="rule">
-                <Terminal
-                  className="mt-1.5"
-                  lines={[{ kind: 'command', text: 'npm install mailysend' }]}
-                />
+              <StepCard
+                step={1}
+                title="Deploy it to your Cloudflare account"
+                variant="rule"
+                description={`One click takes ${DEPLOY_DURATION_LONG}. Cloudflare forks the repo, creates the queues, D1 database, R2 bucket and KV namespaces, and hands you back a URL — that URL is your API base URL for every step below.`}
+              >
+                <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+                  <DeployButton label="Deploy to Cloudflare" chip="1-CLICK" size="md" />
+                  <SelfHostGuideLink label="Or deploy from your terminal" />
+                </div>
+                <DeployTerminal className="mt-3" />
               </StepCard>
-              <StepCard step={2} title="Send" variant="rule">
+              <StepCard
+                step={2}
+                title="Add your sending domain"
+                variant="rule"
+                description="Domains → Add. On Cloudflare DNS the records are published and verified in seconds; anywhere else, copy the three below into your provider and hit verify. Until a domain verifies, nothing can leave."
+              >
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-relaxed text-muted">
+                  The exact records are in <a href="#domains">Domains &amp; DNS</a>.
+                </p>
+              </StepCard>
+              <StepCard
+                step={3}
+                title="Send"
+                variant="rule"
+                description="Create a key under Settings → API keys, then call your own deployment. No SDK required — this is the whole API."
+              >
                 <Code className="mt-1.5">
-                  {'import { MailySend } from '}
-                  <Str>'mailysend'</Str>
-                  {';\nconst ms = new MailySend(process.env.'}
-                  <Key>MAILYSEND_API_KEY</Key>
-                  {', {\n  baseUrl: process.env.'}
-                  <Key>MAILYSEND_BASE_URL</Key>
-                  {',\n});\n\nconst { data, error } = await ms.emails.send({\n  from: '}
-                  <Str>'MailySend &lt;hello@yourdomain.com&gt;'</Str>
-                  {',\n  to: ['}
-                  <Str>'user@example.com'</Str>
-                  {'],\n  subject: '}
-                  <Str>'Hello from the edge'</Str>
-                  {',\n  html: '}
-                  <Str>'&lt;p&gt;It works.&lt;/p&gt;'</Str>
-                  {',\n  tags: [{ name: '}
-                  <Str>'category'</Str>
-                  {', value: '}
-                  <Str>'welcome'</Str>
-                  {' }],\n});'}
+                  {'curl https://your-deployment/v1/emails \\\n  -H '}
+                  <Str>"Authorization: Bearer $MAILYSEND_API_KEY"</Str>
+                  {' \\\n  -H '}
+                  <Str>"Content-Type: application/json"</Str>
+                  {" \\\n  -d '{\n    "}
+                  <Str>"from"</Str>
+                  {': '}
+                  <Str>"MailySend &lt;hello@yourdomain.com&gt;"</Str>
+                  {',\n    '}
+                  <Str>"to"</Str>
+                  {': ['}
+                  <Str>"user@example.com"</Str>
+                  {'],\n    '}
+                  <Str>"subject"</Str>
+                  {': '}
+                  <Str>"Hello from the edge"</Str>
+                  {',\n    '}
+                  <Str>"html"</Str>
+                  {': '}
+                  <Str>"&lt;p&gt;It works.&lt;/p&gt;"</Str>
+                  {"\n  }'"}
                 </Code>
+                <p className="mt-3 mb-0 text-[14.5px] leading-relaxed text-muted">
+                  Already calling Resend? Point <Mono>RESEND_BASE_URL</Mono> at{' '}
+                  <Mono>https://your-deployment/v1</Mono> and the official <Mono>resend</Mono>{' '}
+                  client sends here instead — see <a href="/guides/migrate-from-resend">Migrate</a>.
+                  There is also a first-party <Mono>mailysend</Mono> SDK.
+                </p>
               </StepCard>
-              <StepCard step={3} title="Watch it land" variant="rule">
+              <StepCard step={4} title="Watch it land" variant="rule">
                 <Terminal
                   className="mt-1.5"
                   lines={[

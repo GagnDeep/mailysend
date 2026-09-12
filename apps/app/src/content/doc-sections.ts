@@ -39,7 +39,8 @@ export const DOC_SECTIONS: DocSection[] = [
     group: 'START',
     navLabel: 'Quickstart',
     headline: 'Quickstart',
-    description: 'Install the SDK, send your first email, and tail the delivery log.',
+    description:
+      'Deploy it to your own Cloudflare account, add a domain, send, and tail the delivery log.',
   },
   {
     anchor: 'domains',

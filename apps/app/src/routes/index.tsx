@@ -553,7 +553,7 @@ function HomePage() {
             href="/docs#quickstart"
             className="mt-[18px] border-muted-3 border-b pb-0.5 text-[15px] text-muted no-underline hover:border-accent hover:text-accent"
           >
-            or read the 3-minute quickstart
+            or read the four-step quickstart
           </a>
           <div className="mt-[30px] flex flex-wrap justify-center gap-x-[22px] gap-y-2 font-mono text-[11.5px] tracking-[0.06em] text-muted-2">
             <span>MIT LICENSED</span>
