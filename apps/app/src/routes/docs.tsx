@@ -1,14 +1,22 @@
-import { Button, Callout, Card, Input, Label, MonoChip, StepCard, Terminal } from '@mailysend/ui'
+import {
+  Button,
+  Callout,
+  Card,
+  CodeTabs,
+  Input,
+  Label,
+  MonoChip,
+  StepCard,
+  Terminal,
+} from '@mailysend/ui'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { OWNERSHIP_BADGE } from '~/components/marketing/claims.ts'
 import {
   DEPLOY_DURATION_LONG,
-  DEPLOY_LINES,
   DeployButton,
-  DeployTerminal,
-  SelfHostGuideLink,
+  DeployGuideLink,
 } from '~/components/marketing/deploy.tsx'
 import { PageShell } from '~/components/marketing/page-shell.tsx'
 import {
@@ -22,6 +30,7 @@ import {
   Str,
 } from '~/components/marketing/prose.tsx'
 import { DOC_GROUP_ORDER, DOC_SECTIONS } from '~/content/doc-sections.ts'
+import { FRAMEWORK_GROUPS } from '~/content/frameworks.ts'
 import { breadcrumbSchema, DEPLOY_URL, pageHead, techArticleSchemas } from '~/seo'
 
 export const Route = createFileRoute('/docs')({
@@ -38,7 +47,7 @@ export const Route = createFileRoute('/docs')({
     pageHead({
       title: 'Docs',
       description:
-        'MailySend API documentation: quickstart, domains and DNS, the emails API, batch and scheduling, templates, audiences, broadcasts, automations, inbound mail, webhooks, SDKs and error codes.',
+        'MailySend API documentation: quickstart, domains and DNS, the emails API, recipes for Next.js, Rails, Django and every other stack, batch and scheduling, templates, audiences, broadcasts, automations, inbound mail, webhooks, SDKs and error codes.',
       path: '/docs',
       image: '/og/docs.png',
       jsonLd: [
@@ -179,10 +188,10 @@ function DocsSidebar() {
         })}
 
         <a
-          href="/resources#selfhost"
+          href="/guides/deploy-to-cloudflare"
           className="mt-3 rounded-sm px-2 py-1.5 text-[14px] font-semibold text-accent no-underline hover:bg-tint"
         >
-          Self-host guide →
+          Deploy guide →
         </a>
       </nav>
     </aside>
@@ -239,27 +248,58 @@ function DocsPage() {
             Cloudflare account, so until that Worker exists there is no base
             URL, no domain and no key. Opening on `npm install` asked people to
             configure a client against nothing.
+
+            No step here is a command, and that is now a statement about the
+            product rather than a style choice. `build:cf` ends by running
+            scripts/ensure-resources.mjs inside Workers Builds, which creates
+            the queues, the bucket, the database and the namespaces and writes
+            their ids into the config wrangler deploys — so the terminal that
+            used to sit under step one was describing a version of this that no
+            longer exists. Step four is the dashboard for the same reason:
+            asking someone to install a CLI and run a device-code login to look
+            at mail they can already see is a tax, not a quickstart.
+
+            Claiming is step two because it is the only step with a deadline.
+            /setup is open to whoever reaches it first (server/api/setup.ts),
+            so a deployment left unclaimed is a deployment anyone can take.
           */}
           <AnchorSection anchor="quickstart" heading="Quickstart">
             <Lede>
-              Four steps from an empty Cloudflare account to a delivered email. The first one is a
-              button.
+              Five steps from an empty Cloudflare account to a delivered email, and not one of them
+              needs a terminal. The first is a button.
             </Lede>
             <div className="flex flex-col gap-3.5">
               <StepCard
                 step={1}
                 title="Deploy it to your Cloudflare account"
                 variant="rule"
-                description={`One click takes ${DEPLOY_DURATION_LONG}. Cloudflare forks the repo, creates the queues, D1 database, R2 bucket and KV namespaces, and hands you back a URL — that URL is your API base URL for every step below.`}
+                description={`One click takes ${DEPLOY_DURATION_LONG}. Cloudflare forks the repo and the build creates everything the Worker binds to — the twelve queues, the D1 database, the R2 bucket and the KV namespaces — then hands you back a URL. That URL is your API base URL for every step below.`}
               >
                 <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                   <DeployButton label="Deploy to Cloudflare" chip="1-CLICK" size="md" />
-                  <SelfHostGuideLink label="Or deploy from your terminal" />
+                  <DeployGuideLink label="Or deploy from your terminal" />
                 </div>
-                <DeployTerminal className="mt-3" />
               </StepCard>
               <StepCard
                 step={2}
+                title="Claim it before anyone else does"
+                variant="rule"
+                description="Open the URL Cloudflare gave you. A fresh deployment lands on /setup, where you register a passkey and save ten recovery codes — that is the whole sign-up, and there is no password to leak."
+              >
+                <Callout variant="warn" title="The claim window is open until you close it">
+                  <p className="m-0">
+                    Whoever reaches <Mono>/setup</Mono> first owns the instance, so claim it now
+                    rather than after lunch. If the URL will be public before you get to it, set{' '}
+                    <Mono>MS_REQUIRE_CLAIM_CODE=1</Mono> and the claim code is printed only to your
+                    Worker log. <Mono>MS_OWNER_EMAIL</Mono> is a different thing — a restriction on{' '}
+                    <em>which</em> address may claim, not a nomination of who owns it, and setting
+                    both means the claim code wins. Full detail in{' '}
+                    <a href="/guides/claim-your-instance">Claim your instance</a>.
+                  </p>
+                </Callout>
+              </StepCard>
+              <StepCard
+                step={3}
                 title="Add your sending domain"
                 variant="rule"
                 description="Domains → Add. On Cloudflare DNS the records are published and verified in seconds; anywhere else, copy the three below into your provider and hit verify. Until a domain verifies, nothing can leave."
@@ -269,7 +309,7 @@ function DocsPage() {
                 </p>
               </StepCard>
               <StepCard
-                step={3}
+                step={4}
                 title="Send"
                 variant="rule"
                 description="Create a key under Settings → API keys, then call your own deployment. No SDK required — this is the whole API."
@@ -301,23 +341,42 @@ function DocsPage() {
                   Already calling Resend? Point <Mono>RESEND_BASE_URL</Mono> at{' '}
                   <Mono>https://your-deployment/v1</Mono> and the official <Mono>resend</Mono>{' '}
                   client sends here instead — see <a href="/guides/migrate-from-resend">Migrate</a>.
-                  There is also a first-party <Mono>mailysend</Mono> SDK.
+                  For Next.js, Rails, Django, Python, Go and the rest, the recipe for your stack is
+                  in <a href="#frameworks">Sending from your framework</a>.
                 </p>
               </StepCard>
-              <StepCard step={4} title="Watch it land" variant="rule">
-                <Terminal
-                  className="mt-1.5"
-                  lines={[
-                    { kind: 'command', text: 'npx mailysend tail' },
-                    { kind: 'success', text: '12:04:03  em_7Kq2xR  accepted   user@example.com' },
-                    {
-                      kind: 'success',
-                      text: '12:04:04  em_7Kq2xR  delivered  gmail-smtp-in · 41ms',
-                    },
-                  ]}
-                />
+              <StepCard
+                step={5}
+                title="Watch it land"
+                variant="rule"
+                description="Open Logs in the dashboard you just deployed. Every message is there with its status — accepted, delivered, bounced — and the detail view carries the provider's own response, so a rejection tells you what the receiving server actually said."
+              >
+                <p className="mt-1.5 mb-0 text-[14.5px] leading-relaxed text-muted">
+                  Prefer to watch from a shell? <Mono>npx mailysend tail</Mono> streams the same
+                  events — see <a href="#cli">the CLI</a>.
+                </p>
               </StepCard>
             </div>
+            {/*
+              The one honest caveat on the button path: the resources are
+              created by the build, so a build command Cloudflare guessed wrong
+              is a deploy that fails on a missing binding rather than a deploy
+              that quietly skips a step. These are the two values from the
+              README, which is where they are kept correct.
+            */}
+            <Callout variant="info" title="If the build command is ever wrong">
+              <p className="m-0">
+                The queues, database, bucket and namespaces are created by{' '}
+                <Mono>pnpm run build:cf</Mono>, so if Cloudflare infers a different build command
+                the deploy fails on a binding it cannot resolve. Under{' '}
+                <strong>Workers → your Worker → Settings → Builds</strong>, the two values are{' '}
+                <Mono>pnpm run build:cf</Mono> and{' '}
+                <Mono>npx wrangler deploy -c apps/app/.output-cf/server/wrangler.json</Mono>. The{' '}
+                <Mono>-c</Mono> matters — the config wrangler deploys from is the one Vite generates
+                beside the bundle.{' '}
+                <a href="/guides/deploy-to-cloudflare#troubleshoot">If the deploy fails →</a>
+              </p>
+            </Callout>
           </AnchorSection>
 
           <AnchorSection anchor="domains" heading="Domains & DNS">
@@ -413,6 +472,48 @@ function DocsPage() {
             </Card>
           </AnchorSection>
 
+          {/*
+            The section that is deliberately not ours.
+
+            Every recipe here is another library — the framework's own mailer,
+            the `resend` client, `@react-email/components`, a generated OpenAPI
+            client — pointed at the reader's deployment. The alternative was a
+            first-party integration per framework, which would mean maintaining
+            nine half-SDKs to avoid linking to nine whole ones.
+
+            The samples live in content/frameworks.ts as strings rather than
+            JSX, because CodeTabs needs the raw text for its copy button and a
+            highlighted duplicate would be a second copy to keep in sync.
+          */}
+          <AnchorSection anchor="frameworks" heading="Sending from your framework">
+            <Lede>
+              Whatever you are already writing, the integration is a library you already have. The
+              base URL is your deployment and the password is your API key; everything else below
+              belongs to somebody else’s documentation.
+            </Lede>
+            <div className="flex flex-col gap-8">
+              {FRAMEWORK_GROUPS.map((group) => (
+                <div key={group.id}>
+                  <h3 className="m-0 mb-1.5 font-display text-[19px] font-medium -tracking-[0.015em]">
+                    {group.title}
+                  </h3>
+                  <p className="mt-0 mb-3.5 max-w-[70ch] text-[15px] leading-[1.7] text-muted">
+                    {group.blurb}
+                  </p>
+                  <CodeTabs items={group.items} caption={group.caption} />
+                  {group.note ? (
+                    <p className="mt-3 mb-0 text-[14px] leading-[1.7] text-muted-2">{group.note}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <p className="mt-1 mb-0 text-[15px] leading-[1.7] text-muted">
+              Longer walkthroughs: <a href="/guides/send-your-first-email">Send your first email</a>
+              , <a href="/guides/migrate-from-resend">Migrate from Resend</a> and{' '}
+              <a href="/guides/choose-a-sending-transport">Choose a sending transport</a>.
+            </p>
+          </AnchorSection>
+
           <AnchorSection anchor="batch" heading="Batch & scheduling">
             <Lede>
               Batch sends fan out through Cloudflare Queues, so one slow recipient domain never
@@ -502,35 +603,68 @@ function DocsPage() {
           </AnchorSection>
 
           <AnchorSection anchor="templates" heading="Templates (react-email, MJML, Handlebars)">
+            {/*
+              Two paths, and the order matters because only one of them is
+              react-email itself.
+
+              `react:` is the real library: sdk-node/src/render.ts detects the
+              element structurally, dynamically imports the caller's own
+              `@react-email/render`, and posts HTML — the same mechanism the
+              `resend` SDK uses, which is why a component written for Resend
+              renders here unchanged. `templates push` is a *subset* with the
+              same shape, and saying so in that order is the difference between
+              a claim that survives contact with a reader's codebase and one
+              that does not.
+            */}
             <Lede>
-              Templates are{' '}
+              Write{' '}
               <a href="https://react.email" rel="noreferrer">
                 react-email
               </a>{' '}
-              components — the same <Mono>@react-email/components</Mono> you already write. Store
-              them server-side, version every change, and send by <Mono>template_id</Mono> so
-              marketing can fix a typo without a deploy. Or render locally with <Mono>react</Mono>{' '}
-              and send the HTML. <Mono>.mjml</Mono> and <Mono>.hbs</Mono> files push the same way.
+              components — the same <Mono>@react-email/components</Mono> you already have — and pass
+              one as <Mono>react</Mono>. The SDK renders it where your code runs and posts the HTML;
+              React never reaches the wire, and there is nothing to push or store.
             </Lede>
             <Code>
               <Com>{'// emails/LoginCode.tsx'}</Com>
               {'\nimport { Html, Text, Button } from '}
               <Str>'@react-email/components'</Str>
               {
-                ';\n\nexport default ({ code }) => (\n  <Html>\n    <Text>Your code is {code}</Text>\n    <Button href='
+                ';\n\nexport const LoginCode = ({ code }) => (\n  <Html>\n    <Text>Your code is {code}</Text>\n    <Button href='
               }
               <Str>"https://acme.dev/verify"</Str>
               {'>Verify</Button>\n  </Html>\n);\n\n'}
+              <Com>{'// anywhere — npm i mailysend @react-email/components'}</Com>
+              {'\nawait ms.emails.send({ from, to, subject: '}
+              <Str>'Your code'</Str>
+              {', react: LoginCode({ code }) });'}
+            </Code>
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              <Mono>@react-email/render</Mono> is an optional peer dependency, imported only if you
+              pass <Mono>react</Mono> — so the SDK still installs with no dependencies for everyone
+              else. The official <Mono>resend</Mono> client does the same thing, which is why a
+              component written for Resend renders here unchanged.
+            </p>
+            <h3 className="mt-7 mb-1.5 font-display text-[19px] font-medium -tracking-[0.015em]">
+              Or store them server-side
+            </h3>
+            <Lede>
+              Push a template instead and it is versioned, previewable and sent by{' '}
+              <Mono>template_id</Mono>, so marketing can fix a typo without a deploy and roll back
+              instantly. <Mono>.mjml</Mono> and <Mono>.hbs</Mono> files push the same way.
+            </Lede>
+            <Code>
               <Com>$ npx mailysend templates push # versioned, instant rollback</Com>
             </Code>
-            <Lede>
-              <Mono>templates push</Mono> compiles a <em>subset</em> of JSX to a data-only AST:
-              fifteen react-email components, plain HTML tags, <Mono>{'{expr}'}</Mono>,{' '}
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              Worth knowing what that path is and is not: <Mono>templates push</Mono> does not run
+              react-email, it compiles <em>react-email-shaped</em> JSX into a data-only AST —
+              fifteen component names, plain HTML tags, <Mono>{'{expr}'}</Mono>,{' '}
               <Mono>{'{cond && …}'}</Mono>, <Mono>{'{items.map(…)}'}</Mono> and the <Mono>f.*</Mono>{' '}
-              filters. Anything else is refused at push time with a diagnostic pointing at the line.
-              Nothing is ever evaluated when the mail renders, which is why a template cannot become
-              code execution.
-            </Lede>
+              filters. Anything outside that is refused at push time with a diagnostic pointing at
+              the line. It is a subset, deliberately: nothing is ever evaluated when the mail
+              renders, which is why a stored template cannot become code execution.
+            </p>
           </AnchorSection>
 
           <AnchorSection anchor="audiences" heading="Audiences & contacts">
@@ -571,6 +705,10 @@ function DocsPage() {
                 ', split: 0.2 },\n});\nawait ms.broadcasts.send(b.id, { throttle_per_minute: 5000 });'
               }
             </Code>
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              Throttles, warm-up and what a million-recipient send actually does:{' '}
+              <a href="/guides/broadcasts-at-scale">Broadcasts at scale →</a>
+            </p>
           </AnchorSection>
 
           {/*
@@ -600,6 +738,10 @@ function DocsPage() {
               <Str>'tpl_nudge'</Str>
               {' }] } },\n  ],\n});'}
             </Code>
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              One workflow instance per contact, or one per cohort — the choice and its cost:{' '}
+              <a href="/guides/automations-instance-vs-cohort">Instance vs cohort →</a>
+            </p>
           </AnchorSection>
 
           <AnchorSection anchor="inbound" heading="Inbound email">
@@ -632,6 +774,10 @@ function DocsPage() {
               <Str>"inb/5Nq/photo.png"</Str>
               {' }]\n}'}
             </Code>
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              MX records, routing rules, mailboxes and threading, end to end:{' '}
+              <a href="/guides/receive-email">Receive email →</a>
+            </p>
           </AnchorSection>
 
           <AnchorSection anchor="webhooks" heading="Webhooks">
@@ -734,10 +880,17 @@ function DocsPage() {
               <Com>{'// auto-retry elsewhere on 5xx'}</Com>
               {'\n});'}
             </Code>
+            {/*
+              The trade-offs between the three used to be re-argued here in
+              full. They are a whole guide, and a summary that drifts from it is
+              worse than a link to it.
+            */}
             <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
-              Migrating off Resend? Keep <Mono>provider: 'resend'</Mono> on day one, move traffic
-              percentage by percentage, then flip to Cloudflare when the charts look boring.{' '}
-              <a href="/compare#migrate">Migration guide →</a>
+              Which one, and when to move:{' '}
+              <a href="/guides/choose-a-sending-transport">Choose a sending transport</a>. Migrating
+              off Resend? Keep <Mono>provider: 'resend'</Mono> on day one, move traffic percentage
+              by percentage, then flip to Cloudflare when the charts look boring —{' '}
+              <a href="/guides/migrate-from-resend">Migrate from Resend →</a>
             </p>
           </AnchorSection>
 
@@ -759,8 +912,10 @@ function DocsPage() {
               </div>
             </div>
             <p className="mt-3.5 mb-4 text-[15px] leading-[1.7] text-muted">
-              Rails, Django, Laravel, WordPress, Jira, anything legacy. SMTP sends appear in the
-              same logs, analytics and webhooks as API sends.
+              Rails, Django, Laravel, WordPress, Jira, anything legacy — their own mailer
+              configuration is the whole integration, and it is written out per framework in{' '}
+              <a href="#frameworks">Sending from your framework</a>. SMTP sends appear in the same
+              logs, analytics and webhooks as API sends.
             </p>
             {/*
               Workers has no inbound TCP listener, so the relay cannot be part
@@ -778,12 +933,13 @@ function DocsPage() {
             </Callout>
           </AnchorSection>
 
-          <AnchorSection anchor="sdks" heading="SDKs & CLI">
+          <AnchorSection anchor="sdks" heading="SDKs & OpenAPI">
             <Lede>
               One first-party SDK — Node and TypeScript, MIT, with a Resend-compatible shim — and
               the OpenAPI document every other language generates from, served by your own
               deployment at <Mono>/v1/openapi.json</Mono> so a generated client can never drift from
-              the API it was generated against.
+              the API it was generated against. The per-stack recipes are in{' '}
+              <a href="#frameworks">Sending from your framework</a>.
             </Lede>
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-2.5 p-0">
               {SDKS.map(([name, install, state]) => (
@@ -800,6 +956,21 @@ function DocsPage() {
                 </li>
               ))}
             </ul>
+          </AnchorSection>
+
+          {/*
+            The CLI gets its own section, and its nav label says "optional",
+            because the quickstart above no longer contains a single command.
+            It used to end with `npx mailysend tail`, which quietly made a
+            terminal a prerequisite for reading your own delivery log.
+          */}
+          <AnchorSection anchor="cli" heading="The CLI, if you prefer a terminal">
+            <Lede>
+              Nothing above this line needs it. <Mono>npm i -g mailysend</Mono>, or run it with{' '}
+              <Mono>npx</Mono> — the same package as the SDK, so installing one gets you both. It
+              exists for people who would rather stay in a shell, for CI, and for getting back into
+              a deployment you cannot sign in to.
+            </Lede>
             {/*
               These are checked against `cli/src/main.ts` and the flag specs
               beside it, because the block is `copyable` — every line here is
@@ -817,6 +988,10 @@ function DocsPage() {
               types. `deploy --domain acme.dev` never existed either — see the
               note on DEPLOY_LINES in components/marketing/deploy.tsx, which is
               where the correct deploy pair lives.
+
+              `deploy` is deliberately not in this list. It is the button's job
+              on this page, and a reader who wants the wrangler path is better
+              served by the deploy guide, which explains the config flag.
             */}
             <Terminal
               className="mt-3.5"
@@ -829,9 +1004,16 @@ function DocsPage() {
                 },
                 { kind: 'command', text: 'npx mailysend tail --status bounced' },
                 { kind: 'command', text: 'npx mailysend domains verify acme.dev' },
-                ...DEPLOY_LINES.filter((line) => line.kind === 'command'),
               ]}
             />
+            <p className="mt-3.5 mb-0 text-[15px] leading-[1.7] text-muted">
+              Two jobs are worth knowing it exists for even if you never use the rest.{' '}
+              <Mono>npx mailysend claim</Mono> takes ownership of a deployment, or recovers one you
+              are locked out of — the break-glass path when passkeys and recovery codes are both
+              gone. And <Mono>npx mailysend provision</Mono> creates the queues for a deploy driven
+              by wrangler or CI rather than by the button, which does it during the build.{' '}
+              <a href="/guides/deploy-to-cloudflare#run-it">The wrangler path →</a>
+            </p>
           </AnchorSection>
 
           <AnchorSection anchor="mcp" heading="MCP & agents">
@@ -910,7 +1092,7 @@ function DocsPage() {
                 </a>
               </Button>
               <Button asChild variant="outline">
-                <a href="/resources#selfhost">Self-host guide</a>
+                <a href="/guides/deploy-to-cloudflare">Deploy guide</a>
               </Button>
             </div>
           </section>

@@ -21,8 +21,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   DEPLOY_DURATION,
   DeployButton,
+  DeployGuideLink,
   DeployTerminal,
-  SelfHostGuideLink,
 } from '~/components/marketing/deploy'
 import type { FaqItem } from '~/components/marketing/faq'
 import { Faq, toFaqEntries } from '~/components/marketing/faq'
@@ -320,11 +320,18 @@ const SDKS = [
   { name: 'Elixir', install: 'openapi-generator · elixir', shipped: false },
 ]
 
+/**
+ * The four doors into a deployment, in the reader's own world.
+ *
+ * The first tile used to be the CLI, which put a terminal at the front of a
+ * list whose whole point is that you do not need one. What people actually
+ * arrive with is a framework, so that is what leads.
+ */
 const SURFACES = [
   {
-    title: 'CLI',
-    body: 'Send, tail logs, manage domains and deploy:',
-    code: 'npx mailysend tail',
+    title: 'Your framework',
+    body: 'Next.js, Remix, Nuxt, Express, Workers — or keep the resend client:',
+    code: 'RESEND_BASE_URL=…',
   },
   {
     title: 'SMTP relay',
@@ -792,19 +799,31 @@ function HomePage() {
           }
           lede="There is no MailySend cloud to sign up for. You deploy the platform into your own Cloudflare account — from the browser or from your terminal — and it is yours."
         />
-        <div className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-[18px]">
+        {/*
+          Not two equal cards any more.
+
+          The button path is the one that works, and it needed no defending
+          when the wrangler path sat beside it at the same weight — it needed
+          the extra column. The paragraph below also used to end "Queues and the
+          analytics datasets take one command afterwards", which stopped being
+          true when `build:cf` started ending in scripts/ensure-resources.mjs:
+          the queues, bucket, database and namespaces are all created during the
+          build, inside Workers Builds, with nothing for the reader to run.
+        */}
+        <div className="mt-8 grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <div className="flex flex-col rounded-block border border-line bg-card p-7">
             <Eyebrow className="mb-3.5 tracking-[0.1em]">PATH A · ONE CLICK</Eyebrow>
             <h3 className="ms-display-3 m-0 mb-2.5 text-[25px]">Press the button</h3>
             <p className="m-0 mb-[18px] text-[15px] leading-[1.65] text-muted">
-              Deploy to Cloudflare creates D1, KV, R2 and the Durable Objects in your account and
-              hands you the dashboard on your own workers.dev subdomain. Queues and the analytics
-              datasets take one command afterwards.
+              Deploy to Cloudflare creates the queues, D1, KV, R2 and the Durable Objects in your
+              account and hands you the dashboard on your own workers.dev subdomain. Nothing is left
+              for you to run afterwards — the build provisions everything the Worker binds to.
             </p>
             <ul className="m-0 mb-[22px] flex list-none flex-col gap-2.5 p-0 text-[14.5px]">
               {[
                 `Ready in ${DEPLOY_DURATION} — most of it DNS propagation`,
                 'Nothing to fill in — the deploy form has no fields at all',
+                'No commands, before or after — the build creates the resources',
                 'Migrates itself and prints your first API key on boot',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
@@ -817,23 +836,24 @@ function HomePage() {
             </ul>
             <div className="mt-auto flex flex-wrap items-center gap-2">
               <DeployButton size="lg" />
-              <SelfHostGuideLink />
+              <DeployGuideLink />
             </div>
           </div>
 
           <div className="flex flex-col rounded-block border border-ink bg-ink p-7 text-paper">
             <Eyebrow className="mb-3.5 tracking-[0.1em] text-accent-on-dark">
-              PATH B · ONE COMMAND
+              PATH B · OPTIONAL
             </Eyebrow>
             <h3 className="ms-display-3 m-0 mb-2.5 text-[25px]">Or from your terminal</h3>
             <p className="m-0 mb-[18px] text-[15px] leading-[1.65] text-on-dark-3">
-              Clone the repo and run the two commands below against your own wrangler config —
-              reviewable, scriptable, CI-friendly, and the same thing the button does.
+              If you would rather watch each step: clone the repo and run the two commands below
+              against your own wrangler config — reviewable, scriptable, CI-friendly, and the same
+              thing the button does for you.
             </p>
             <DeployTerminal className="mb-[18px] border border-dark-line" />
             <Button asChild variant="accent" size="lg" className="mt-auto">
-              <a href="/resources#selfhost">
-                Read the self-host guide
+              <a href="/guides/deploy-to-cloudflare#run-it">
+                Read the deploy guide
                 <MonoChip tone="ink" size="sm" className="bg-white/20 text-white tracking-[0.1em]">
                   CLI
                 </MonoChip>
@@ -861,10 +881,10 @@ function HomePage() {
               about latency, retries and cost, and own every byte.
             </p>
             <a
-              href="/resources#selfhost"
+              href="/guides/deploy-to-cloudflare"
               className="inline-flex items-center gap-2 text-[15px] font-semibold text-accent-on-dark no-underline hover:text-paper"
             >
-              Read the self-hosting guide →
+              See what the deploy creates →
             </a>
           </div>
           <div className="flex min-w-0 flex-col gap-2.5">

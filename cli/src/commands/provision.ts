@@ -3,13 +3,19 @@ import { CliError, type CommandContext } from '../command.ts'
 import { note, ok, out, style } from '../term.ts'
 
 /**
- * The step the Deploy button cannot take.
+ * The step a wrangler or CI deploy still has to take for itself.
  *
  * KV, D1, R2 and Secrets Store bindings auto-provision from `wrangler.jsonc`.
  * Queues and Analytics Engine datasets do not, and a Worker deployed without
  * them starts fine and then fails on its first send with a binding error. So
  * the sequence a person is told to run — provision, then deploy — has to be a
  * sequence that exists.
+ *
+ * It is no longer the step the *Deploy button* cannot take: `build:cf` ends by
+ * running `scripts/ensure-resources.mjs`, which creates the queues (and the
+ * bucket, the database and the namespaces) inside Workers Builds and writes
+ * their ids into the config wrangler deploys. This command is for the path
+ * that does not go through that build — your own wrangler invocation, or CI.
  *
  * This used to `spawn('node', ['--experimental-strip-types', SCRIPT])` against
  * `scripts/provision.ts`, resolved relative to this file. That works from a

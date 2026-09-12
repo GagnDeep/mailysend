@@ -297,7 +297,7 @@ function ResourcesPage() {
             </>
           }
           align="start"
-          lede="The button creates the D1 database, the KV namespaces and the R2 bucket, then builds and deploys. Queues and the analytics datasets are one command it cannot run for you, so we say so. Nothing needs configuring to boot: the instance migrates its own schema, generates its own signing secret and learns its own public URL on the first request. Nothing is sent to us — there is no us in the path."
+          lede="The button creates the queues, the D1 database, the KV namespaces and the R2 bucket, then builds and deploys — there is no command to run afterwards, because the build runs it. Nothing needs configuring to boot either: the instance migrates its own schema, generates its own signing secret and learns its own public URL on the first request. Nothing is sent to us — there is no us in the path."
         />
 
         {/*
@@ -311,9 +311,8 @@ function ResourcesPage() {
             <Eyebrow>FROM THE BROWSER</Eyebrow>
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
               Press the button and pick your Cloudflare account. The form has no fields on it at
-              all, because there is nothing you have to know yet. D1, KV and R2 are created for you;
-              queues and the analytics datasets need one command afterwards, and the app tells you
-              when it needs it. Then open{' '}
+              all, because there is nothing you have to know yet. The queues, D1, KV and R2 are all
+              created during the build, so there is nothing to run afterwards. Then open{' '}
               <code className="font-mono text-[13px] text-ink">/setup</code> and claim it: the first
               person to reach that page owns the instance.
             </p>
@@ -330,7 +329,7 @@ function ResourcesPage() {
           </Card>
 
           <Card className="flex flex-col gap-4 p-6">
-            <Eyebrow>FROM YOUR TERMINAL</Eyebrow>
+            <Eyebrow>FROM YOUR TERMINAL · OPTIONAL</Eyebrow>
             <DeployTerminal verbose />
             <p className="m-0 text-[14.5px] leading-[1.65] text-muted">
               Or clone the repo and run{' '}

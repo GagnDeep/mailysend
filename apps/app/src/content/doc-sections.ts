@@ -40,7 +40,7 @@ export const DOC_SECTIONS: DocSection[] = [
     navLabel: 'Quickstart',
     headline: 'Quickstart',
     description:
-      'Deploy it to your own Cloudflare account, add a domain, send, and tail the delivery log.',
+      'Five steps and no terminal: deploy to your own Cloudflare account with one click, claim the instance with a passkey, add a domain, send, and watch it land in the log.',
   },
   {
     anchor: 'domains',
@@ -64,6 +64,14 @@ export const DOC_SECTIONS: DocSection[] = [
     headline: 'Emails API',
     description:
       'Send, read, reschedule and cancel email through /v1/emails, including the full request body reference.',
+  },
+  {
+    anchor: 'frameworks',
+    group: 'SENDING',
+    navLabel: 'Your framework',
+    headline: 'Sending from your framework',
+    description:
+      'Recipes for Next.js, Remix, Nuxt, Astro, Express, Hono and Workers; Python, Go, Ruby, PHP, Java and .NET through the OpenAPI document; and Rails, Django, Laravel, WordPress and Nodemailer through the SMTP relay.',
   },
   {
     anchor: 'batch',
@@ -95,7 +103,7 @@ export const DOC_SECTIONS: DocSection[] = [
     navLabel: 'Templates (react-email)',
     headline: 'Templates (react-email, MJML, Handlebars)',
     description:
-      'Push react-email components, MJML or Handlebars, version every change and send by template_id — or render React locally with the SDK and send the HTML.',
+      'Write react-email components and let the SDK render them where your code runs — or push a react-email-shaped subset, MJML or Handlebars to be versioned server-side and sent by template_id.',
   },
   {
     anchor: 'audiences',
@@ -172,10 +180,18 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     anchor: 'sdks',
     group: 'PLATFORM',
-    navLabel: 'SDKs & CLI',
-    headline: 'SDKs & CLI',
+    navLabel: 'SDKs & OpenAPI',
+    headline: 'SDKs & OpenAPI',
     description:
-      'A first-party Node/TypeScript SDK with a Resend-compatible shim, plus the OpenAPI document every other language generates a client from.',
+      'A first-party Node/TypeScript SDK with a Resend-compatible shim, plus the OpenAPI document your own deployment serves and every other language generates a client from.',
+  },
+  {
+    anchor: 'cli',
+    group: 'PLATFORM',
+    navLabel: 'CLI (optional)',
+    headline: 'The CLI, if you prefer a terminal',
+    description:
+      'Nothing in this documentation requires the CLI: it exists for people who would rather stay in a shell, for CI, and for break-glass recovery of a deployment you cannot sign in to.',
   },
   {
     anchor: 'mcp',

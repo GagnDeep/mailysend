@@ -96,19 +96,25 @@ export const DeployButton = ({
 /**
  * The quieter alternative beside the primary CTA.
  *
- * The self-host guide used to *be* the deploy button — a tollgate between the
+ * The deploy guide used to *be* the deploy button — a tollgate between the
  * homepage and Cloudflare that made a one-click deploy take three. It is still
- * worth reading if you want the CLI path or the bindings explained, so it keeps
- * a link; it just no longer stands in front of the button.
+ * worth reading if you want the wrangler path or the bindings explained, so it
+ * keeps a link; it just no longer stands in front of the button.
+ *
+ * It points at the guide rather than `/resources#selfhost`, which is where it
+ * used to go. That anchor is the *deploy* section of the resources page, under
+ * a label that said self-host, so the link promised one thing and landed on
+ * another; the guide is the page that actually answers "how do I run the
+ * deploy myself".
  */
-export const SelfHostGuideLink = ({
-  label = 'Read the self-host guide',
+export const DeployGuideLink = ({
+  label = 'Read the deploy guide',
   className,
 }: {
   label?: string
   className?: string
 }) => (
   <Button asChild variant="ghost" size="md" className={className}>
-    <a href="/resources#selfhost">{label}</a>
+    <a href="/guides/deploy-to-cloudflare">{label}</a>
   </Button>
 )

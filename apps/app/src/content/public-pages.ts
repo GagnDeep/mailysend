@@ -59,7 +59,7 @@ export const PUBLIC_PAGES: PublicPage[] = [
   {
     path: '/docs',
     label: 'Docs',
-    blurb: 'Quickstart, full API, SDKs, providers',
+    blurb: 'Quickstart, full API, framework recipes, SDKs, providers',
     group: 'Reference',
     priority: 0.9,
     changefreq: 'weekly',

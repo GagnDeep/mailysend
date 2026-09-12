@@ -41,7 +41,7 @@ export interface Entry {
 export const ENTRIES: Entry[] = [
   {
     match: ['provision'],
-    summary: 'Create the queues and analytics datasets the Deploy button cannot',
+    summary: 'Create the queues and probe the analytics datasets, for a wrangler or CI deploy',
     usage: 'mailysend provision',
     flags: provisionFlags,
     run: provision,
