@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FlagSpecs } from '../args.ts'
 import { CliError, type CommandContext } from '../command.ts'
-import { DEFAULT_BASE_URL, readConfig, writeConfig } from '../config.ts'
+import { NoBaseUrl, readConfig, writeConfig } from '../config.ts'
 import { heading, kv, note, ok, out, style } from '../term.ts'
 
 /**
@@ -26,7 +26,7 @@ import { heading, kv, note, ok, out, style } from '../term.ts'
  */
 
 export const claimFlags: FlagSpecs = {
-  url: { kind: 'string', describe: 'Base URL of the deployment', default: DEFAULT_BASE_URL },
+  url: { kind: 'string', describe: 'Base URL of the deployment you are signing in to' },
   email: { kind: 'string', describe: 'Address to own the instance' },
   database: { kind: 'string', describe: 'D1 database name', default: 'mailysend' },
   nonce: { kind: 'string', describe: 'A nonce you already wrote into claim_nonces' },
@@ -98,7 +98,9 @@ const manualSql = (nonce: string) =>
   `INSERT INTO claim_nonces (nonce, created_at) VALUES ('${nonce}', '${new Date().toISOString()}');`
 
 export const claim = async (ctx: CommandContext) => {
-  const baseUrl = String(ctx.args.flags.url).replace(/\/+$/, '')
+  const url = (ctx.args.flags.url as string | undefined) ?? process.env.MAILYSEND_BASE_URL
+  if (!url) throw new NoBaseUrl('Pass --url https://mail.acme.dev')
+  const baseUrl = url.replace(/\/+$/, '')
   const supplied = ctx.args.flags.nonce as string | undefined
   const nonce = supplied ?? `msc_${randomUUID()}${randomUUID()}`.replace(/-/g, '')
   const manual = ctx.args.flags.manual === true

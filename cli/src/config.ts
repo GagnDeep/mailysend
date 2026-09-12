@@ -27,7 +27,23 @@ export interface ConfigFile {
   profiles: Record<string, Profile>
 }
 
-export const DEFAULT_BASE_URL = 'https://api.mailysend.com'
+/**
+ * There is no default base URL, and there must not be one.
+ *
+ * MailySend is deployed into your own Cloudflare account, so there is no
+ * address this CLI could guess that would be right for anybody. It used to
+ * guess `https://api.mailysend.com`, which does not resolve — so `mailysend
+ * login` with no `--url` turned a missing setting into a DNS error a long way
+ * from its cause. The SDK removed its own default for the same reason.
+ */
+export class NoBaseUrl extends Error {
+  constructor(how = 'Pass --url https://mail.acme.dev') {
+    super(
+      `No base URL. ${how}, or set MAILYSEND_BASE_URL to the origin you deployed to ` +
+        '(no trailing /v1).',
+    )
+  }
+}
 
 export const configDir = (): string =>
   process.env.MAILYSEND_CONFIG_DIR ??
@@ -76,7 +92,8 @@ export const resolveCredentials = async (
   const envUrl = overrides.baseUrl ?? process.env.MAILYSEND_BASE_URL
 
   if (envKey) {
-    return { apiKey: envKey, baseUrl: envUrl ?? DEFAULT_BASE_URL, profile: 'env' }
+    if (!envUrl) throw new NoBaseUrl('Pass --base-url https://mail.acme.dev')
+    return { apiKey: envKey, baseUrl: envUrl, profile: 'env' }
   }
 
   const config = await readConfig()

@@ -1,6 +1,6 @@
 import type { FlagSpecs } from '../args.ts'
 import { CliError, type CommandContext } from '../command.ts'
-import { configPath, DEFAULT_BASE_URL, readConfig, writeConfig } from '../config.ts'
+import { configPath, NoBaseUrl, readConfig, writeConfig } from '../config.ts'
 import { kv, note, ok, out, Progress, style } from '../term.ts'
 
 /**
@@ -17,7 +17,7 @@ import { kv, note, ok, out, Progress, style } from '../term.ts'
 
 export const loginFlags: FlagSpecs = {
   token: { kind: 'string', describe: 'Store an existing API key instead of opening a browser' },
-  url: { kind: 'string', describe: 'Base URL of the deployment', default: DEFAULT_BASE_URL },
+  url: { kind: 'string', describe: 'Base URL of the deployment you are signing in to' },
   profile: {
     kind: 'string',
     short: 'p',
@@ -55,7 +55,9 @@ export const login = async (ctx: CommandContext) => {
     return
   }
 
-  const baseUrl = String(ctx.args.flags.url).replace(/\/+$/, '')
+  const url = (ctx.args.flags.url as string | undefined) ?? process.env.MAILYSEND_BASE_URL
+  if (!url) throw new NoBaseUrl('Pass --url https://mail.acme.dev')
+  const baseUrl = url.replace(/\/+$/, '')
   const name = String(ctx.args.flags.profile)
   const direct = ctx.args.flags.token as string | undefined
 
