@@ -214,3 +214,61 @@
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
 }
+
+/*
+ * Long-form body rhythm, for /docs and every guide.
+ *
+ * Measured on /guides/deploy-to-cloudflare before this existed: the article
+ * column is 852px, so a 15.5px paragraph ran to **110 characters a line**, and
+ * consecutive paragraphs computed to `margin: 0px` — they touched. Three
+ * explanations in a row rendered as one undifferentiated wall at roughly double
+ * a comfortable measure. Every guide author had been compensating by hand, and
+ * inconsistently: 150 body paragraphs carried no margin at all, another 28
+ * carried `mt-4`, `mt-5` or `mt-6`.
+ *
+ * So the rhythm belongs to the container rather than to each block. A plain
+ * descendant selector is deliberate: `.ms-prose > * + *` outranks a `.mt-6`
+ * utility, which is what normalises those twenty-eight one-offs without
+ * visiting them. Anything that genuinely needs to hug what precedes it should
+ * be nested inside its own wrapper rather than sit at this level — a child of a
+ * child is not matched here.
+ */
+.ms-prose > * + * {
+  margin-top: 26px;
+}
+
+/*
+ * The measure. 68ch on the text that is read left-to-right, and nothing else:
+ * tables, code blocks, terminals, grids and callouts are scanned rather than
+ * read, and capping those would waste the column they were given on purpose.
+ */
+.ms-prose > p,
+.ms-prose > ul,
+.ms-prose > ol,
+.ms-prose > blockquote {
+  max-width: 58ch;
+}
+
+/*
+ * Sub-headings inside a section need more air above than between paragraphs,
+ * and less below, so the heading binds to what it introduces rather than
+ * floating between two bodies.
+ */
+.ms-prose > h3 {
+  /*
+   * Guides wrote these at `text-[15px] font-semibold`, a hair under the 15.5px
+   * body they introduce — so a sub-heading read as a bolded sentence rather
+   * than as a level, and the reader lost the one cue that a section has parts.
+   * Size is what makes a heading a heading; the extra air above it is what
+   * makes it belong to the text below rather than float between two bodies.
+   */
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  margin-top: 40px;
+  margin-bottom: 12px;
+}
+
+.ms-prose > h3:first-child {
+  margin-top: 0;
+}

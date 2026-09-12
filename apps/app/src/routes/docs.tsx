@@ -202,7 +202,7 @@ function DocsPage() {
       <div className="ms-container grid items-start gap-10 pt-8 pb-20 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
         <DocsSidebar />
 
-        <article className="flex min-w-0 flex-col gap-11">
+        <article className="flex min-w-0 flex-col gap-14">
           <AnchorSection anchor="intro" heading="Introduction">
             <Lede>
               MailySend is a Resend-compatible email platform that runs on Cloudflare Workers. One

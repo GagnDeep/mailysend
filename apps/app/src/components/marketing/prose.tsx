@@ -91,7 +91,7 @@ export const AnchorSection = ({
   children: ReactNode
 }) => (
   <section id={anchor} className="min-w-0 scroll-mt-[92px]">
-    <h2 className="ms-display-3 mt-0 mb-3 flex flex-wrap items-center gap-3">
+    <h2 className="ms-display-3 mt-0 mb-5 flex flex-wrap items-center gap-3">
       {heading}
       {badge ? (
         <MonoChip tone="accent" size="sm" className="tracking-[0.1em]">
@@ -99,6 +99,12 @@ export const AnchorSection = ({
         </MonoChip>
       ) : null}
     </h2>
-    {children}
+    {/*
+      `ms-prose` is what puts air between the blocks below and holds the text
+      to a readable measure — see the rule in design-tokens/theme.css. Without
+      it the body of a section is whatever margins its individual blocks happen
+      to carry, which for a plain <p> is none.
+    */}
+    <div className="ms-prose">{children}</div>
   </section>
 )

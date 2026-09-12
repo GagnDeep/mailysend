@@ -153,7 +153,7 @@ export const GuideLayout = ({ guide, children, summary }: GuideLayoutProps) => {
           />
         </aside>
 
-        <article className="flex min-w-0 flex-col gap-11">
+        <article className="flex min-w-0 flex-col gap-14">
           {guide.prerequisites.length > 0 ? (
             <Callout title="YOU'LL NEED">
               <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[14.5px]">
