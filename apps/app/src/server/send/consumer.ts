@@ -376,15 +376,17 @@ async function buildOutbound(
   const trackingBase = (env.MS_TRACKING_URL ?? env.MS_PUBLIC_URL).replace(/\/$/, '')
 
   // --- unsubscribe ---------------------------------------------------------
-  // Every message gets List-Unsubscribe headers, including transactional mail:
-  // Gmail and Yahoo require one-click unsubscribe from bulk senders, and a
-  // header that is sometimes present is worse than one that always is.
-  const unsubToken = await signTrackingToken(env.MS_SECRET, {
-    emailId: envelope.email_id,
-    workspaceId: envelope.workspace_id,
-  })
-  const unsubUrl = `${trackingBase}/u/${unsubToken}`
-  if (html)
+  // Broadcasts always carry an unsubscribe path. Individual mail only does so
+  // when the sender explicitly opts this domain in: list headers make clients
+  // such as Apple Mail present a message as mailing-list mail.
+  const includeUnsubscribe = Boolean(envelope.broadcast_id) || envelope.domain.unsubscribe_headers
+  const unsubUrl = includeUnsubscribe
+    ? `${trackingBase}/u/${await signTrackingToken(env.MS_SECRET, {
+        emailId: envelope.email_id,
+        workspaceId: envelope.workspace_id,
+      })}`
+    : undefined
+  if (html && unsubUrl)
     html = injectUnsubscribe(html, { url: unsubUrl, appendFooter: Boolean(envelope.broadcast_id) })
 
   // --- tracking ------------------------------------------------------------
@@ -459,8 +461,15 @@ async function buildOutbound(
     ...(text ? { text } : {}),
     headers: {
       ...(request.headers ?? {}),
-      'List-Unsubscribe': `<${unsubUrl}>, <mailto:unsubscribe@${envelope.domain.name}?subject=unsubscribe>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      ...(unsubUrl
+        ? {
+            // A one-click HTTPS endpoint is real and immediately actionable.
+            // Do not advertise a made-up unsubscribe@ mailbox: clients such
+            // as Apple Mail can prefer it over the valid endpoint.
+            'List-Unsubscribe': `<${unsubUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          }
+        : {}),
     },
     ...(request.attachments?.length
       ? {

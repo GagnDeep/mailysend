@@ -223,17 +223,17 @@ describe('matchers that used to pass on strings they had not matched', () => {
 })
 
 /**
- * Tracking is off unless somebody asked for it.
+ * Recipient-visible send options are off unless somebody asked for them.
  *
  * Both switches change the message in a way the recipient can see — a pixel
  * their client fetches from us, and links that resolve through our redirector
  * — and both used to be on from the moment a domain was created. That is a
- * default nobody consented to, so it is now asserted in three places at once:
- * the response body, the row the INSERT actually wrote, and the column default
- * the INSERT relies on.
+ * default nobody consented to, so they are now asserted in three places at
+ * once: the response body, the row the INSERT actually wrote, and the column
+ * defaults the INSERT relies on.
  */
 describe('what a new domain starts with', () => {
-  it('creates a domain with neither tracking switch on', async () => {
+  it('creates a domain with no recipient-visible send options on', async () => {
     const created = await h.fetch('/v1/domains', {
       method: 'POST',
       cookie,
@@ -244,18 +244,21 @@ describe('what a new domain starts with', () => {
       id: string
       open_tracking: boolean
       click_tracking: boolean
+      unsubscribe_headers: boolean
     }
     expect(body.open_tracking).toBe(false)
     expect(body.click_tracking).toBe(false)
+    expect(body.unsubscribe_headers).toBe(false)
 
     // The response is a literal; this is the row, which is what the send path
     // reads. The two disagreeing is exactly the bug this guards.
     const row = await h.sql
-      .prepare('SELECT open_tracking, click_tracking FROM domains WHERE id = ?')
+      .prepare('SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?')
       .bind(body.id)
-      .first<{ open_tracking: number; click_tracking: number }>()
+      .first<{ open_tracking: number; click_tracking: number; unsubscribe_headers: number }>()
     expect(row?.open_tracking).toBe(0)
     expect(row?.click_tracking).toBe(0)
+    expect(row?.unsubscribe_headers).toBe(0)
   })
 
   it('takes the column default, not a value the INSERT names', async () => {
@@ -272,11 +275,37 @@ describe('what a new domain starts with', () => {
       .bind(new Date().toISOString(), new Date().toISOString())
       .run()
     const row = await h.sql
-      .prepare('SELECT open_tracking, click_tracking FROM domains WHERE id = ?')
+      .prepare('SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?')
       .bind('dom_default')
-      .first<{ open_tracking: number; click_tracking: number }>()
+      .first<{ open_tracking: number; click_tracking: number; unsubscribe_headers: number }>()
     expect(row?.open_tracking).toBe(0)
     expect(row?.click_tracking).toBe(0)
+    expect(row?.unsubscribe_headers).toBe(0)
+  })
+
+  it('allows a sender to opt individual mail into unsubscribe headers', async () => {
+    const created = await h.fetch('/v1/domains', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'headers.dev' }),
+    })
+    const { id } = (await created.json()) as { id: string }
+
+    const updated = await h.fetch(`/v1/domains/${id}`, {
+      method: 'PATCH',
+      cookie,
+      body: JSON.stringify({ unsubscribe_headers: true }),
+    })
+    expect(updated.status).toBe(200)
+    expect((await updated.json()) as { unsubscribe_headers: boolean }).toMatchObject({
+      unsubscribe_headers: true,
+    })
+
+    const row = await h.sql
+      .prepare('SELECT unsubscribe_headers FROM domains WHERE id = ?')
+      .bind(id)
+      .first<{ unsubscribe_headers: number }>()
+    expect(row?.unsubscribe_headers).toBe(1)
   })
 })
 

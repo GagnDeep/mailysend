@@ -220,14 +220,18 @@ class ResendDomains {
     open_tracking?: boolean
     clickTracking?: boolean
     click_tracking?: boolean
+    unsubscribeHeaders?: boolean
+    unsubscribe_headers?: boolean
     tls?: 'opportunistic' | 'enforced'
   }): Promise<ResendResponse<T.Domain>> {
     return captured(() => {
       const body: T.UpdateDomainRequest = {}
       const opens = payload.open_tracking ?? payload.openTracking
       const clicks = payload.click_tracking ?? payload.clickTracking
+      const unsubscribeHeaders = payload.unsubscribe_headers ?? payload.unsubscribeHeaders
       if (opens !== undefined) body.open_tracking = opens
       if (clicks !== undefined) body.click_tracking = clicks
+      if (unsubscribeHeaders !== undefined) body.unsubscribe_headers = unsubscribeHeaders
       if (payload.tls !== undefined) body.tls = payload.tls
       return this.#domains.update(payload.id, body)
     })

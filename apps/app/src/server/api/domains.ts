@@ -111,10 +111,11 @@ domains.post('/', async (c) => {
       created_at: now,
       custom_return_path: returnPath,
       provider,
-      // Both off, matching the column defaults this INSERT relied on. Neither
-      // is silent to the recipient, so neither is on until somebody asks.
+      // All three are off, matching the column defaults this INSERT relied on.
+      // None is silent to the recipient, so none is on until somebody asks.
       open_tracking: false,
       click_tracking: false,
+      unsubscribe_headers: false,
       records: records.map((r) => toDnsRecord(r, 'not_started', null)),
     },
     201,
@@ -129,7 +130,7 @@ domains.get('/', async (c) => {
   const rows = await ctx.sql
     .prepare(
       `SELECT id, name, status, region, dkim_selector, custom_return_path, open_tracking,
-              click_tracking, tls, dmarc_policy, learned_daily_quota, last_verified_at, provider,
+              click_tracking, unsubscribe_headers, tls, dmarc_policy, learned_daily_quota, last_verified_at, provider,
               created_at
          FROM domains
         WHERE workspace_id = ? ${cursor ? 'AND id < ?' : ''}
@@ -184,6 +185,7 @@ domains.patch('/:id', async (c) => {
   const columns: Record<string, unknown> = {}
   if (patch.open_tracking !== undefined) columns.open_tracking = patch.open_tracking ? 1 : 0
   if (patch.click_tracking !== undefined) columns.click_tracking = patch.click_tracking ? 1 : 0
+  if (patch.unsubscribe_headers !== undefined) columns.unsubscribe_headers = patch.unsubscribe_headers ? 1 : 0
   if (patch.tls !== undefined) columns.tls = patch.tls
   if (patch.custom_return_path !== undefined) columns.custom_return_path = patch.custom_return_path
   if (patch.provider !== undefined) columns.provider = patch.provider ?? null
@@ -1342,6 +1344,7 @@ interface DomainRow {
   custom_return_path: string
   open_tracking: number
   click_tracking: number
+  unsubscribe_headers: number
   tls?: string
   dmarc_policy: string | null
   /** Null means nobody has run a receiving check yet — not that one failed. */
@@ -1375,7 +1378,7 @@ async function loadDomain(ctx: Ctx, id: string): Promise<DomainRow> {
   const row = await ctx.sql
     .prepare(
       `SELECT id, name, status, region, dkim_selector, custom_return_path, open_tracking,
-              click_tracking, tls, dmarc_policy, receiving_mx_status, receiving_mx_found,
+              click_tracking, unsubscribe_headers, tls, dmarc_policy, receiving_mx_status, receiving_mx_found,
               receiving_checked_at, learned_daily_quota, last_verified_at, provider,
               created_at
          FROM domains WHERE id = ? AND workspace_id = ?`,
@@ -1398,6 +1401,7 @@ const toDomain = (row: DomainRow) => ({
   custom_return_path: row.custom_return_path,
   open_tracking: row.open_tracking === 1,
   click_tracking: row.click_tracking === 1,
+  unsubscribe_headers: row.unsubscribe_headers === 1,
   tls: row.tls ?? 'opportunistic',
   dmarc_policy: row.dmarc_policy,
   daily_quota: row.learned_daily_quota,
