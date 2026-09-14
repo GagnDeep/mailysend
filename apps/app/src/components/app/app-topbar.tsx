@@ -18,7 +18,7 @@ import {
 } from '@mailysend/ui'
 import { Link } from '@tanstack/react-router'
 import { Check, ChevronsUpDown, LogOut, Menu, Search, Settings, Users } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { endDemo, useDemo } from '~/lib/demo/state.ts'
 import { AppSidebar } from './app-sidebar.tsx'
 import { useCommandPalette } from './command-palette.tsx'
@@ -78,6 +78,7 @@ const WorkspaceSwitcher = () => {
 const UserMenu = () => {
   const { user, userLoading } = useAppScope()
   const demo = useDemo()
+  const signOutForm = useRef<HTMLFormElement>(null)
 
   if (userLoading) return <Skeleton className="size-8 rounded-pill" />
 
@@ -130,16 +131,22 @@ const UserMenu = () => {
             Leave the demo
           </DropdownMenuItem>
         ) : (
-          /* A real form POST, not a fetch: signing out must work even if the
-             client bundle has failed, which is exactly when someone wants out. */
-          <DropdownMenuItem asChild>
-            <form method="post" action="/auth/sign-out">
-              <button type="submit" className="flex w-full items-center gap-2 text-left">
-                <LogOut aria-hidden="true" className="size-3.5" />
-                Sign out
-              </button>
-            </form>
-          </DropdownMenuItem>
+          <>
+            {/* Keep the menu row as the Radix item. A form wrapped by an item
+                closes before its nested submit button can reliably submit. */}
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                signOutForm.current?.requestSubmit()
+              }}
+            >
+              <LogOut aria-hidden="true" className="size-3.5" />
+              Sign out
+            </DropdownMenuItem>
+            {/* This remains a native POST, so sign-out does not depend on a
+                JavaScript API call or access to the HttpOnly session cookie. */}
+            <form ref={signOutForm} method="post" action="/auth/sign-out" className="hidden" />
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
