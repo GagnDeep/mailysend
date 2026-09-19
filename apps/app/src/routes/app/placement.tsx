@@ -1,6 +1,7 @@
 import type { Status } from '@mailysend/ui'
 import {
   Button,
+  Callout,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -78,6 +79,16 @@ function Placement() {
       query.state.data?.data.some((test) => PENDING.has(test.status)) ? 15_000 : false,
   })
 
+  // Only fetched for `seed_testing_available`: whether the managed seed panel
+  // this deployment would need exists at all. The figures themselves are not
+  // used here — `/app/analytics` owns that presentation.
+  const report = useQuery({
+    queryKey: qk.placement(environment),
+    queryFn: () => api.placement({}),
+  })
+  const seedTestingUnavailable =
+    report.data?.has_seed_data === false && report.data?.seed_testing_available === false
+
   return (
     <>
       <PageHeader
@@ -91,6 +102,16 @@ function Placement() {
           </Button>
         }
       />
+
+      {seedTestingUnavailable ? (
+        <Callout variant="warn" title="no managed seed panel on this deployment">
+          Self-hosted instances start without one. "Run a test" below still submits, but the API
+          rejects it unless you supply your own <span className="font-mono">seed_addresses</span>{' '}
+          (mailboxes you control at the providers you care about) — this dialog doesn't collect
+          them yet, so use <span className="font-mono">POST /v1/analytics/placement-tests</span>{' '}
+          directly instead.
+        </Callout>
+      ) : null}
 
       {tests.isLoading ? (
         <TableSkeleton rows={4} columns={5} />

@@ -156,6 +156,23 @@ When a workspace has configured nothing, `GET /v1/providers` says so explicitly
 in `environment_fallback` rather than returning an empty list — an empty list
 read as "sending is not set up" when in fact it was, from the variables above.
 
+## Inbox placement testing
+
+`GET /v1/analytics/placement` reports `seed_testing_available: false` on a
+self-hosted deployment (`MS_MODE=single` has no managed seed panel — see
+`Features.seedTesting` in `packages/core/src/tenancy.ts`) whenever there is no
+seed data yet. The dashboard's **Run a test** dialog on `/app/placement` does
+not collect seed addresses, so submitting it here always fails with
+`not_implemented`; the page shows a notice explaining this rather than letting
+the button fail silently.
+
+The API itself is not gated the same way: `POST /v1/analytics/placement-tests`
+accepts `seed_addresses` — mailboxes you control at the providers you care
+about — regardless of `seedTesting`, and only rejects the request when neither
+a managed panel nor addresses are supplied. Call it directly to get a measured
+figure instead of the delivery-event estimate.
+
+
 ## Single sign-on (optional)
 
 | Variable | Meaning |
