@@ -107,9 +107,9 @@ function Placement() {
         <Callout variant="warn" title="no managed seed panel on this deployment">
           Self-hosted instances start without one. "Run a test" below still submits, but the API
           rejects it unless you supply your own <span className="font-mono">seed_addresses</span>{' '}
-          (mailboxes you control at the providers you care about) — this dialog doesn't collect
-          them yet, so use <span className="font-mono">POST /v1/analytics/placement-tests</span>{' '}
-          directly instead.
+          (mailboxes you control at the providers you care about) — this dialog doesn't collect them
+          yet, so use <span className="font-mono">POST /v1/analytics/placement-tests</span> directly
+          instead.
         </Callout>
       ) : null}
 

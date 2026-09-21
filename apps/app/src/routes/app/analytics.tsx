@@ -434,9 +434,9 @@ function Analytics() {
             Self-hosted instances start without one, so the button above will fail with{' '}
             <span className="font-mono">not_implemented</span> — the dashboard doesn't yet collect
             seed addresses. Call{' '}
-            <span className="font-mono">POST /v1/analytics/placement-tests</span> directly with
-            your own <span className="font-mono">seed_addresses</span> (mailboxes you control at
-            the providers you care about) for a measured figure instead of the estimate below.
+            <span className="font-mono">POST /v1/analytics/placement-tests</span> directly with your
+            own <span className="font-mono">seed_addresses</span> (mailboxes you control at the
+            providers you care about) for a measured figure instead of the estimate below.
           </Callout>
         ) : null}
         {placement.isLoading && overview.isLoading ? (

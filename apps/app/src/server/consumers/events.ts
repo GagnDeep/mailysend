@@ -1,5 +1,12 @@
 import type { NormalizedEvent } from '@mailysend/contracts'
-import { ANALYTICS_DATASETS, DEFAULT_WORKSPACE, doName, hourKey, r2Key, stableBucket } from '@mailysend/core'
+import {
+  ANALYTICS_DATASETS,
+  DEFAULT_WORKSPACE,
+  doName,
+  hourKey,
+  r2Key,
+  stableBucket,
+} from '@mailysend/core'
 import {
   type CloudflareEmailEvent,
   consumeEvents,
