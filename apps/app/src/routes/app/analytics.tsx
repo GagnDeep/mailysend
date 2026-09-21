@@ -2,6 +2,7 @@ import type { DateRange } from '@mailysend/ui'
 import {
   BarRow,
   Button,
+  Callout,
   DateRangePicker,
   Select,
   SelectContent,
@@ -161,6 +162,10 @@ function Analytics() {
 
   const placementFigures = placement.data?.figures ?? overview.data?.placement
   const placementFailed = placement.error && !overview.data?.placement
+  // Only meaningful once there is no seed data: a workspace already running
+  // seed tests has its answer, whatever the flag says.
+  const seedTestingUnavailable =
+    placement.data?.has_seed_data === false && placement.data?.seed_testing_available === false
 
   return (
     <>
@@ -424,6 +429,16 @@ function Analytics() {
           came from, and anything inferred from delivery events alone is labelled an estimate rather
           than dressed up as a measurement. A seed-list test is the only genuinely measured figure.
         </p>
+        {seedTestingUnavailable ? (
+          <Callout variant="warn" title="no managed seed panel on this deployment">
+            Self-hosted instances start without one, so the button above will fail with{' '}
+            <span className="font-mono">not_implemented</span> — the dashboard doesn't yet collect
+            seed addresses. Call{' '}
+            <span className="font-mono">POST /v1/analytics/placement-tests</span> directly with
+            your own <span className="font-mono">seed_addresses</span> (mailboxes you control at
+            the providers you care about) for a measured figure instead of the estimate below.
+          </Callout>
+        ) : null}
         {placement.isLoading && overview.isLoading ? (
           <CardsSkeleton count={4} />
         ) : placementFailed ? (
