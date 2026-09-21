@@ -138,11 +138,11 @@ export const Domain = z.object({
     })
     .optional(),
   /**
-   * The most recent permanent send failure for this domain, if there is one.
+   * The latest completed send outcome when it is a permanent failure.
    *
-   * Surfaced here because the setting that fixes it is on this page — a domain
-   * bound to a transport the workspace has not configured fails every send, and
-   * says so nowhere a person would look.
+   * A later accepted send clears this diagnostic: the domain page must not
+   * continue to warn about an old configuration failure after the issue was
+   * fixed.
    */
   last_send_error: z
     .object({

@@ -421,25 +421,32 @@ function readiness(
 }
 
 /**
- * The most recent send this domain could not complete.
+ * The latest completed send outcome, when it was a permanent failure.
  *
- * A permanent failure is otherwise invisible until somebody reads a log — which
- * includes the new "bound to a transport you have not configured" error, whose
- * whole point is that a person has to go and fix a setting. The domain page is
- * where that setting lives, so the failure belongs on it.
+ * A permanent failure is otherwise invisible until somebody reads a log, which
+ * includes the "bound to a transport you have not configured" error. A later
+ * accepted send proves that particular configuration problem is no longer
+ * current, so it must clear the warning rather than leaving the newest failure
+ * from weeks ago on the domain page.
  */
 async function lastSendError(ctx: Ctx, domainId: string) {
   const row = await ctx.sql
     .prepare(
-      `SELECT id, provider, error_message, created_at
+      `SELECT id, provider, error_message, created_at, status
          FROM messages
         WHERE workspace_id = ? AND domain_id = ? AND environment = ?
-          AND status = 'failed' AND error_message IS NOT NULL
-        ORDER BY id DESC LIMIT 1`,
+          AND status IN ('sent', 'delivery_delayed', 'delivered', 'opened', 'clicked', 'complained', 'bounced', 'failed')
+        ORDER BY created_at DESC, id DESC LIMIT 1`,
     )
     .bind(ctx.workspace.id, domainId, ctx.actor.environment)
-    .first<{ id: string; provider: string | null; error_message: string; created_at: string }>()
-  return row
+    .first<{
+      id: string
+      provider: string | null
+      error_message: string | null
+      created_at: string
+      status: string
+    }>()
+  return row?.status === 'failed' && row.error_message
     ? {
         email_id: row.id,
         provider: row.provider,

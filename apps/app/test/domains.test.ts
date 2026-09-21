@@ -90,6 +90,14 @@ const verify = async (id: string) => {
   }
 }
 
+const detail = async (id: string) => {
+  const res = await h.fetch(`/v1/domains/${id}`, { cookie })
+  expect(res.status).toBe(200)
+  return (await res.json()) as {
+    last_send_error?: { email_id: string; error: string; at: string } | null
+  }
+}
+
 describe('a lookup that did not happen', () => {
   it('reads as error, never as the status the row happened to be carrying', async () => {
     const id = await domainWith('acme.dev', [
@@ -145,6 +153,43 @@ describe('a lookup that did not happen', () => {
       .bind(id)
       .first<{ status: string; last_verified_at: string | null }>()
     expect(row?.status).not.toBe('verified')
+  })
+})
+
+describe('the current send failure diagnostic', () => {
+  it('clears an old failure when a later send from the domain succeeds', async () => {
+    const domainId = await domainWith('outcome.dev', [])
+    const failedAt = '2026-09-14T01:00:00.000Z'
+    const sentAt = '2026-09-14T01:05:00.000Z'
+
+    await h.sql
+      .prepare(
+        `INSERT INTO messages
+           (id, workspace_id, domain_id, from_address, to_addresses, subject, status, state_rank,
+            environment, error_message, created_at)
+         VALUES (?, 'ws_default', ?, 'info@outcome.dev', '["recipient@example.com"]', 'Failed',
+                 'failed', 96, 'live', 'permanent: Cloudflare is not configured', ?)`,
+      )
+      .bind('em_OLD_FAILURE', domainId, failedAt)
+      .run()
+
+    expect((await detail(domainId)).last_send_error).toMatchObject({
+      email_id: 'em_OLD_FAILURE',
+      error: 'permanent: Cloudflare is not configured',
+    })
+
+    await h.sql
+      .prepare(
+        `INSERT INTO messages
+           (id, workspace_id, domain_id, from_address, to_addresses, subject, status, state_rank,
+            environment, created_at)
+         VALUES (?, 'ws_default', ?, 'info@outcome.dev', '["recipient@example.com"]', 'Succeeded',
+                 'sent', 30, 'live', ?)`,
+      )
+      .bind('em_NEW_SUCCESS', domainId, sentAt)
+      .run()
+
+    expect((await detail(domainId)).last_send_error).toBeNull()
   })
 })
 

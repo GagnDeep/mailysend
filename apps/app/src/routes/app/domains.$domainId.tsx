@@ -320,9 +320,9 @@ function DomainDetail() {
       />
 
       {/*
-        A send that failed permanently is otherwise invisible until somebody
-        reads a log — including "this domain is bound to a transport you have
-        not configured", whose whole point is that a setting has to change.
+        A current send failure is otherwise invisible until somebody reads a
+        log — including "this domain is bound to a transport you have not
+        configured", whose whole point is that a setting has to change.
       */}
       {domain.last_send_error ? (
         <Callout variant="warn" title="The last send from this domain failed">
