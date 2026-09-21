@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from '@mailysend/contracts'
-import { ANALYTICS_DATASETS, doName, hourKey, r2Key, stableBucket } from '@mailysend/core'
+import { ANALYTICS_DATASETS, DEFAULT_WORKSPACE, doName, hourKey, r2Key, stableBucket } from '@mailysend/core'
 import {
   type CloudflareEmailEvent,
   consumeEvents,
@@ -35,14 +35,32 @@ export type EventJob =
   | { source: 'resend'; workspace_id: string; payload: unknown }
   | { source: 'dsn'; workspace_id: string; delivery_status: string; original_headers?: string }
 
-export async function consumeEventQueue(batch: QueueBatch<EventJob>, env: Env): Promise<void> {
+/** The shape Cloudflare publishes directly to an Event Subscription queue. */
+interface CloudflareSubscriptionEvent {
+  type: `cf.email.sending.${CloudflareEmailEvent['type']}`
+  source: { type: 'email.sending'; domain: string }
+  payload: {
+    messageId: string
+    recipient?: string
+    delivery?: { smtpStatusCode?: string; smtpResponse?: string }
+    bounce?: { reason?: string }
+    failure?: { reason?: string }
+    rejection?: { reason?: string; detail?: string }
+  }
+  metadata: { eventTimestamp: string }
+}
+
+export async function consumeEventQueue(
+  batch: QueueBatch<EventJob | CloudflareSubscriptionEvent>,
+  env: Env,
+): Promise<void> {
   // Group by workspace so each group is one `db.batch()` — that is the whole
   // point of the design: 100 events become ~6 writes, not 600.
   const byWorkspace = new Map<string, NormalizedEvent[]>()
 
   for (const message of batch.messages) {
     try {
-      for (const event of await normalize(message.body)) {
+      for (const event of await normalize(message.body, env)) {
         const list = byWorkspace.get(event.workspace_id) ?? []
         list.push(event)
         byWorkspace.set(event.workspace_id, list)
@@ -105,7 +123,17 @@ export async function consumeEventQueue(batch: QueueBatch<EventJob>, env: Env): 
   }
 }
 
-async function normalize(job: EventJob): Promise<NormalizedEvent[]> {
+async function normalize(
+  job: EventJob | CloudflareSubscriptionEvent,
+  env: Env,
+): Promise<NormalizedEvent[]> {
+  if (isCloudflareSubscriptionEvent(job)) {
+    const workspaceId = await workspaceForCloudflareDomain(env, job.source.domain)
+    const raw = flattenCloudflareEvent(job)
+    const emailId = await emailIdForProviderMessage(env, workspaceId, raw.messageId)
+    return [await normalizeCloudflareEvent(raw, { workspaceId, emailId })]
+  }
+
   switch (job.source) {
     case 'normalized':
       return job.events
@@ -137,6 +165,61 @@ async function normalize(job: EventJob): Promise<NormalizedEvent[]> {
         occurredAt: new Date().toISOString(),
       })
   }
+}
+
+function isCloudflareSubscriptionEvent(
+  job: EventJob | CloudflareSubscriptionEvent,
+): job is CloudflareSubscriptionEvent {
+  return (
+    typeof (job as CloudflareSubscriptionEvent).type === 'string' &&
+    (job as CloudflareSubscriptionEvent).type.startsWith('cf.email.sending.') &&
+    (job as CloudflareSubscriptionEvent).source?.type === 'email.sending'
+  )
+}
+
+function flattenCloudflareEvent(event: CloudflareSubscriptionEvent): CloudflareEmailEvent {
+  return {
+    type: event.type.slice('cf.email.sending.'.length) as CloudflareEmailEvent['type'],
+    messageId: event.payload.messageId,
+    timestamp: event.metadata.eventTimestamp,
+    recipient: event.payload.recipient,
+    domain: event.source.domain,
+    smtpCode: event.payload.delivery?.smtpStatusCode,
+    smtpResponse: event.payload.delivery?.smtpResponse,
+    reason:
+      event.payload.bounce?.reason ??
+      event.payload.failure?.reason ??
+      event.payload.rejection?.detail ??
+      event.payload.rejection?.reason,
+  }
+}
+
+async function workspaceForCloudflareDomain(env: Env, domain: string): Promise<string> {
+  if (env.MS_MODE !== 'saas') return DEFAULT_WORKSPACE
+  const row = await tenancyFor(env)
+    .db('')
+    .prepare('SELECT workspace_id FROM domains WHERE name = ? LIMIT 1')
+    .bind(domain.toLowerCase())
+    .first<{ workspace_id: string }>()
+  if (!row) throw new Error(`No workspace owns Cloudflare sending domain ${domain}`)
+  return row.workspace_id
+}
+
+async function emailIdForProviderMessage(
+  env: Env,
+  workspaceId: string,
+  providerMessageId: string,
+): Promise<string | null> {
+  const row = await tenancyFor(env)
+    .db(workspaceId)
+    .prepare(
+      `SELECT id FROM messages
+        WHERE workspace_id = ? AND provider = 'cloudflare' AND provider_message_id = ?
+        ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(workspaceId, providerMessageId)
+    .first<{ id: string }>()
+  return row?.id ?? null
 }
 
 /**
