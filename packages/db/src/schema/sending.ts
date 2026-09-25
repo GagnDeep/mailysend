@@ -47,6 +47,12 @@ export const domains = sqliteTable(
      */
     openTracking: bool('open_tracking').notNull().default(false),
     clickTracking: bool('click_tracking').notNull().default(false),
+    /**
+     * List-Unsubscribe identifies a message as bulk mail to clients such as
+     * Apple Mail. It belongs on broadcasts, but some senders also need it for
+     * individual sends. Keep that choice explicit and off by default.
+     */
+    unsubscribeHeaders: bool('unsubscribe_headers').notNull().default(false),
     tls: text('tls', { enum: ['opportunistic', 'enforced'] })
       .notNull()
       .default('opportunistic'),

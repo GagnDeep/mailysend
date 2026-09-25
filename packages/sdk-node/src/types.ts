@@ -262,6 +262,7 @@ export interface Domain {
   daily_quota?: number | null
   open_tracking: boolean
   click_tracking: boolean
+  unsubscribe_headers: boolean
   custom_return_path: string
   /** The DKIM selector the records were minted for; `ms1` unless overridden. */
   dkim_selector?: string
@@ -299,6 +300,7 @@ export interface CreateDomainRequest {
 export interface UpdateDomainRequest {
   open_tracking?: boolean
   click_tracking?: boolean
+  unsubscribe_headers?: boolean
   tls?: 'opportunistic' | 'enforced'
 }
 

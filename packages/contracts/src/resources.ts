@@ -94,6 +94,8 @@ export const Domain = z.object({
    */
   open_tracking: z.boolean().default(false),
   click_tracking: z.boolean().default(false),
+  /** Adds List-Unsubscribe headers to individual, non-broadcast sends. */
+  unsubscribe_headers: z.boolean().default(false),
   custom_return_path: z.string().default('cf-bounce'),
   /** The DKIM selector the DNS records were minted for; `ms1` unless overridden. */
   dkim_selector: z.string().optional(),
@@ -194,6 +196,7 @@ export const CreateDomainRequest = z.object({
 export const UpdateDomainRequest = z.object({
   open_tracking: z.boolean().optional(),
   click_tracking: z.boolean().optional(),
+  unsubscribe_headers: z.boolean().optional(),
   tls: z.enum(['opportunistic', 'enforced']).optional(),
 })
 

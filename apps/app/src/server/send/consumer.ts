@@ -376,14 +376,15 @@ async function buildOutbound(
   const trackingBase = (env.MS_TRACKING_URL ?? env.MS_PUBLIC_URL).replace(/\/$/, '')
 
   // --- unsubscribe ---------------------------------------------------------
-  // Every message gets List-Unsubscribe headers, including transactional mail:
-  // Gmail and Yahoo require one-click unsubscribe from bulk senders, and a
-  // header that is sometimes present is worse than one that always is.
-  const unsubToken = await signTrackingToken(env.MS_SECRET, {
+  // List-Unsubscribe headers are opt-in per domain (or always-on for
+  // broadcasts), but the URL and body substitution run unconditionally:
+  // `request.html` never goes through Handlebars, so an unresolved
+  // `{{unsubscribe_url}}` would otherwise go out as literal text.
+  const includeUnsubscribe = Boolean(envelope.broadcast_id) || envelope.domain.unsubscribe_headers
+  const unsubUrl = `${trackingBase}/u/${await signTrackingToken(env.MS_SECRET, {
     emailId: envelope.email_id,
     workspaceId: envelope.workspace_id,
-  })
-  const unsubUrl = `${trackingBase}/u/${unsubToken}`
+  })}`
   if (html)
     html = injectUnsubscribe(html, { url: unsubUrl, appendFooter: Boolean(envelope.broadcast_id) })
 
@@ -459,8 +460,15 @@ async function buildOutbound(
     ...(text ? { text } : {}),
     headers: {
       ...(request.headers ?? {}),
-      'List-Unsubscribe': `<${unsubUrl}>, <mailto:unsubscribe@${envelope.domain.name}?subject=unsubscribe>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      ...(includeUnsubscribe
+        ? {
+            // A one-click HTTPS endpoint is real and immediately actionable.
+            // Do not advertise a made-up unsubscribe@ mailbox: clients such
+            // as Apple Mail can prefer it over the valid endpoint.
+            'List-Unsubscribe': `<${unsubUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          }
+        : {}),
     },
     ...(request.attachments?.length
       ? {
