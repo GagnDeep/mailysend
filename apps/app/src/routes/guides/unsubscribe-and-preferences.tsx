@@ -25,13 +25,14 @@ function Page() {
       guide={guide}
       summary={
         <p className="m-0">
-          Every message your instance sends carries both headers, the one-click endpoint answers a
-          machine in plain text and a human in HTML, and an unsubscribe writes a suppression that
-          the send path checks before it checks anything else. The thing most likely to bite you
-          later is an import: a suppression is cleared only by an explicit re-subscribe, never as a
-          side effect of uploading a CSV, and if you ever find yourself writing code to “merge” a
-          spreadsheet over the suppression list, stop — that is the exact mechanism by which senders
-          reach blocklists.
+          Every broadcast carries the List-Unsubscribe pair; other sends only do if the sending
+          domain has opted in. Either way, the one-click endpoint answers a machine in plain text
+          and a human in HTML, and an unsubscribe writes a suppression that the send path checks
+          before it checks anything else. The thing most likely to bite you later is an import: a
+          suppression is cleared only by an explicit re-subscribe, never as a side effect of
+          uploading a CSV, and if you ever find yourself writing code to “merge” a spreadsheet over
+          the suppression list, stop — that is the exact mechanism by which senders reach
+          blocklists.
         </p>
       }
     >
@@ -39,9 +40,10 @@ function Page() {
         'the-headers': (
           <>
             <Lede>
-              Two headers, added by the send path to every outgoing message. They are what turns
-              “find the tiny grey link at the bottom” into a button in the mail client’s own
-              interface, and that difference is the single largest lever you have on complaint rate.
+              Two headers, added by the send path to every broadcast and to any other send whose
+              domain has opted in. They are what turns “find the tiny grey link at the bottom” into
+              a button in the mail client’s own interface, and that difference is the single largest
+              lever you have on complaint rate.
             </Lede>
             <Takeaway>
               <Mono>List-Unsubscribe</Mono> offers the routes; <Mono>List-Unsubscribe-Post</Mono> is
@@ -52,8 +54,6 @@ function Page() {
               <Key>List-Unsubscribe</Key>
               {`: <`}
               <Str>https://…/u/&lt;token&gt;</Str>
-              {`>, <`}
-              <Str>mailto:unsubscribe@yourdomain.com?subject=unsubscribe</Str>
               {`>
 `}
               <Key>List-Unsubscribe-Post</Key>
@@ -65,13 +65,8 @@ function Page() {
               rows={[
                 [
                   'List-Unsubscribe',
-                  <>
-                    <Mono>&lt;https://…/u/&lt;token&gt;&gt;</Mono>, then{' '}
-                    <Mono>
-                      &lt;mailto:unsubscribe@&lt;your sending domain&gt;?subject=unsubscribe&gt;
-                    </Mono>
-                  </>,
-                  'Offers two routes out, an HTTPS one and a mail one, because they fail differently.',
+                  <Mono key="lu-value">&lt;https://…/u/&lt;token&gt;&gt;</Mono>,
+                  'A single, signed HTTPS route out. No mailto fallback: an unsubscribe@ mailbox is easy to advertise and easy to leave unmonitored, and a client that prefers it over the HTTPS route sends the reader’s request nowhere.',
                 ],
                 [
                   'List-Unsubscribe-Post',
@@ -90,11 +85,10 @@ function Page() {
               caption="Scoped to one message, so it identifies not just who is leaving but what they were reading when they decided to."
             />
             <ComparisonTable
-              caption="Three routes out of a message"
-              minWidth={720}
+              caption="Two routes out of a message"
+              minWidth={560}
               columns={[
                 { key: 'oneclick', label: 'One-click POST', emphasis: true },
-                { key: 'mailto', label: 'mailto: fallback' },
                 { key: 'link', label: 'Link in the body' },
               ]}
               rows={[
@@ -102,7 +96,6 @@ function Page() {
                   label: 'Carried by',
                   values: {
                     oneclick: 'List-Unsubscribe + List-Unsubscribe-Post',
-                    mailto: 'List-Unsubscribe',
                     link: 'Your template',
                   },
                 },
@@ -110,32 +103,27 @@ function Page() {
                   label: 'Who performs the action',
                   values: {
                     oneclick: 'The mail client, on its own network',
-                    mailto: 'The mail client, by sending a message',
                     link: 'The reader, in a browser',
                   },
                 },
                 {
                   label: 'Needs a human present',
-                  values: { oneclick: false, mailto: false, link: true },
-                },
-                {
-                  label: 'Works with no outbound HTTP',
-                  values: { oneclick: false, mailto: true, link: false },
+                  values: { oneclick: false, link: true },
                 },
                 {
                   label: 'Earns a native control in Gmail and Yahoo',
-                  values: { oneclick: true, mailto: false, link: false },
+                  values: { oneclick: true, link: false },
                 },
               ]}
             />
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
-                Both routes are there because they fail differently.
+                There used to be a mailto fallback. It is gone on purpose.
               </strong>{' '}
-              The URL is what modern clients use and what the one-click flow posts to. The mailto is
-              the fallback that has worked since the 1990s and is the one a corporate mail gateway
-              with no outbound HTTP will use. Offering both costs nothing and removes a class of
-              “the unsubscribe link does not work” report you would otherwise never reproduce.
+              A <Mono>mailto:unsubscribe@&lt;your domain&gt;</Mono> address is easy to advertise and
+              easy to leave unmonitored, and a client that prefers it over the working HTTPS route
+              sends the reader’s request straight into a mailbox nobody reads. One route that works
+              beats two where one is a dead end.
             </p>
             <Gotcha title="The header is not a substitute for the link">
               Keep a visible unsubscribe link in the body as well. The header serves the mail
@@ -318,79 +306,77 @@ Unsubscribed.`}
         transactional: (
           <>
             <Lede>
-              Every message gets the headers. Receipts, password resets, invoices, shipping
-              notifications, the lot. This surprises people, and the reasoning is worth stating
-              because the alternative sounds sensible right up until you look at what it requires.
+              Broadcasts always get the headers. Everything else — receipts, password resets,
+              invoices, shipping notifications — only does if you turn it on for that sending
+              domain. That is a reversal from a blanket “every message gets it,” and the reason is
+              the header’s own effect: it is also what tells a mail client to present the message as
+              mailing-list mail, the right read for a newsletter and the wrong one for a code
+              someone is waiting on right now.
             </Lede>
             <Takeaway>
-              A header that is sometimes present is worse than one that always is, because the flag
-              deciding “sometimes” is set by hand and is wrong in the sender’s favour every time.
+              The toggle lives on the domain, not the message. A per-send flag set by hand is wrong
+              in the sender’s favour every time; a per-domain setting made once, deliberately, is
+              not the same failure mode.
             </Takeaway>
             <Contrast
               sides={[
                 {
-                  label: 'The argument for stripping them',
-                  tone: 'bad',
+                  label: 'Turn it on for a domain',
+                  tone: 'good',
                   points: [
-                    'This message is not marketing',
-                    'The reader needs it',
-                    'An exit invites them to break their own account',
-                    <>
-                      Every clause is a decision made <em>on the reader’s behalf</em> about what
-                      they are allowed to leave
-                    </>,
+                    'The domain also carries broadcasts, or you want every send to offer a one-click exit',
+                    'Your receipts and notifications double as an engagement channel worth leaving cleanly',
                   ],
                 },
                 {
-                  label: 'Why it does not survive contact',
-                  tone: 'good',
+                  label: 'Leave it off',
+                  tone: 'neutral',
                   points: [
-                    'The category boundary is not real, and the examples below are ordinary',
-                    'Classification at send time ends up as a hand-set flag',
-                    'Readers do not casually unsubscribe from mail they want',
-                    'The only other tool they have is the spam button, which damages every message to everyone else on that domain',
+                    'Verification codes, password resets, invitations — mail the reader is actively waiting on',
+                    'A mailing-list presentation is the wrong read for a message with no marketing content',
+                    <>
+                      A visible unsubscribe link is still <em>your</em> call either way, in the body
+                    </>,
                   ],
                 },
               ]}
             />
             <FactTable
-              columns={['The message', 'What it actually is']}
+              columns={['The message', 'Leave the headers off, or turn them on?']}
               monoFirst={false}
               rows={[
                 [
                   'A receipt with a “you might also like” block',
-                  'A campaign, sent under a transactional label.',
+                  'On — it is a campaign, whatever label it ships under.',
                 ],
-                [
-                  'A shipping notification with a referral offer',
-                  'A campaign, sent under a transactional label.',
-                ],
+                ['A shipping notification with a referral offer', 'On — same reasoning.'],
                 [
                   'A password reset from a dormant account',
-                  'A message the recipient did not expect, whatever you call it.',
+                  'Off — the reader is mid-task and did not ask to hear from this domain generally.',
                 ],
                 [
-                  'An unsubscribe from your receipts',
-                  'A real signal — usually that they have stopped using the product, occasionally that your receipts have been carrying marketing.',
+                  'A verification code or an invitation',
+                  'Off — a mailing-list badge next to a one-time code reads as wrong, not helpful.',
                 ],
               ]}
-              caption="Adding the headers unconditionally removes the flag and the argument it causes."
+              caption="The question is what the domain sends on average, not any one message — the setting is per-domain, not per-send."
             />
-            <Gotcha title="What this does not mean">
-              Carrying the headers is not the same as promising the message is optional. A
-              suppression stops mail this system sends; it does not and cannot decide whether your
-              application is legally obliged to deliver a particular notice by some other channel.
-              If a class of message must reach a user, the answer is a route that is not bulk email
-              — in-app, SMS, or post — not an email with its exit removed.
+            <Gotcha title="What the setting does not mean">
+              Leaving the headers off is not the same as making a message optional, and turning them
+              on is not the same as promising it is. A suppression stops mail this system sends; it
+              does not and cannot decide whether your application is legally obliged to deliver a
+              particular notice by some other channel. If a class of message must reach a user, the
+              answer is a route that is not bulk email — in-app, SMS, or post — not an email with
+              its exit removed.
             </Gotcha>
             <p className="text-[15.5px] leading-[1.7] text-muted">
               <strong className="text-ink">
-                A practical consequence: separate your sending domains.
+                The old advice still holds: separate your sending domains.
               </strong>{' '}
-              Marketing volume on one, transactional on another. It does not change the headers, but
-              it does mean a campaign’s complaint rate cannot decide whether password resets arrive
-              — and it lets you look at two unsubscribe rates that mean different things instead of
-              one that means nothing. See{' '}
+              Marketing volume on one, transactional on another. It decides the default for the
+              headers on each, and it means a campaign’s complaint rate cannot decide whether
+              password resets arrive — and it lets you look at two unsubscribe rates that mean
+              different things instead of one that means nothing. See{' '}
               <a
                 href="/guides/why-email-goes-to-spam"
                 className="text-accent underline underline-offset-4"

@@ -171,9 +171,9 @@ function Page() {
               tells you whether what you published is what resolvers see.
             </p>
             <FactTable
-              columns={['Header', 'What MailySend sends on every message']}
+              columns={['Header', 'What a broadcast sends (other mail, if the domain opts in)']}
               rows={[
-                ['List-Unsubscribe', 'Both an HTTPS and a mailto option'],
+                ['List-Unsubscribe', 'A signed HTTPS one-click endpoint'],
                 [
                   'List-Unsubscribe-Post',
                   <>
@@ -181,7 +181,7 @@ function Page() {
                   </>,
                 ],
               ]}
-              caption="Transactional mail included. The large consumer providers require this from bulk senders, and it is checkable in the same header dump you already have open."
+              caption="Broadcasts always carry the pair. Other domains opt in per-domain, since the header pair can make a client treat plain transactional mail as a mailing list — checkable in the same header dump you already have open."
             />
           </>
         ),
