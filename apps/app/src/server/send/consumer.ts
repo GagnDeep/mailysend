@@ -376,17 +376,16 @@ async function buildOutbound(
   const trackingBase = (env.MS_TRACKING_URL ?? env.MS_PUBLIC_URL).replace(/\/$/, '')
 
   // --- unsubscribe ---------------------------------------------------------
-  // Broadcasts always carry an unsubscribe path. Individual mail only does so
-  // when the sender explicitly opts this domain in: list headers make clients
-  // such as Apple Mail present a message as mailing-list mail.
+  // List-Unsubscribe headers are opt-in per domain (or always-on for
+  // broadcasts), but the URL and body substitution run unconditionally:
+  // `request.html` never goes through Handlebars, so an unresolved
+  // `{{unsubscribe_url}}` would otherwise go out as literal text.
   const includeUnsubscribe = Boolean(envelope.broadcast_id) || envelope.domain.unsubscribe_headers
-  const unsubUrl = includeUnsubscribe
-    ? `${trackingBase}/u/${await signTrackingToken(env.MS_SECRET, {
-        emailId: envelope.email_id,
-        workspaceId: envelope.workspace_id,
-      })}`
-    : undefined
-  if (html && unsubUrl)
+  const unsubUrl = `${trackingBase}/u/${await signTrackingToken(env.MS_SECRET, {
+    emailId: envelope.email_id,
+    workspaceId: envelope.workspace_id,
+  })}`
+  if (html)
     html = injectUnsubscribe(html, { url: unsubUrl, appendFooter: Boolean(envelope.broadcast_id) })
 
   // --- tracking ------------------------------------------------------------
@@ -461,7 +460,7 @@ async function buildOutbound(
     ...(text ? { text } : {}),
     headers: {
       ...(request.headers ?? {}),
-      ...(unsubUrl
+      ...(includeUnsubscribe
         ? {
             // A one-click HTTPS endpoint is real and immediately actionable.
             // Do not advertise a made-up unsubscribe@ mailbox: clients such
