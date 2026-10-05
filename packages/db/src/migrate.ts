@@ -40,6 +40,21 @@ export async function migrate(
   const { results } = await sql.prepare('SELECT name FROM _migrations').all<{ name: string }>()
   const done = new Set(results.map((r) => r.name))
 
+  // `wrangler d1 migrations apply` records what it ran in its own table,
+  // `d1_migrations`, under the same file names. A database migrated that way
+  // (by hand, by a CI step, or by an installer such as Appflare) already has
+  // those tables, and running 0000_init.sql again would fail on the first
+  // CREATE TABLE. So a migration wrangler applied counts as applied here too,
+  // and is recorded in `_migrations` so later boots need not look again.
+  for (const name of await wranglerApplied(sql)) {
+    if (done.has(name) || !migrations.some((m) => m.name === name)) continue
+    await sql
+      .prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)')
+      .bind(name, new Date().toISOString())
+      .run()
+    done.add(name)
+  }
+
   const applied: string[] = []
   const skipped: string[] = []
 
@@ -65,6 +80,16 @@ export async function migrate(
   }
 
   return { applied, skipped }
+}
+
+/** Names of the migrations `wrangler d1 migrations apply` recorded, if it ever ran here. */
+async function wranglerApplied(sql: Sql): Promise<string[]> {
+  const table = await sql
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'd1_migrations'")
+    .all<{ name: string }>()
+  if (table.results.length === 0) return []
+  const { results } = await sql.prepare('SELECT name FROM d1_migrations').all<{ name: string }>()
+  return results.map((r) => r.name)
 }
 
 /**

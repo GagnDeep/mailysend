@@ -1,6 +1,6 @@
 import { NodeSql } from '@mailysend/platform/node'
 import { describe, expect, it } from 'vitest'
-import { migrate } from '../src/migrate.ts'
+import { MIGRATIONS, migrate } from '../src/migrate.ts'
 
 /**
  * The embedded migrations run against two very different SQL drivers, and the
@@ -49,5 +49,27 @@ describe('migrate', () => {
 
     expect(second.applied).toEqual([])
     expect(second.skipped).toEqual(first.applied)
+  })
+
+  it('skips what wrangler d1 migrations apply already ran, and runs the rest', async () => {
+    const sql = new D1LikeSql(':memory:')
+    const all = await migrate(new D1LikeSql(':memory:'))
+    // As wrangler leaves a database: the first migration applied, and recorded
+    // only in d1_migrations.
+    const [first, ...rest] = MIGRATIONS
+    await migrate(sql, [first!])
+    await sql.prepare('DROP TABLE _migrations').run()
+    await sql
+      .prepare('CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)')
+      .run()
+    await sql.prepare('INSERT INTO d1_migrations (name) VALUES (?)').bind(first!.name).run()
+
+    const { applied, skipped } = await migrate(sql)
+
+    expect(skipped).toEqual([first!.name])
+    expect(applied).toEqual(rest.map((m) => m.name))
+    expect(applied.length + skipped.length).toBe(all.applied.length)
+    const again = await migrate(sql)
+    expect(again.applied).toEqual([])
   })
 })
