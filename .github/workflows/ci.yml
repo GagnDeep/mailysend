@@ -1,0 +1,46 @@
+name: CI
+
+# Lint, typecheck and the test suite, on every push and every pull request.
+#
+# There was no such workflow, and the gap was not theoretical: four merged
+# contributions landed with `biome format` failures in them, so `pnpm lint`
+# broke on `main` and the next contributor's first command failed for reasons
+# that had nothing to do with their change. The deploy workflow does run the
+# tests, but it is manual and needs Cloudflare secrets a fork does not have —
+# which is exactly the case that most needs an answer before review.
+#
+# Nothing here touches Cloudflare. The suite runs against in-memory SQLite and
+# the Workers test pool, so a pull request from a fork gets the same answer as
+# a push to `main` and no secret has to be exposed to get it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # One script, the same one `pnpm verify` runs locally, so a red X here is
+      # reproducible on a laptop with one command rather than by reading the log
+      # and guessing which of three steps to run.
+      - run: pnpm verify

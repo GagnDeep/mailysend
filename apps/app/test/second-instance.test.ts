@@ -115,6 +115,14 @@ describe('the names a build deploys', () => {
  * exist, the app created it, ran every migration, and came up as a fresh
  * unclaimed instance while the real one — users, domains, mail — sat in
  * `mailysend`. Nothing was lost and nothing in the build log said a word.
+ *
+ * The question these cases ask changed once, and the change is the point.
+ * Asking "is this Worker deployed?" got the other direction wrong: the Deploy
+ * to Cloudflare button uploads the script *before* the first build runs, so a
+ * seconds-old `ptetrainer-mail` answered yes, kept the shared database, and
+ * came up holding a stranger's users, passkeys and mail. What actually binds a
+ * Worker to storage is whether this build has run for it before, so that is
+ * what `builtBefore` asks.
  */
 describe('whether an instance gets its own database', () => {
   const config = () => ({
@@ -139,28 +147,28 @@ describe('whether an instance gets its own database', () => {
     }
   }
 
-  it('gives a Worker that has never been deployed its own', () => {
-    const { cfg, changes } = scoped('mailysend17', { deployed: false, hasOwnDatabase: false })
+  it('gives a Worker this build has never run for its own', () => {
+    const { cfg, changes } = scoped('mailysend17', { builtBefore: false, hasOwnDatabase: false })
     expect(changes).toHaveLength(2)
     expect(cfg.d1_databases[0]?.database_name).toBe('mailysend17')
     expect(cfg.r2_buckets[0]?.bucket_name).toBe('mailysend17')
   })
 
   /** The regression, asserted directly: a running instance keeps its data. */
-  it('leaves a Worker that is already deployed on what it is running on', () => {
-    const { cfg, changes } = scoped('mailysend14', { deployed: true, hasOwnDatabase: false })
+  it('leaves a Worker this build has run for before on what it is running on', () => {
+    const { cfg, changes } = scoped('mailysend14', { builtBefore: true, hasOwnDatabase: false })
     expect(changes).toEqual([])
     expect(cfg.d1_databases[0]?.database_name).toBe('mailysend')
     expect(cfg.r2_buckets[0]?.bucket_name).toBe('mailysend')
   })
 
   it('keeps an instance that already has its own database on it', () => {
-    const { cfg } = scoped('mailysend16', { deployed: true, hasOwnDatabase: true })
+    const { cfg } = scoped('mailysend16', { builtBefore: true, hasOwnDatabase: true })
     expect(cfg.d1_databases[0]?.database_name).toBe('mailysend16')
   })
 
-  it('never renames the default deployment, deployed or not', () => {
-    const { cfg, changes } = scoped(undefined, { deployed: false, hasOwnDatabase: false })
+  it('never renames the default deployment, built before or not', () => {
+    const { cfg, changes } = scoped(undefined, { builtBefore: false, hasOwnDatabase: false })
     expect(changes).toEqual([])
     expect(cfg.d1_databases[0]?.database_name).toBe('mailysend')
   })
@@ -170,7 +178,7 @@ describe('whether an instance gets its own database', () => {
     process.env.WRANGLER_CI_OVERRIDE_NAME = 'mailysend17'
     try {
       const cfg = { ...config(), d1_databases: [{ binding: 'DB', database_name: 'shared-mail' }] }
-      scopeDataNames(cfg, { deployed: false, hasOwnDatabase: false })
+      scopeDataNames(cfg, { builtBefore: false, hasOwnDatabase: false })
       expect(cfg.d1_databases[0]?.database_name).toBe('shared-mail')
     } finally {
       if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME
@@ -187,7 +195,7 @@ describe('whether an instance gets its own database', () => {
         ...config(),
         d1_databases: [{ binding: 'DB', database_name: 'mailysend', database_id: 'f22203bf' }],
       }
-      scopeDataNames(cfg, { deployed: false, hasOwnDatabase: false })
+      scopeDataNames(cfg, { builtBefore: false, hasOwnDatabase: false })
       expect(cfg.d1_databases[0]).not.toHaveProperty('database_id')
     } finally {
       if (previous === undefined) delete process.env.WRANGLER_CI_OVERRIDE_NAME

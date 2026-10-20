@@ -393,6 +393,18 @@ ours, minted at accept time, so it survives a failover, a provider migration, an
 provider that loses its own id. `provider_message_id` is recorded later and is queryable,
 but it is never the identity of a message.
 
+If nothing arrives, do not go looking screen by screen:
+
+```bash
+npx mailysend doctor
+```
+
+It asks all four of the usual questions at once — is the instance claimed, is there a
+transport to hand mail to, does a sending domain actually sign and align, is anything stuck
+in the queue — and prints what it found with the one command that fixes each. A check whose
+question it could not ask reports `unknown` rather than `ok`, and it exits non-zero when
+something is genuinely stopping mail, so it also works as a smoke test after a deploy.
+
 ### And then receive something
 
 Sending and receiving are two independent setups on the same domain, and the second one is
@@ -639,11 +651,13 @@ deployment send on its very first request.
 ```bash
 pnpm install
 pnpm dev            # vite dev on :8917
-pnpm typecheck
-pnpm test           # 764 tests
-pnpm lint
+pnpm verify         # lint, typecheck and the suite — the same thing CI runs
+pnpm test           # 1,539 tests, ~19s
 pnpm --filter @mailysend/app preview   # wrangler dev, on Miniflare
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest: what the packages are, the one
+rule the codebase is written around, and what a pull request needs.
 
 The dev cache (`.vite-dev`) and the build outputs (`.output` for Node, `.output-cf` for
 Cloudflare) are separate directories, so a running dev server and a production build never

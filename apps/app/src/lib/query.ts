@@ -49,7 +49,7 @@ export const qk = {
 
   webhooks: (env: Environment) => [env, 'webhooks'] as const,
   webhook: (env: Environment, id: string) => [env, 'webhook', id] as const,
-  webhookAttempts: (env: Environment, id: string) => [env, 'webhook', id, 'attempts'] as const,
+  webhookDeliveries: (env: Environment, id: string) => [env, 'webhook', id, 'deliveries'] as const,
 
   suppressions: (env: Environment, filters: Record<string, unknown> = {}) =>
     [env, 'suppressions', filters] as const,
@@ -96,10 +96,19 @@ export const qk = {
 /**
  * Retrying a 401 or a 422 just delays the error message by two seconds and
  * three requests. Only the transient classes are worth a second attempt.
+ *
+ * Status 0 is one of them, and was the one class that never got retried: it
+ * means no response arrived at all — a dropped connection, a tunnel being
+ * re-established, a sleeping laptop's first request after it wakes. That is the
+ * most transient failure there is, and it was the only one the dashboard turned
+ * straight into an error panel. A `TypeError` from `fetch` is the same event
+ * seen from the other side and already retried by the fallthrough below.
  */
 const shouldRetry = (failureCount: number, error: unknown): boolean => {
   if (failureCount >= 2) return false
-  if (error instanceof ApiClientError) return error.status >= 500 || error.status === 429
+  if (error instanceof ApiClientError) {
+    return error.status === 0 || error.status >= 500 || error.status === 429
+  }
   return true
 }
 

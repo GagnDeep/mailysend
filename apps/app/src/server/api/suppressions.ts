@@ -1,11 +1,5 @@
-import {
-  apiError,
-  CreateSuppressionRequest,
-  emailAddress,
-  SuppressionReason,
-} from '@mailysend/contracts'
+import { apiError, BulkSuppressionRequest, CreateSuppressionRequest } from '@mailysend/contracts'
 import { KV_TTL, kvKey, normalizeForSuppression } from '@mailysend/core'
-import { z } from 'zod'
 import { requireScope } from '../auth.ts'
 import type { Ctx } from '../context.ts'
 import { type App, createRouter, json, page, parseLimit, withContext } from './base.ts'
@@ -29,15 +23,6 @@ import { type App, createRouter, json, page, parseLimit, withContext } from './b
 const suppressions: App = createRouter()
 
 suppressions.use('*', withContext())
-
-const BulkSuppressionRequest = z.object({
-  emails: z
-    .array(z.union([emailAddress, CreateSuppressionRequest]))
-    .min(1)
-    .max(1000),
-  reason: SuppressionReason.default('manual'),
-  expires_at: z.string().optional(),
-})
 
 suppressions.get('/', async (c) => {
   const ctx = c.get('ctx')
@@ -135,6 +120,39 @@ suppressions.post('/bulk', async (c) => {
     duplicates: entries.length - unique.size,
     data: [...unique.keys()],
   })
+})
+
+/**
+ * Is this one address suppressed?
+ *
+ * The OpenAPI document has advertised `suppressions.check_one_address` since
+ * the spec was written, and the router never registered it — so every client
+ * generated from the document carried a method that 404s, and the one question
+ * worth asking before a send ("may I mail this person?") could only be answered
+ * by listing and filtering.
+ *
+ * Normalised before lookup, like every other read here: asking about
+ * `a.b+news@gmail.com` has to find the row that stopped `ab@gmail.com`, or the
+ * answer is "no" for an address we would in fact refuse to mail.
+ */
+suppressions.get('/:email', async (c) => {
+  const ctx = c.get('ctx')
+  const raw = decodeURIComponent(c.req.param('email'))
+  const normalized = normalizeForSuppression(raw)
+
+  const row = await ctx.sql
+    .prepare(
+      `SELECT email, original_email, reason, source, expires_at, created_at
+         FROM suppressions WHERE workspace_id = ? AND email = ?`,
+    )
+    .bind(ctx.workspace.id, normalized)
+    .first<SuppressionRow>()
+
+  // A 404 is the honest answer to "is this address suppressed" being no: the
+  // resource does not exist, which is exactly what the caller wants to know.
+  if (!row) throw apiError('not_found')
+
+  return json(toSuppression(row))
 })
 
 suppressions.delete('/:email', async (c) => {

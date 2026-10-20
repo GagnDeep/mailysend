@@ -2,6 +2,11 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    projects: ['packages/*/vitest.config.ts', 'apps/*/vitest.config.ts', 'cli/vitest.config.ts'],
+    projects: [
+      'packages/*/vitest.config.ts',
+      'apps/*/vitest.config.ts',
+      'cli/vitest.config.ts',
+      'scripts/vitest.config.ts',
+    ],
   },
 })

@@ -428,6 +428,13 @@ function readiness(
  * accepted send proves that particular configuration problem is no longer
  * current, so it must clear the warning rather than leaving the newest failure
  * from weeks ago on the domain page.
+ *
+ * Ordered by `id`, not by `created_at`. A message id is a ULID, so the two are
+ * the same order — and only one of them is the index's: `messages_ws_domain` is
+ * (workspace_id, domain_id, id), so `id DESC` walks it backwards and stops at
+ * the first matching row, while `created_at DESC` cannot use it for the
+ * ordering and makes every domain page load scan and sort every message ever
+ * sent from that domain in order to read exactly one of them.
  */
 async function lastSendError(ctx: Ctx, domainId: string) {
   const row = await ctx.sql
@@ -436,7 +443,7 @@ async function lastSendError(ctx: Ctx, domainId: string) {
          FROM messages
         WHERE workspace_id = ? AND domain_id = ? AND environment = ?
           AND status IN ('sent', 'delivery_delayed', 'delivered', 'opened', 'clicked', 'complained', 'bounced', 'failed')
-        ORDER BY created_at DESC, id DESC LIMIT 1`,
+        ORDER BY id DESC LIMIT 1`,
     )
     .bind(ctx.workspace.id, domainId, ctx.actor.environment)
     .first<{

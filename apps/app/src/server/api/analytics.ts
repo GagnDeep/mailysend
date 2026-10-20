@@ -314,6 +314,7 @@ analytics.get('/dashboard', async (c) => {
       { audience_class: 'bot', opens: botOpened, clicks: 0 },
     ],
     placement: await placementFigures(ctx, range, q.get('domain_id')),
+    queue: await queueDepth(ctx),
     totals: {
       sent: sum('sent'),
       delivered,
@@ -330,6 +331,53 @@ analytics.get('/dashboard', async (c) => {
     source: 'rollups_daily',
   })
 })
+
+/**
+ * What is actually waiting to go out, right now.
+ *
+ * The Overview drew a green pulsing dot and the words "Send queue drained" with
+ * nothing behind them — no query, no condition, every load, including the load
+ * where ten thousand messages were stuck behind an unconfigured transport. A
+ * panel that says the same reassuring thing whatever is happening is worse than
+ * no panel: it is the screen a person checks *because* they suspect a backlog.
+ *
+ * Live rows, not rollups: `rollups_daily` is what was sent, and the question
+ * here is what has not been. The states are the non-terminal ones, counted off
+ * `messages_ws_status` — (workspace_id, status, id) — so this is three index
+ * ranges rather than a scan, and `oldest` comes from MIN(id) because a ULID's
+ * order is chronological and the index is already sorted by it.
+ */
+async function queueDepth(ctx: Ctx) {
+  const { results } = await ctx.sql
+    .prepare(
+      `SELECT status, COUNT(*) AS n, MIN(created_at) AS oldest, MIN(scheduled_at) AS next_at
+         FROM messages
+        WHERE workspace_id = ? AND environment = ?
+          AND status IN ('queued', 'sending', 'scheduled')
+        GROUP BY status`,
+    )
+    .bind(ctx.workspace.id, ctx.actor.environment)
+    .all<{ status: string; n: number; oldest: string | null; next_at: string | null }>()
+
+  const of = (status: string) => results.find((row) => row.status === status)
+  const queued = of('queued')
+  const sending = of('sending')
+  const scheduled = of('scheduled')
+
+  return {
+    queued: num(queued?.n),
+    sending: num(sending?.n),
+    scheduled: num(scheduled?.n),
+    /**
+     * When the oldest thing still waiting was accepted — the number that
+     * separates a queue that is moving from one that is stuck. Null when
+     * nothing is waiting, which is a different statement from "zero seconds".
+     */
+    oldest_waiting_at: queued?.oldest ?? sending?.oldest ?? null,
+    /** The next scheduled send, so the panel can name a time rather than a count. */
+    next_scheduled_at: scheduled?.next_at ?? null,
+  }
+}
 
 analytics.get('/timeseries', async (c) => {
   const ctx = c.get('ctx')

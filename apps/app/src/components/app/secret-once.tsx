@@ -39,7 +39,7 @@ export const SecretOnceDialog = ({
   description,
   footnote,
 }: SecretOnceDialogProps) => {
-  const { copied, copy } = useCopy()
+  const { copied, failed, copy } = useCopy()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -69,6 +69,20 @@ export const SecretOnceDialog = ({
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
+
+        {/*
+          A copy button that silently did nothing is the worst possible outcome
+          for this particular dialog: the reader closes it believing they have
+          the key, and the key is gone. So when the clipboard refuses — which is
+          what happens over plain HTTP — the dialog says so and tells them what
+          to do instead.
+        */}
+        {failed ? (
+          <p className="m-0 text-[13.5px] text-warning">
+            This browser would not let us write to the clipboard, which is normal for a page served
+            over plain HTTP. Select the value above and copy it by hand before closing.
+          </p>
+        ) : null}
 
         {footnote ? <p className="m-0 text-[13.5px] text-muted">{footnote}</p> : null}
 

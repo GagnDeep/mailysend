@@ -17,6 +17,7 @@
     "fonts": "tsx scripts/fetch-fonts.ts",
     "dev": "pnpm --filter @mailysend/app dev",
     "typecheck": "pnpm -r typecheck",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",

@@ -352,6 +352,36 @@ templates.get('/:id/versions', async (c) => {
   })
 })
 
+/**
+ * One version, bodies included.
+ *
+ * The list above is metadata only, so the editor cannot load a template from
+ * it — and the editor has always asked for this path. Nothing answered: the
+ * body panel was empty on a real instance and full in the demo, whose own
+ * client-side router made up the reply. Reading an old version is also the only
+ * way to see what you are about to roll back to.
+ */
+templates.get('/:id/versions/:version', async (c) => {
+  const ctx = c.get('ctx')
+  const { template } = await load(ctx, c.req.param('id'))
+  const asked = Number(c.req.param('version'))
+  if (!Number.isInteger(asked) || asked < 1) {
+    throw apiError('validation_error', { message: 'A version is a positive integer.' })
+  }
+  const row = await versionRow(ctx, template.id, asked)
+  return json({
+    object: 'template_version' as const,
+    template_id: template.id,
+    version: row.version,
+    subject: row.subject,
+    html: row.html,
+    text: row.text,
+    variables: parseVariables(row.variables),
+    published: row.version === template.current_version,
+    created_at: row.created_at,
+  })
+})
+
 templates.post('/:id/publish', async (c) => {
   const ctx = c.get('ctx')
   requireScope(ctx.actor, 'templates:write')

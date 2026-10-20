@@ -8,6 +8,7 @@ import {
   BatchSendRequest,
   BatchSendResponse,
   Broadcast,
+  BulkSuppressionRequest,
   Contact,
   CreateApiKeyRequest,
   CreateAudienceRequest,
@@ -123,6 +124,7 @@ const SCHEMAS: Record<string, { schema: z.ZodType; io?: 'input' | 'output' }> = 
 
   Suppression: { schema: Suppression },
   CreateSuppressionRequest: { schema: CreateSuppressionRequest, io: 'input' },
+  BulkSuppressionRequest: { schema: BulkSuppressionRequest, io: 'input' },
 
   InboundMessage: { schema: InboundMessage },
   InboundThread: { schema: InboundThread },
@@ -163,9 +165,9 @@ const body = (schema: JsonSchema, required = true) => ({
   content: { 'application/json': { schema } },
 })
 
-const ok = (schema: JsonSchema, description = 'Success') => ({
+const ok = (schema: JsonSchema, description = 'Success', contentType = 'application/json') => ({
   description,
-  content: { 'application/json': { schema } },
+  content: { [contentType]: { schema } },
 })
 
 /** The error responses every endpoint can produce, attached once per operation. */
@@ -197,6 +199,8 @@ interface OperationInput {
   response: JsonSchema
   status?: string
   responseDescription?: string
+  /** For the one endpoint that answers in something other than JSON. */
+  contentType?: string
 }
 
 const operation = (input: OperationInput) => ({
@@ -207,7 +211,11 @@ const operation = (input: OperationInput) => ({
   ...(input.parameters ? { parameters: input.parameters } : {}),
   ...(input.requestBody ? { requestBody: input.requestBody } : {}),
   responses: {
-    [input.status ?? '200']: ok(input.response, input.responseDescription ?? 'Success'),
+    [input.status ?? '200']: ok(
+      input.response,
+      input.responseDescription ?? 'Success',
+      input.contentType,
+    ),
     ...ERROR_RESPONSES,
   },
 })
@@ -352,7 +360,11 @@ const emailPaths = () => ({
     get: operation({
       tag: 'emails',
       summary: 'List emails',
-      parameters: [...PAGINATION, query('status', 'Filter by delivery status.')],
+      parameters: [
+        ...PAGINATION,
+        query('status', 'Filter by delivery status.'),
+        query('q', 'Match against the subject, the recipients or the sender.'),
+      ],
       response: list(ref('Email')),
     }),
   },
@@ -382,6 +394,17 @@ const emailPaths = () => ({
     delete: operation({
       tag: 'emails',
       summary: 'Cancel a scheduled email',
+      parameters: [pathParam('id', 'An `em_` id.')],
+      response: freeform('The canceled message.'),
+    }),
+  },
+  '/emails/{id}/cancel': {
+    post: operation({
+      tag: 'emails',
+      summary: 'Cancel a scheduled email',
+      description:
+        'The same thing as `DELETE /emails/{id}`. Both spellings exist because both are in use: ' +
+        'this is the one Resend-compatible clients call.',
       parameters: [pathParam('id', 'An `em_` id.')],
       response: freeform('The canceled message.'),
     }),
@@ -440,6 +463,69 @@ const domainPaths = () => ({
       response: ref('Domain'),
     }),
   },
+  '/domains/{id}/receiving-check': {
+    post: operation({
+      tag: 'domains',
+      summary: 'Check the MX records for a domain',
+      description:
+        'The receiving half of verification: resolves the MX records over DoH and says whether ' +
+        'they point at this deployment. A resolver that would not answer comes back as `error`, ' +
+        'which is a different answer from `failed`.',
+      parameters: [pathParam('id', 'A `dom_` id.')],
+      response: freeform('The MX records found, and what they mean.'),
+    }),
+  },
+  '/domains/{id}/identity': {
+    post: operation({
+      tag: 'domains',
+      summary: 'Create the sending identity with the transport',
+      description:
+        'Where the transport mints its own DKIM key or writes its own records — Cloudflare and ' +
+        'Resend do — this asks it to, and its answer replaces the records we would have ' +
+        'computed. A transport with no identity API (SMTP) answers `unknown` and is not an ' +
+        'error: the computed records are the whole of its setup.',
+      parameters: [pathParam('id', 'A `dom_` id.')],
+      response: freeform('What the transport created, or why it had nothing to create.'),
+    }),
+  },
+  '/domains/{id}/dns': {
+    post: operation({
+      tag: 'domains',
+      summary: 'Publish the DNS records for a domain',
+      description:
+        'An accelerator, never a requirement: it runs only when the operator has configured a ' +
+        'Cloudflare API token with `Zone:DNS:Edit` for the zone, and every path through domain ' +
+        'setup completes without it. Records written this way are recorded as managed, so a ' +
+        'record this product created stays distinguishable from one published by hand.',
+      parameters: [pathParam('id', 'A `dom_` id.')],
+      response: freeform('Which records were written, and which were left alone.'),
+    }),
+  },
+  '/domains/{id}/zone-file': {
+    get: operation({
+      tag: 'domains',
+      summary: 'The record set as a BIND zone file',
+      description:
+        'The whole record set as one block of text, for pasting into a zone you run yourself ' +
+        'instead of copying six records through a registrar form.',
+      parameters: [pathParam('id', 'A `dom_` id.')],
+      contentType: 'text/plain',
+      response: { type: 'string' },
+    }),
+  },
+  '/domains/{id}/quota': {
+    get: operation({
+      tag: 'domains',
+      summary: 'The learned daily ceiling for a domain',
+      description:
+        'Providers ramp a new domain without publishing the number, so it is observed rather ' +
+        'than configured. `learned` is false until this domain has actually been throttled, and ' +
+        '`daily_ceiling` is null while that is the case — an unknown ceiling is reported as ' +
+        'unknown rather than as unlimited.',
+      parameters: [pathParam('id', 'A `dom_` id.')],
+      response: freeform('Today’s count, the ceiling if one has been learned, and the breakers.'),
+    }),
+  },
 })
 
 const apiKeyPaths = () => ({
@@ -459,6 +545,13 @@ const apiKeyPaths = () => ({
     }),
   },
   '/api-keys/{id}': {
+    get: operation({
+      tag: 'api-keys',
+      summary: 'Retrieve an API key',
+      description: 'Metadata only. The key itself is stored hashed and cannot be read back.',
+      parameters: [pathParam('id', 'A `key_` id.')],
+      response: ref('ApiKey'),
+    }),
     delete: operation({
       tag: 'api-keys',
       summary: 'Revoke an API key',
@@ -490,6 +583,13 @@ const audiencePaths = () => ({
       parameters: [pathParam('id', 'An `aud_` id.')],
       response: ref('Audience'),
     }),
+    patch: operation({
+      tag: 'audiences',
+      summary: 'Rename an audience',
+      parameters: [pathParam('id', 'An `aud_` id.')],
+      requestBody: body(ref('CreateAudienceRequest')),
+      response: ref('Audience'),
+    }),
     delete: operation({
       tag: 'audiences',
       summary: 'Delete an audience',
@@ -497,9 +597,82 @@ const audiencePaths = () => ({
       response: deleted('audience'),
     }),
   },
+  // The same contacts as `/contacts`, scoped to one audience. Resend's SDK
+  // addresses them this way, so both spellings are real and documented.
+  '/audiences/{audience_id}/contacts': {
+    post: operation({
+      tag: 'audiences',
+      summary: 'Add a contact to an audience',
+      parameters: [pathParam('audience_id', 'An `aud_` id.')],
+      requestBody: body(ref('CreateContactRequest')),
+      response: ref('Contact'),
+    }),
+    get: operation({
+      tag: 'audiences',
+      summary: 'List the contacts in an audience',
+      parameters: [pathParam('audience_id', 'An `aud_` id.'), ...PAGINATION],
+      response: list(ref('Contact')),
+    }),
+  },
+  '/audiences/{audience_id}/contacts/{id}': {
+    get: operation({
+      tag: 'audiences',
+      summary: 'Retrieve a contact in an audience',
+      parameters: [pathParam('audience_id', 'An `aud_` id.'), pathParam('id', 'A `con_` id.')],
+      response: ref('Contact'),
+    }),
+    patch: operation({
+      tag: 'audiences',
+      summary: 'Update a contact in an audience',
+      parameters: [pathParam('audience_id', 'An `aud_` id.'), pathParam('id', 'A `con_` id.')],
+      requestBody: body(ref('UpdateContactRequest')),
+      response: ref('Contact'),
+    }),
+    delete: operation({
+      tag: 'audiences',
+      summary: 'Remove a contact from an audience',
+      parameters: [pathParam('audience_id', 'An `aud_` id.'), pathParam('id', 'A `con_` id.')],
+      response: deleted('contact'),
+    }),
+  },
 })
 
 const contactPaths = () => ({
+  '/contacts/search': {
+    get: operation({
+      tag: 'contacts',
+      summary: 'Search contacts across audiences',
+      description:
+        'Address lookahead for a To field, which is the one place the audience a contact is ' +
+        'filed under is not known. Matches on address or either name and returns a handful.',
+      parameters: [
+        query('q', 'What was typed. Fewer than two characters returns an empty list.'),
+        query('limit', 'Page size, 1–100. Defaults to 25.', {
+          type: 'integer',
+          minimum: 1,
+          maximum: 100,
+        }),
+      ],
+      response: list(ref('Contact')),
+    }),
+  },
+  '/contacts/import': {
+    post: operation({
+      tag: 'contacts',
+      summary: 'Import contacts from CSV or JSON',
+      description:
+        'Up to 10,000 rows. Every row is validated on its own and the valid ones land: the ' +
+        'response reports each failure with the line number it is on in the file the caller ' +
+        'uploaded, because a caller holding a spreadsheet cannot act on anything else. Send ' +
+        'CSV as `text/csv`, or JSON as either an array of contacts or ' +
+        '`{ audience_id, contacts }`.',
+      parameters: [query('audience_id', 'The audience to import into, if not in the body.')],
+      requestBody: body(
+        freeform('An array of contacts, or `{ audience_id, contacts }`, or a CSV body.'),
+      ),
+      response: freeform('How many rows were accepted, and every rejected row with its reason.'),
+    }),
+  },
   '/contacts': {
     post: operation({
       tag: 'contacts',
@@ -550,6 +723,41 @@ const segmentPaths = () => ({
       summary: 'List segments',
       parameters: PAGINATION,
       response: list(ref('Segment')),
+    }),
+  },
+  '/segments/preview': {
+    post: operation({
+      tag: 'segments',
+      summary: 'Preview an expression before saving it',
+      description:
+        'Counts the contacts an expression would match and renders it back in English. The ' +
+        'rendering is as much the point as the count: `not opened_last_30d and created > 90d` ' +
+        'is easy to write and easy to misread, and before it is saved is the moment to find ' +
+        'out it means something else.',
+      requestBody: body({
+        type: 'object',
+        properties: {
+          audience_id: { type: 'string' },
+          expression: { type: 'string', maxLength: 4000 },
+          limit: { type: 'integer', minimum: 1, maximum: 25 },
+        },
+        required: ['audience_id', 'expression'],
+      }),
+      response: freeform('The match count, a sample, and the expression in English.'),
+    }),
+  },
+  '/segments/{id}/recompute': {
+    post: operation({
+      tag: 'segments',
+      summary: 'Recompute a segment',
+      description:
+        'Accepted rather than performed: a full recompute walks the whole audience, and holding ' +
+        'the request open for a 400,000-contact audience would time out without telling the ' +
+        'caller anything they cannot poll the segment for.',
+      parameters: [pathParam('id', 'A `seg_` id.')],
+      status: '202',
+      responseDescription: 'Accepted',
+      response: freeform('The segment, with `status: recomputing`.'),
     }),
   },
   '/segments/{id}': {
@@ -620,6 +828,67 @@ const broadcastPaths = () => ({
       response: ref('Broadcast'),
     }),
   },
+  '/broadcasts/{id}/pause': {
+    post: operation({
+      tag: 'broadcasts',
+      summary: 'Pause a sending broadcast',
+      description: 'Stops dispatching. Mail already handed to the transport still goes out.',
+      parameters: [pathParam('id', 'A `bc_` id.')],
+      response: freeform('The broadcast’s new state.'),
+    }),
+  },
+  '/broadcasts/{id}/resume': {
+    post: operation({
+      tag: 'broadcasts',
+      summary: 'Resume a paused broadcast',
+      description: 'Continues from the cursor it paused at; nobody is mailed twice.',
+      parameters: [pathParam('id', 'A `bc_` id.')],
+      response: freeform('The broadcast’s new state.'),
+    }),
+  },
+  '/broadcasts/{id}/cancel': {
+    post: operation({
+      tag: 'broadcasts',
+      summary: 'Cancel a broadcast',
+      description: 'Final. A canceled broadcast cannot be resumed.',
+      parameters: [pathParam('id', 'A `bc_` id.')],
+      response: freeform('The broadcast’s new state.'),
+    }),
+  },
+  '/broadcasts/{id}/status': {
+    get: operation({
+      tag: 'broadcasts',
+      summary: 'Live progress for a broadcast',
+      description:
+        'Read from the actor that is doing the sending rather than from the table it writes to, ' +
+        'so the numbers are current rather than as of the last flush. This is what to poll while ' +
+        'a broadcast is running.',
+      parameters: [pathParam('id', 'A `bc_` id.')],
+      response: freeform('Dispatched and remaining counts, the rate, and the per-range cursors.'),
+    }),
+  },
+  '/broadcasts/{id}/test': {
+    post: operation({
+      tag: 'broadcasts',
+      summary: 'Send a test of a broadcast',
+      description:
+        'Up to five addresses, and no audience is touched or recorded. The test goes through the ' +
+        'ordinary send path — same renderer, same tracking rewrite, same suppression rules — so ' +
+        'what a reviewer sees is what the campaign will send.',
+      parameters: [
+        pathParam('id', 'A `bc_` id.'),
+        query('variant', 'Which A/B variant to send, by key. Defaults to the first.'),
+      ],
+      requestBody: body({
+        type: 'object',
+        properties: {
+          to: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 5 },
+        },
+        required: ['to'],
+      }),
+      response: list(freeform('One accepted email per address.')),
+    }),
+  },
 })
 
 const templatePaths = () => ({
@@ -686,6 +955,17 @@ const templatePaths = () => ({
       summary: 'List template versions',
       parameters: [pathParam('id', 'A `tpl_` id.')],
       response: list(freeform('A template version.')),
+    }),
+  },
+  '/templates/{id}/versions/{version}': {
+    get: operation({
+      tag: 'templates',
+      summary: 'Read one template version',
+      description:
+        'The only endpoint that returns the bodies: the version list is metadata, so that a list ' +
+        'of a template with a 200 KB body is not a megabyte of HTML.',
+      parameters: [pathParam('id', 'A `tpl_` id.'), pathParam('version', 'A version number.')],
+      response: freeform('One template version, with `subject`, `html` and `text`.'),
     }),
   },
   '/templates/{id}/publish': {
@@ -906,6 +1186,18 @@ const suppressionPaths = () => ({
       response: list(ref('Suppression')),
     }),
   },
+  '/suppressions/bulk': {
+    post: operation({
+      tag: 'suppressions',
+      summary: 'Suppress a list of addresses',
+      description:
+        'For importing a list from elsewhere. Addresses already suppressed are updated rather ' +
+        'than rejected, so re-running an import is safe, and the response reports how many of ' +
+        'the submitted addresses were duplicates of each other.',
+      requestBody: body(ref('BulkSuppressionRequest')),
+      response: freeform('How many addresses were written, and their normalised forms.'),
+    }),
+  },
   '/suppressions/{email}': {
     get: operation({
       tag: 'suppressions',
@@ -957,6 +1249,44 @@ const webhookPaths = () => ({
       summary: 'Delete a webhook endpoint',
       parameters: [pathParam('id', 'A `wh_` id.')],
       response: deleted('webhook'),
+    }),
+  },
+  '/webhooks/{id}/deliveries': {
+    get: operation({
+      tag: 'webhooks',
+      summary: 'List delivery attempts',
+      description: 'The attempt log. Response bodies are truncated when written, not when read.',
+      parameters: [
+        pathParam('id', 'A `wh_` id.'),
+        ...PAGINATION,
+        query('status', 'Restrict to `pending`, `delivered` or `failed`.'),
+      ],
+      response: list(freeform('One delivery attempt.')),
+    }),
+  },
+  '/webhooks/{id}/deliveries/{delivery_id}/replay': {
+    post: operation({
+      tag: 'webhooks',
+      summary: 'Replay a delivery',
+      description:
+        'A new `delivery_id` and the *same* `event_id`. The attempt is new and logged ' +
+        'separately; the event is the same event, so a consumer deduplicating on `event_id` — ' +
+        'which is what we ask them to do — sees the replay as something it already knows about ' +
+        'rather than as a second incident.',
+      parameters: [pathParam('id', 'A `wh_` id.'), pathParam('delivery_id', 'A `whd_` id.')],
+      response: freeform('The new delivery attempt.'),
+    }),
+  },
+  '/webhooks/{id}/test': {
+    post: operation({
+      tag: 'webhooks',
+      summary: 'Send a test event',
+      description:
+        'A synthetic `email.delivered`, signed exactly the way a real one is, and delivered ' +
+        'inline rather than through the queue — the only reason to call this is to see the ' +
+        'answer, so the endpoint’s status code and body come back in the response.',
+      parameters: [pathParam('id', 'A `wh_` id.')],
+      response: freeform('What the endpoint answered, and how long it took.'),
     }),
   },
 })
@@ -1088,6 +1418,19 @@ const analyticsPaths = () => ({
     }),
   },
   '/analytics/placement-tests': {
+    get: operation({
+      tag: 'analytics',
+      summary: 'List placement tests',
+      parameters: [
+        query('limit', 'Page size, 1–100. Defaults to 25.', {
+          type: 'integer',
+          minimum: 1,
+          maximum: 100,
+        }),
+        query('after', 'The `next_cursor` from the previous page.'),
+      ],
+      response: list(freeform('One placement test and its per-provider result.')),
+    }),
     post: operation({
       tag: 'analytics',
       summary: 'Start a seed-list placement test',
@@ -1147,6 +1490,21 @@ const inboundPaths = () => ({
     }),
   },
   '/inbound/mailboxes/{id}': {
+    patch: operation({
+      tag: 'inbound',
+      summary: 'Update a mailbox',
+      parameters: [pathParam('id', 'An `inb_` id.')],
+      requestBody: body({
+        type: 'object',
+        properties: {
+          name: { type: 'string', maxLength: 120, nullable: true },
+          forward_webhook_id: { type: 'string', maxLength: 64, nullable: true },
+          agent_enabled: { type: 'boolean' },
+          is_catch_all: { type: 'boolean' },
+        },
+      }),
+      response: freeform('The mailbox as it now stands.'),
+    }),
     delete: operation({
       tag: 'inbound',
       summary: 'Delete a mailbox',
@@ -1167,12 +1525,34 @@ const inboundPaths = () => ({
       response: list(ref('InboundThread')),
     }),
   },
+  '/inbound/threads/{id}/messages': {
+    get: operation({
+      tag: 'inbound',
+      summary: 'List the messages in a thread',
+      description:
+        'The bodies, fetched from object storage. `GET /inbound/threads/{id}` returns the same ' +
+        'messages inside the thread; this is the list on its own.',
+      parameters: [pathParam('id', 'A `thr_` id.')],
+      response: list(ref('InboundMessage')),
+    }),
+  },
   '/inbound/threads/{id}': {
     get: operation({
       tag: 'inbound',
       summary: 'Retrieve a thread',
       description: 'Messages come back with their bodies, fetched from object storage.',
       parameters: [pathParam('id', 'A `thr_` id.')],
+      response: ref('InboundThread'),
+    }),
+    patch: operation({
+      tag: 'inbound',
+      summary: 'Mark a thread read or unread',
+      parameters: [pathParam('id', 'A `thr_` id.')],
+      requestBody: body({
+        type: 'object',
+        properties: { unread: { type: 'boolean' } },
+        required: ['unread'],
+      }),
       response: ref('InboundThread'),
     }),
     delete: operation({

@@ -7,7 +7,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { CursorPager } from '~/components/app/data-table.tsx'
 import type { AppliedFilter, FilterDefinition } from '~/components/app/filters.tsx'
 import { FilterBar } from '~/components/app/filters.tsx'
-import { clockTime } from '~/components/app/format.ts'
+import { logTime } from '~/components/app/format.ts'
 import { LogDrawer } from '~/components/app/log-drawer.tsx'
 import { PageHeader } from '~/components/app/page.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
@@ -288,7 +288,7 @@ function Logs() {
                 key={email.id}
                 showBadge
                 status={toBadgeStatus(email.last_event)}
-                timestamp={clockTime(email.created_at)}
+                timestamp={logTime(email.created_at)}
                 recipient={email.to[0] ?? '—'}
                 subject={email.subject}
                 details={

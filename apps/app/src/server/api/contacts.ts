@@ -467,6 +467,14 @@ contacts.get('/search', async (c) => {
  * request body, and "row 3,481 is not an email address" is the only thing they
  * can act on. So every row is validated on its own and the response carries the
  * failures with their row numbers while the good rows land.
+ *
+ * Three accepted shapes, because three callers exist: a raw CSV body, a JSON
+ * array or `{ audience_id, contacts }`, and `{ audience_id, csv, mapping }` —
+ * the last one is the dashboard's import wizard, whose whole second step is
+ * choosing which column is the address. That shape was being sent to a
+ * `/v1/audiences/:id/import` that has never existed, so the wizard's mapping
+ * step led to a 404 on every real instance; the demo's own client-side router
+ * answered it, which is why the screen looked finished.
  */
 contacts.post('/import', async (c) => {
   const ctx = c.get('ctx')
@@ -487,9 +495,16 @@ contacts.post('/import', async (c) => {
     if (Array.isArray(parsed)) {
       rows = parsed as Record<string, unknown>[]
     } else {
-      const envelope = parsed as { audience_id?: string; contacts?: Record<string, unknown>[] }
+      const envelope = parsed as {
+        audience_id?: string
+        contacts?: Record<string, unknown>[]
+        csv?: string
+        mapping?: Record<string, string>
+      }
       bodyAudience = envelope.audience_id
-      rows = envelope.contacts ?? []
+      rows = envelope.csv
+        ? applyMapping(parseCsv(envelope.csv), envelope.mapping ?? {})
+        : (envelope.contacts ?? [])
     }
   } else {
     rows = parseCsv(raw)
@@ -505,11 +520,15 @@ contacts.post('/import', async (c) => {
   const audienceId = await requireAudience(ctx, audienceParam(c, bodyAudience))
 
   const now = new Date().toISOString()
-  const errors: { row: number; message: string }[] = []
+  const errors: { row: number; email: string | null; code: string; message: string }[] = []
   const statements: SqlStatement[] = []
   const unsubscribes: string[] = []
   const keys = new Set<string>()
   let accepted = 0
+  // Two rows for one address inside one file: the later one wins the upsert, so
+  // the earlier one really was not imported and is reported as skipped.
+  const seen = new Set<string>()
+  let duplicates = 0
 
   rows.forEach((row, index) => {
     const parsed = CreateContactRequest.safeParse(normalizeImportRow(row))
@@ -519,12 +538,18 @@ contacts.post('/import', async (c) => {
       // number in the message has to match what the user sees in their editor.
       errors.push({
         row: index + 2,
-        message: `${issue?.path.join('.') ?? 'row'}: ${issue?.message ?? 'invalid'}`,
+        // The address, where the row had one at all — a failure list without it
+        // is a list of line numbers in a file the reader has already closed.
+        email: typeof row.email === 'string' ? row.email : null,
+        code: issue?.path.join('.') || 'row',
+        message: issue?.message ?? 'invalid',
       })
       return
     }
     const contact = parsed.data
     const email = contact.email.toLowerCase()
+    if (seen.has(email)) duplicates++
+    seen.add(email)
     const unsubscribed = contact.unsubscribed === true
     if (unsubscribed) unsubscribes.push(email)
     for (const key of Object.keys(contact.data ?? {})) keys.add(key)
@@ -589,11 +614,52 @@ contacts.post('/import', async (c) => {
   return json({
     object: 'import',
     audience_id: audienceId,
+    /**
+     * The import happens inside the request, so there is nothing to poll and
+     * `status` is always the one it finished in. It is here because the shape
+     * is reported to a screen that distinguishes partial from complete.
+     */
+    status: errors.length === 0 ? 'complete' : 'partial',
+    total_rows: rows.length,
     imported: accepted,
+    /**
+     * Rows superseded by a later row for the same address, inside this one
+     * file. Not "already present": a repeated address updates the contact it
+     * matches, which is an import rather than a skip, and counting those here
+     * would report work that was done as work that was not.
+     */
+    skipped: duplicates,
     failed: errors.length,
     errors,
   })
 })
+
+/**
+ * Renames a parsed CSV's columns to what the import understands.
+ *
+ * The wizard sends `{ "Email Address": "email", "Company": "data.company" }`.
+ * A column mapped to nothing is dropped, which is what the wizard's "ignore"
+ * means, and a `data.` prefix puts the value in the contact's custom fields —
+ * so a spreadsheet's own headings never have to match ours.
+ */
+function applyMapping(
+  rows: Record<string, unknown>[],
+  mapping: Record<string, string>,
+): Record<string, unknown>[] {
+  if (Object.keys(mapping).length === 0) return rows
+  return rows.map((row) => {
+    const out: Record<string, unknown> = {}
+    const data: Record<string, unknown> = {}
+    for (const [header, value] of Object.entries(row)) {
+      const target = mapping[header] ?? mapping[header.trim()]
+      if (!target) continue
+      if (target.startsWith('data.')) data[target.slice(5)] = value
+      else out[target] = value
+    }
+    if (Object.keys(data).length > 0) out.data = data
+    return out
+  })
+}
 
 contacts.get('/:id', get)
 contacts.patch('/:id', update)

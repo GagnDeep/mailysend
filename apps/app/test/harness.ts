@@ -1,6 +1,11 @@
 import { hashApiKey } from '@mailysend/core'
 import { migrate } from '@mailysend/db'
-import { MailboxActor, SendingDomainActor, WorkspaceHubActor } from '@mailysend/durable'
+import {
+  MailboxActor,
+  ScheduleShardActor,
+  SendingDomainActor,
+  WorkspaceHubActor,
+} from '@mailysend/durable'
 import type { Blob, BlobBody, BlobObject, Kv } from '@mailysend/platform'
 import { NodeActorRegistry, NodeSql } from '@mailysend/platform/node'
 import { api } from '../src/server/api/index.ts'
@@ -143,6 +148,10 @@ export async function harness(overrides: Partial<Env> = {}): Promise<Harness> {
   actors.register('Mailbox', MailboxActor)
   actors.register('WorkspaceHub', WorkspaceHubActor)
   actors.register('SendingDomain', SendingDomainActor)
+  // Scheduling and cancelling a send both go through this shard, so the real
+  // class is registered: a stubbed `cancel` would let a cancel that never
+  // reached the alarm pass as one that did.
+  actors.register('ScheduleShard', ScheduleShardActor)
 
   const base = {
     DB: sql,
@@ -150,6 +159,7 @@ export async function harness(overrides: Partial<Env> = {}): Promise<Harness> {
     MAILBOX: actors.namespace('Mailbox'),
     WORKSPACE_HUB: actors.namespace('WorkspaceHub'),
     SENDING_DOMAIN: actors.namespace('SendingDomain'),
+    SCHEDULE_SHARD: actors.namespace('ScheduleShard'),
     CACHE: new MemoryKv(),
     SUPPRESSIONS: new MemoryKv(),
     MS_MODE: 'single',

@@ -30,6 +30,38 @@ export const clockTime = (iso: string): string => {
   return date.toLocaleTimeString(undefined, { hour12: false })
 }
 
+/**
+ * A time for a log row: the clock alone for today, the date as well for
+ * anything older.
+ *
+ * `clockTime` on its own is how "14:32" came to sit in the Recent activity
+ * column next to a message from last Tuesday. On a quiet instance — which is
+ * every instance for its first week — the newest eight messages span days, and
+ * a column of bare clock times reads as though they all happened this
+ * afternoon. The date only appears when it changes the meaning, so a busy
+ * instance's log stays as narrow as it was.
+ */
+export const logTime = (iso: string, now: number = Date.now()): string => {
+  const hour = HOUR_BUCKET.exec(iso)
+  const date = new Date(hour ? `${hour[1]}T${hour[2]}:00:00Z` : iso)
+  if (Number.isNaN(date.getTime())) return iso
+
+  const today = new Date(now)
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  if (sameDay) return date.toLocaleTimeString(undefined, { hour12: false })
+
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 export const dateTime = (iso: string): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso

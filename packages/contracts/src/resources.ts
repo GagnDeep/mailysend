@@ -569,6 +569,23 @@ export const CreateSuppressionRequest = z.object({
   expires_at: IsoDate.optional(),
 })
 
+/**
+ * A list imported from somewhere else, all at once.
+ *
+ * An entry is either a bare address, which takes the request's `reason` and
+ * `expires_at`, or a full `CreateSuppressionRequest` that carries its own — an
+ * export from another ESP knows why it suppressed each address, and flattening
+ * all of them to `manual` throws that away.
+ */
+export const BulkSuppressionRequest = z.object({
+  emails: z
+    .array(z.union([emailAddress, CreateSuppressionRequest]))
+    .min(1)
+    .max(1000),
+  reason: SuppressionReason.default('manual'),
+  expires_at: IsoDate.optional(),
+})
+
 // ---------------------------------------------------------------------------
 // Inbound
 // ---------------------------------------------------------------------------

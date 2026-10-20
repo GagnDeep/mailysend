@@ -13,11 +13,13 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowRight, Send } from 'lucide-react'
-import { clockTime, num, pct, ratio, relativeTime } from '~/components/app/format.ts'
+import { FirstRunChecklist } from '~/components/app/first-run.tsx'
+import { clockTime, logTime, num, pct, ratio, relativeTime } from '~/components/app/format.ts'
 import { PrivacyAdjustedOpenRate } from '~/components/app/honesty.tsx'
 import { PageHeader, PageSection } from '~/components/app/page.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { CardsSkeleton, EmptyState, ErrorState, TableSkeleton } from '~/components/app/states.tsx'
+import type { AnalyticsOverviewRecord } from '~/lib/api-client.ts'
 import { qk } from '~/lib/query.ts'
 import { appHead } from '~/seo'
 
@@ -94,6 +96,14 @@ function Overview() {
           </>
         }
       />
+
+      {/*
+        Only while the instance has nothing to show. It reads the current state
+        of the three prerequisites rather than a stored "onboarded" flag, so it
+        is accurate on an instance that was set up months ago and has simply
+        gone quiet, and it asks for nothing while there is traffic to look at.
+      */}
+      <FirstRunChecklist enabled={!recent.isLoading && (recent.data?.data.length ?? 0) === 0} />
 
       {analytics.isLoading ? (
         <CardsSkeleton count={5} />
@@ -224,7 +234,7 @@ function Overview() {
               <LogRow
                 key={email.id}
                 status={toBadgeStatus(email.last_event)}
-                timestamp={clockTime(email.created_at)}
+                timestamp={logTime(email.created_at)}
                 recipient={email.to[0] ?? '—'}
                 subject={email.subject}
                 details={
@@ -252,19 +262,96 @@ function Overview() {
       </PageSection>
 
       <PageSection title="Queue">
-        <div className="flex flex-wrap items-center gap-3 rounded-tile border border-line-soft bg-card p-4 text-[14px] text-muted">
-          <StatusDot tone="positive" size={8} pulse />
-          <span>
-            Send queue drained. Scheduled messages stay in <MonoChip size="sm">scheduled</MonoChip>{' '}
-            until their time, and are cancellable until the moment they leave.
-          </span>
-          <Button asChild variant="link" size="sm" className="ml-auto">
-            <Link to="/app/logs" search={{ status: 'scheduled' }}>
-              Scheduled messages →
-            </Link>
-          </Button>
-        </div>
+        <QueuePanel queue={analytics.data?.queue} loading={analytics.isLoading} />
       </PageSection>
     </>
+  )
+}
+
+/**
+ * What is waiting to go out.
+ *
+ * This panel used to be four hardcoded facts: a green pulsing dot and the words
+ * "Send queue drained", on every load, with no query behind them. On the load
+ * where a transport was misconfigured and ten thousand messages were piling up
+ * it said exactly the same thing — and this is the panel somebody opens
+ * *because* they suspect a backlog, so it was reassuring precisely when it
+ * should not have been.
+ *
+ * Now it reports the counts, and the dot's colour is derived from them rather
+ * than written down. A queue with work in it is not an alarm — that is what a
+ * queue is for — so depth alone stays neutral and only an old head turns
+ * warning: something accepted more than ten minutes ago and still not sent is
+ * the shape of a stuck queue rather than a busy one.
+ */
+const STUCK_AFTER_MS = 10 * 60_000
+
+function QueuePanel({
+  queue,
+  loading,
+}: {
+  queue: AnalyticsOverviewRecord['queue']
+  loading: boolean
+}) {
+  const scheduled = (
+    <>
+      Scheduled messages stay in <MonoChip size="sm">scheduled</MonoChip> until their time, and are
+      cancellable until the moment they leave.
+    </>
+  )
+
+  // An older deployment's `/analytics/dashboard` does not carry `queue`, and a
+  // dot with nothing behind it is the thing this panel exists to stop being.
+  if (loading || !queue) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-tile border border-line-soft bg-card p-4 text-[14px] text-muted">
+        <span>{loading ? 'Reading the queue…' : scheduled}</span>
+      </div>
+    )
+  }
+
+  const waiting = queue.queued + queue.sending
+  const stuckSince =
+    queue.oldest_waiting_at && Date.now() - Date.parse(queue.oldest_waiting_at) > STUCK_AFTER_MS
+      ? queue.oldest_waiting_at
+      : null
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-tile border border-line-soft bg-card p-4 text-[14px] text-muted">
+      <StatusDot
+        tone={stuckSince ? 'warning' : waiting > 0 ? 'accent' : 'positive'}
+        size={8}
+        pulse={waiting > 0}
+      />
+      <span>
+        {waiting === 0 ? (
+          <>Nothing waiting to send. {scheduled}</>
+        ) : (
+          <>
+            {num(queue.queued)} queued, {num(queue.sending)} in flight
+            {stuckSince ? (
+              <>
+                {' '}
+                — the oldest was accepted {relativeTime(stuckSince)} and has not left yet, which
+                usually means the transport is refusing it.
+              </>
+            ) : (
+              <>, moving.</>
+            )}
+          </>
+        )}
+      </span>
+      {queue.scheduled > 0 ? (
+        <span>
+          {num(queue.scheduled)} scheduled
+          {queue.next_scheduled_at ? <>, next {relativeTime(queue.next_scheduled_at)}</> : null}.
+        </span>
+      ) : null}
+      <Button asChild variant="link" size="sm" className="ml-auto">
+        <Link to="/app/logs" search={{ status: stuckSince ? 'queued' : 'scheduled' }}>
+          {stuckSince ? 'Show what is waiting →' : 'Scheduled messages →'}
+        </Link>
+      </Button>
+    </div>
   )
 }

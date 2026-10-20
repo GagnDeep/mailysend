@@ -44,6 +44,7 @@ import {
   scopeQueueNames,
   workerName,
 } from './instance-names.mjs'
+import { consumersOf, isMissingQueue } from './wrangler-output.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -150,11 +151,21 @@ const wantedQueues = [...new Set(queueNames)].sort()
  *
  * `queues info` answers for one queue and, unlike a list, says who consumes it.
  */
+/**
+ * `null` is "no such queue"; `undefined` is "could not ask".
+ *
+ * Only the first is a fact about the account, and `builtBefore` below is
+ * allowed to act on facts only — a token without Queues:Read must not read as
+ * "this Worker is new" and earn a running instance a brand new database.
+ */
 const queueInfo = async (name) => {
   try {
     return await wrangler(['queues', 'info', name])
-  } catch {
-    return null
+  } catch (error) {
+    const message = short(error)
+    if (isMissingQueue(message)) return null
+    console.log(`[resources] ? could not read queue ${name}: ${message}`)
+    return undefined
   }
 }
 
@@ -173,6 +184,15 @@ const createQueue = async (name) => {
 
 const info = new Map()
 for (const name of wantedQueues) info.set(name, await queueInfo(name))
+
+/**
+ * What the account looked like *before* this build touched it.
+ *
+ * Read here, and not after the creation loop below, because the whole value of
+ * the answer is that it predates this run: queues this build already created
+ * say nothing about whether it has run before.
+ */
+const queuesBefore = new Map(info)
 
 for (const [name, existing] of info) {
   if (existing) continue
@@ -211,9 +231,9 @@ for (const queue of declaredConsumers) {
   }
   // The consumer line names the script; anything else holding it is the other
   // way this fails, and the only fix is a decision somebody has to make.
-  const other = [...existing.matchAll(/consumer[^\n]*?([\w.-]+)\s*$/gim)]
-    .map((m) => m[1])
-    .find((consumerName) => consumerName && scriptName && consumerName !== scriptName)
+  const other = consumersOf(existing).find(
+    (consumerName) => consumerName && scriptName && consumerName !== scriptName,
+  )
   if (other) {
     console.log(
       `[resources] ! queue ${queue} is already consumed by "${other}", not "${scriptName}". A ` +
@@ -252,10 +272,38 @@ const isDeployed = async (name) => {
   }
 }
 
+/**
+ * Has this build run for this Worker before?
+ *
+ * Not "is it deployed". The Deploy to Cloudflare button uploads the script and
+ * *then* runs the first build, so a Worker seconds old answers yes to that —
+ * which is how a new instance came up bound to a previous one's database,
+ * holding its users and its passkeys and announcing that it had "moved from"
+ * the deployment it had just adopted.
+ *
+ * The queues are the honest signal: this build creates them, every instance
+ * consumes them, and a deploy whose trigger update succeeded had them. So one
+ * pre-existing scoped queue means this build has been here; none means it has
+ * not, whatever uploaded the script.
+ *
+ * Where the queues could not be read at all, there is no signal, and the
+ * conservative answer is the one that never strands a running instance.
+ */
+const builtFor = (worker, queues, deployed) => {
+  const answers = [...queues.values()]
+  if (answers.every((answer) => answer === undefined)) {
+    console.log(
+      `[resources] ? no queue could be read, so "${worker}" keeps whatever storage it is on`,
+    )
+    return deployed
+  }
+  return answers.some((answer) => typeof answer === 'string')
+}
+
 const databases = await list(['d1', 'list', '--json'])
 const account = {
   hasOwnDatabase: databases.some((d) => d.name === instance),
-  deployed: await isDeployed(instance),
+  builtBefore: builtFor(instance, queuesBefore, await isDeployed(instance)),
 }
 // The same answer decides the database, the bucket and the KV namespaces: does
 // this build get to give the instance storage of its own, or is it a running

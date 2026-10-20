@@ -172,15 +172,14 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
     enabled: true,
   })
 
+  // Queued, not delivered: the replay endpoint hands the event back to the
+  // webhook queue and returns a `pending` row, so the only thing it can
+  // truthfully report is that it was accepted.
   const replay = useMutation({
-    mutationFn: ({ webhookId, attemptId }: { webhookId: string; attemptId: string }) =>
-      api.replayWebhookAttempt(webhookId, attemptId),
-    onSuccess: (attempt) => {
-      toast.success(
-        attempt.succeeded
-          ? `Replayed — endpoint answered ${attempt.status_code ?? 'with no status'}`
-          : `Replayed — endpoint still failing (${attempt.status_code ?? 'no response'})`,
-      )
+    mutationFn: ({ webhookId, deliveryId }: { webhookId: string; deliveryId: string }) =>
+      api.replayWebhookDelivery(webhookId, deliveryId),
+    onSuccess: () => {
+      toast.success('Queued a replay — reload this tab to see how the endpoint answered.')
       void queryClient.invalidateQueries({ queryKey: qk.emailDetail(environment, emailId) })
     },
     onError: (error: unknown) => {
@@ -291,7 +290,7 @@ export const LogDrawer = ({ emailId }: { emailId: string }) => {
           variant="outline"
           size="sm"
           disabled={replay.isPending}
-          onClick={() => replay.mutate({ webhookId: row.endpoint_id, attemptId: row.id })}
+          onClick={() => replay.mutate({ webhookId: row.endpoint_id, deliveryId: row.id })}
         >
           <RefreshCw aria-hidden="true" />
           Replay

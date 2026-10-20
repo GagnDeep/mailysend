@@ -1,4 +1,5 @@
 import { createRouter } from '@tanstack/react-router'
+import { RouteError } from './components/app/route-error.tsx'
 import { NotFound } from './components/marketing/not-found.tsx'
 import { routeTree } from './routeTree.gen'
 
@@ -18,5 +19,8 @@ export function getRouter() {
     // Without this the router renders its own `<p>Not Found</p>` and warns on
     // every miss. A 404 is a page real traffic lands on, so it gets a real one.
     defaultNotFoundComponent: NotFound,
+    // And without *this* one, a route that throws unmounts the tree: the
+    // dashboard went white and the reason went to a console nobody had open.
+    defaultErrorComponent: RouteError,
   })
 }

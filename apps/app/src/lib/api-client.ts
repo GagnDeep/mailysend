@@ -225,23 +225,14 @@ export const EmailTimelineEvent = z.object({
 })
 export type EmailTimelineEventRecord = z.infer<typeof EmailTimelineEvent>
 
-export const WebhookAttempt = z.object({
-  id: z.string(),
-  webhook_id: z.string(),
-  event: z.string(),
-  url: z.string(),
-  status_code: z.number().int().nullable(),
-  duration_ms: z.number().int().nullable(),
-  attempt: z.number().int(),
-  succeeded: z.boolean(),
-  error: z.string().nullable().optional(),
-  request_body: z.string().nullable().optional(),
-  response_body: z.string().nullable().optional(),
-  created_at: z.string(),
-})
-export type WebhookAttemptRecord = z.infer<typeof WebhookAttempt>
-
 /** One attempt at delivering one event to one endpoint. */
+/**
+ * One attempt to deliver one event.
+ *
+ * `url` is only present where it was joined: the log drawer asks across every
+ * endpoint, so it needs to say *where* a webhook went, while an endpoint's own
+ * delivery list is already scoped to one URL.
+ */
 export const WebhookDelivery = z.object({
   id: z.string(),
   endpoint_id: z.string(),
@@ -404,6 +395,22 @@ export const AnalyticsOverview = z.object({
     human_opens: z.number(),
     human_delivered: z.number(),
   }),
+  /**
+   * Live queue depth, read from `messages` rather than from the rollups the
+   * rest of this response comes from — the rollups are what was sent, and this
+   * is what has not been. Optional because an older deployment's response does
+   * not carry it, and the panel that reads it says nothing rather than
+   * inventing a zero.
+   */
+  queue: z
+    .object({
+      queued: z.number(),
+      sending: z.number(),
+      scheduled: z.number(),
+      oldest_waiting_at: z.string().nullable(),
+      next_scheduled_at: z.string().nullable(),
+    })
+    .optional(),
 })
 export type AnalyticsOverviewRecord = z.infer<typeof AnalyticsOverview>
 
@@ -658,11 +665,19 @@ export const ImportRowError = z.object({
 })
 export type ImportRowErrorRecord = z.infer<typeof ImportRowError>
 
+/**
+ * The import is performed inside the request, so there is no job to poll and
+ * no id to hand back. The schema used to require both — an `id` and a
+ * `validating | importing` status — which described an asynchronous import
+ * this product does not have and would have failed to parse the real response
+ * even once the path was right.
+ */
 export const ImportResult = z.object({
-  id: z.string(),
-  status: z.enum(['validating', 'importing', 'complete', 'failed']),
+  status: z.enum(['complete', 'partial']),
+  audience_id: z.string(),
   total_rows: z.number().int(),
   imported: z.number().int(),
+  /** Superseded by a later row for the same address, in this same file. */
   skipped: z.number().int(),
   failed: z.number().int(),
   errors: z.array(ImportRowError),
@@ -1050,8 +1065,10 @@ export const createApiClient = (scope: RequestScope) => {
       patch(`/audiences/${audienceId}/contacts/${id}`, Contact, body),
     deleteContact: (audienceId: string, id: string) =>
       del(`/audiences/${audienceId}/contacts/${id}`, deleted),
+    // `/contacts/import`, which is where the import has always lived. This used
+    // to post to `/audiences/:id/import`, a path no router has ever registered.
     importContacts: (audienceId: string, body: { csv: string; mapping: Record<string, string> }) =>
-      post(`/audiences/${audienceId}/import`, ImportResult, body),
+      post('/contacts/import', ImportResult, { ...body, audience_id: audienceId }),
 
     // --- segments ----------------------------------------------------------
     listSegments: (params: ListParams = {}) => get('/segments', list(Segment), params),
@@ -1073,8 +1090,12 @@ export const createApiClient = (scope: RequestScope) => {
     listTemplateVersions: (id: string) => get(`/templates/${id}/versions`, list(TemplateVersion)),
     getTemplateVersion: (id: string, version: number) =>
       get(`/templates/${id}/versions/${version}`, TemplateVersion),
+    // `POST /templates/{id}/rollback` with the version in the body, which is
+    // what the router registers and the document describes. The nested path
+    // this used to call does not exist, so the Restore button 404'd everywhere
+    // except the demo.
     rollbackTemplate: (id: string, version: number) =>
-      post(`/templates/${id}/versions/${version}/rollback`, Template),
+      post(`/templates/${id}/rollback`, Template, { version }),
 
     // --- broadcasts --------------------------------------------------------
     listBroadcasts: (params: ListParams = {}) => get('/broadcasts', list(Broadcast), params),
@@ -1104,10 +1125,15 @@ export const createApiClient = (scope: RequestScope) => {
     updateWebhook: (id: string, body: Record<string, unknown>) =>
       patch(`/webhooks/${id}`, Webhook, body),
     deleteWebhook: (id: string) => del(`/webhooks/${id}`, deleted),
-    listWebhookAttempts: (id: string, params: ListParams = {}) =>
-      get(`/webhooks/${id}/attempts`, list(WebhookAttempt), params),
-    replayWebhookAttempt: (id: string, attemptId: string) =>
-      post(`/webhooks/${id}/attempts/${attemptId}/replay`, WebhookAttempt),
+    // `deliveries`, which is what the API has always called them and what the
+    // document declares. These two called `/attempts`, a path no router has
+    // ever registered — so the endpoint detail screen's whole attempt log and
+    // its replay button 404'd on every real instance. The demo's own
+    // client-side router answered `/attempts`, which is why it looked finished.
+    listWebhookDeliveries: (id: string, params: ListParams = {}) =>
+      get(`/webhooks/${id}/deliveries`, list(WebhookDelivery), params),
+    replayWebhookDelivery: (id: string, deliveryId: string) =>
+      post(`/webhooks/${id}/deliveries/${deliveryId}/replay`, WebhookDelivery),
 
     // --- suppressions ------------------------------------------------------
     listSuppressions: (params: ListParams & Record<string, unknown> = {}) =>

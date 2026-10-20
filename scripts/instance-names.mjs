@@ -99,24 +99,36 @@ export function scopeQueueNames(config) {
  * users, domains, mail — still sitting in `mailysend`. Nothing was lost, and
  * nothing about that was obvious from the build log either.
  *
- * So a rename is only ever applied to an instance that cannot yet have data:
+ * Getting it wrong in the *other* direction costs just as much, and did: a new
+ * `ptetrainer-mail` adopted a previous instance's database, came up holding a
+ * stranger's users, passkeys and mail, and told its operator the instance had
+ * "moved from mailysendtest9". The guard below had asked "is this Worker
+ * deployed?", and the Deploy to Cloudflare button uploads the script *before*
+ * it ever runs a build — so the answer was yes for a Worker that was seconds
+ * old and could not possibly have data.
+ *
+ * "Deployed" was never the question. The question is whether this build has
+ * run for this Worker before, because that is what binds a Worker to storage:
  *
  *   - a database already named after the Worker — it was scoped before, and
  *     that is its database
- *   - otherwise a Worker that has never been deployed to this account — a new
- *     instance, which is the case the scoping exists for
+ *   - otherwise a Worker this build has never run for — a new instance, which
+ *     is the case the scoping exists for, however it got uploaded
  *   - otherwise nothing: a Worker that is already running keeps what it is
  *     running on, because the alternative is stranding it
  *
- * `deployed` and `hasOwnDatabase` are answers from the account, which is why
+ * `builtBefore` and `hasOwnDatabase` are answers from the account, which is why
  * this takes them rather than looking them up: the only caller that can ask is
  * `ensure-resources.mjs`, which is the only thing holding credentials.
  */
-export function ownsItsData(config, { deployed, hasOwnDatabase }) {
+export function ownsItsData(config, { builtBefore, hasOwnDatabase }) {
   const worker = workerName(config)
   if (!worker || worker === DEFAULT_WORKER) return false
-  if (!hasOwnDatabase && deployed) return false
-  return true
+  // Its own database is the end of the question: it was scoped before.
+  if (hasOwnDatabase) return true
+  // No database of its own, so the only thing that can be keeping it on the
+  // shared one is a previous run of this build. Anything else is new.
+  return !builtBefore
 }
 
 /**

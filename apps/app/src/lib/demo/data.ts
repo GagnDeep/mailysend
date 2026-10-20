@@ -562,14 +562,17 @@ export const logDetail = (id: string) => {
     webhook_deliveries: failed
       ? [
           {
+            object: 'webhook_delivery' as const,
             id: demoId('wh', `${id}-d1`),
-            webhook_id: WEBHOOK_IDS.primary,
-            event: 'email.bounced',
+            endpoint_id: WEBHOOK_IDS.primary,
             url: 'https://api.acme.dev/hooks/mailysend',
-            status_code: 200,
-            duration_ms: 88,
+            event_id: demoId('evt', `${id}-d1-event`),
+            event_type: 'email.bounced',
             attempt: 1,
-            succeeded: true,
+            status: 'delivered' as const,
+            response_status: 200,
+            response_body: null,
+            duration_ms: 88,
             created_at: at(8),
           },
         ]
@@ -1125,20 +1128,30 @@ export const webhooks = [
   },
 ]
 
-export const webhookAttempts = (id: string) => {
+/**
+ * The endpoint's delivery log.
+ *
+ * This used to be shaped like the dashboard's old `WebhookAttempt` — `event`,
+ * `status_code`, `succeeded`, a `request_body` — a shape no endpoint has ever
+ * returned. Because the demo answered in it, the attempt log looked finished
+ * while the real path (`/deliveries`) was not even wired up. The demo now
+ * speaks the API's own shape, which is the only way it can keep catching this.
+ */
+export const webhookDeliveries = (id: string) => {
   const random = rng(id.length * 31)
   return Array.from({ length: 12 }, (_, index) => {
     const failed = index === 3 || index === 4
     return {
+      object: 'webhook_delivery' as const,
       id: demoId('wh', `${id}-attempt-${index}`, -index * 30),
-      webhook_id: id,
-      event: pick(['email.delivered', 'email.bounced', 'email.opened'] as const, random),
-      url: webhooks.find((w) => w.id === id)?.url ?? webhooks[0]?.url ?? '',
-      status_code: failed ? 502 : 200,
-      duration_ms: failed ? 30_000 : 40 + Math.floor(random() * 160),
+      endpoint_id: id,
+      event_id: demoId('evt', `${id}-event-${index}`, -index * 30),
+      event_type: pick(['email.delivered', 'email.bounced', 'email.opened'] as const, random),
       attempt: failed ? 2 : 1,
-      succeeded: !failed,
-      error: failed ? 'Bad gateway' : null,
+      status: failed ? ('failed' as const) : ('delivered' as const),
+      response_status: failed ? 502 : 200,
+      response_body: failed ? 'Bad gateway' : null,
+      duration_ms: failed ? 30_000 : 40 + Math.floor(random() * 160),
       created_at: ago(index * 30 + 4),
     }
   })

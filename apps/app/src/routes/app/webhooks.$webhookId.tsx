@@ -23,7 +23,7 @@ import { dateTime, relativeTime } from '~/components/app/format.ts'
 import { PageHeader, PageSection } from '~/components/app/page.tsx'
 import { useApi, useEnvironment } from '~/components/app/scope.tsx'
 import { DetailSkeleton, ErrorState, TableSkeleton } from '~/components/app/states.tsx'
-import type { WebhookAttemptRecord } from '~/lib/api-client.ts'
+import type { WebhookDeliveryRecord } from '~/lib/api-client.ts'
 import { errorMessage, qk } from '~/lib/query.ts'
 import type { WebhookEvent } from '~/routes/app/webhooks.index.tsx'
 import { EventPicker } from '~/routes/app/webhooks.index.tsx'
@@ -61,7 +61,7 @@ function WebhookDetail() {
   const pickerId = useId()
 
   const [events, setEvents] = useState<WebhookEvent[] | null>(null)
-  const [inspecting, setInspecting] = useState<WebhookAttemptRecord | null>(null)
+  const [inspecting, setInspecting] = useState<WebhookDeliveryRecord | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const webhookQuery = useQuery({
@@ -70,8 +70,8 @@ function WebhookDetail() {
   })
 
   const attempts = useQuery({
-    queryKey: qk.webhookAttempts(environment, webhookId),
-    queryFn: () => api.listWebhookAttempts(webhookId, { limit: 50 }),
+    queryKey: qk.webhookDeliveries(environment, webhookId),
+    queryFn: () => api.listWebhookDeliveries(webhookId, { limit: 50 }),
   })
 
   const webhook = webhookQuery.data
@@ -90,15 +90,17 @@ function WebhookDetail() {
     onError: (error) => toast.error(errorMessage(error)),
   })
 
+  /**
+   * Replay queues a *new* delivery; it does not wait for the endpoint. The toast
+   * used to report a status code the response does not carry, so it announced
+   * "the endpoint answered OK" before anything had been sent — the row that
+   * appears in the log a second later was the only place the truth lived.
+   */
   const replay = useMutation({
-    mutationFn: (attemptId: string) => api.replayWebhookAttempt(webhookId, attemptId),
-    onSuccess: (attempt) => {
-      void queryClient.invalidateQueries({ queryKey: qk.webhookAttempts(environment, webhookId) })
-      toast[attempt.succeeded ? 'success' : 'error'](
-        attempt.succeeded
-          ? `Replayed — the endpoint answered ${attempt.status_code ?? 'OK'}.`
-          : `Replay failed with ${attempt.status_code ?? 'no response'}.`,
-      )
+    mutationFn: (deliveryId: string) => api.replayWebhookDelivery(webhookId, deliveryId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.webhookDeliveries(environment, webhookId) })
+      toast.success('Queued a replay — the result appears in the log below.')
     },
     onError: (error) => toast.error(errorMessage(error)),
   })
@@ -124,27 +126,29 @@ function WebhookDetail() {
     )
   }
 
-  const columns: Column<WebhookAttemptRecord>[] = [
+  const columns: Column<WebhookDeliveryRecord>[] = [
     {
       id: 'event',
       header: 'Event',
-      sortBy: (row) => row.event,
-      cell: (row) => <MonoChip size="sm">{row.event}</MonoChip>,
+      sortBy: (row) => row.event_type,
+      cell: (row) => <MonoChip size="sm">{row.event_type}</MonoChip>,
     },
     {
       id: 'code',
       header: 'Status',
       align: 'right',
-      sortBy: (row) => row.status_code ?? 0,
+      sortBy: (row) => row.response_status ?? 0,
       cell: (row) => (
         <span
           className={
-            row.succeeded
+            row.status === 'delivered'
               ? 'font-mono text-[12.5px] text-positive'
-              : 'font-mono text-[12.5px] text-warning'
+              : row.status === 'pending'
+                ? 'font-mono text-[12.5px] text-muted'
+                : 'font-mono text-[12.5px] text-warning'
           }
         >
-          {row.status_code ?? 'no response'}
+          {row.response_status ?? (row.status === 'pending' ? 'waiting' : 'no response')}
         </span>
       ),
     },
@@ -155,7 +159,7 @@ function WebhookDetail() {
       sortBy: (row) => row.duration_ms ?? 0,
       cell: (row) => (
         <span className="font-mono text-[12.5px] text-muted">
-          {row.duration_ms === null ? '—' : `${row.duration_ms} ms`}
+          {row.duration_ms == null ? '—' : `${row.duration_ms} ms`}
         </span>
       ),
     },
@@ -179,7 +183,18 @@ function WebhookDetail() {
     {
       id: 'result',
       header: 'Result',
-      cell: (row) => <StatusBadge status={row.succeeded ? 'delivered' : 'failed'} size="sm" />,
+      cell: (row) => (
+        <StatusBadge
+          status={
+            row.status === 'delivered'
+              ? 'delivered'
+              : row.status === 'pending'
+                ? 'pending'
+                : 'failed'
+          }
+          size="sm"
+        />
+      ),
     },
     {
       id: 'actions',
@@ -323,12 +338,12 @@ function WebhookDetail() {
         <SheetContent side="right" className="w-full max-w-[720px] overflow-y-auto">
           <SheetHeader>
             <SheetTitle>
-              {inspecting?.event} · attempt #{inspecting?.attempt}
+              {inspecting?.event_type} · attempt #{inspecting?.attempt}
             </SheetTitle>
             <SheetDescription>
               {inspecting
-                ? `${dateTime(inspecting.created_at)} · ${inspecting.status_code ?? 'no response'} · ${
-                    inspecting.duration_ms === null ? 'no timing' : `${inspecting.duration_ms} ms`
+                ? `${dateTime(inspecting.created_at)} · ${inspecting.response_status ?? inspecting.status} · ${
+                    inspecting.duration_ms == null ? 'no timing' : `${inspecting.duration_ms} ms`
                   }`
                 : null}
             </SheetDescription>
@@ -336,12 +351,17 @@ function WebhookDetail() {
 
           {inspecting ? (
             <div className="mt-4 flex flex-col gap-4">
-              {inspecting.error ? (
-                <Callout variant="warn" title="transport error">
-                  {inspecting.error}
-                </Callout>
-              ) : null}
-              <Body label="request body" value={inspecting.request_body} />
+              {/*
+                No request body: `webhook_deliveries` has no column for one, and
+                this panel used to render a row for it anyway — an empty box
+                captioned "request body" on every delivery ever inspected. The
+                payload is rebuilt from the event on replay rather than stored,
+                so the event id is the honest answer to "what was sent".
+              */}
+              <div className="flex flex-col gap-1.5">
+                <div className="ms-eyebrow text-[10.5px] text-muted-2">event</div>
+                <CopyValue value={inspecting.event_id} label="event id" />
+              </div>
               <Body label="response body" value={inspecting.response_body} />
               <div>
                 <Button

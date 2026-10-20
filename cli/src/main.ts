@@ -2,6 +2,7 @@ import { ApiCallError } from './api.ts'
 import { ArgError, type FlagSpecs, helpFor, parseArgs } from './args.ts'
 import { CliError, type CommandContext, type GlobalOptions } from './command.ts'
 import { claim, claimFlags } from './commands/claim.ts'
+import { doctor, doctorFlags } from './commands/doctor.ts'
 import { domainsFlags, domainsSet, domainsSetFlags, domainsVerify } from './commands/domains.ts'
 import { importResend, importResendFlags } from './commands/import-resend.ts'
 import { login, loginFlags } from './commands/login.ts'
@@ -66,6 +67,13 @@ export const ENTRIES: Entry[] = [
     usage: 'mailysend dev [--port 8787] [--remote]',
     flags: devFlags,
     run: dev,
+  },
+  {
+    match: ['doctor'],
+    summary: 'Find out why mail is not leaving a deployment',
+    usage: 'mailysend doctor [--json]',
+    flags: doctorFlags,
+    run: doctor,
   },
   {
     match: ['tail'],

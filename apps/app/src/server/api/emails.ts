@@ -5,6 +5,7 @@ import {
   UpdateEmailRequest,
 } from '@mailysend/contracts'
 import { doName, idLowerBound, stableBucket } from '@mailysend/core'
+import type { Context } from 'hono'
 import { requireScope } from '../auth.ts'
 import { acceptEmail } from '../send/accept.ts'
 import {
@@ -14,6 +15,7 @@ import {
   json,
   page,
   parseLimit,
+  type Vars,
   withContext,
 } from './base.ts'
 
@@ -87,11 +89,32 @@ emails.post('/batch', async (c) => {
   return json({ data: results })
 })
 
+/**
+ * The list, with one text filter.
+ *
+ * `q` is here because the command palette was already sending it. Typing a
+ * recipient into ⌘K passed `q=` to this endpoint, which read `limit`, `cursor`
+ * and `status` and silently dropped the rest — so the Messages group showed the
+ * five newest messages whatever was typed, and anything older than those five
+ * was unfindable by the one search box the dashboard has. A query parameter
+ * that is accepted and ignored is the worst of the three possible behaviours:
+ * rejecting it would at least have said so.
+ *
+ * Matched against the subject, the recipients and the sender, which are the
+ * three things somebody has in hand when they go looking for a message. It is a
+ * LIKE scan over the environment's rows rather than an index seek — there is no
+ * full-text index on `messages` and adding one is a different change — so it is
+ * bounded by `limit` and meant for a person's search box, not for a crawl.
+ */
 emails.get('/', async (c) => {
   const ctx = c.get('ctx')
   const limit = parseLimit(c.req.query('limit'))
   const cursor = c.req.query('cursor')
   const status = c.req.query('status')
+  const search = (c.req.query('q') ?? c.req.query('search'))?.trim()
+  // The pattern's own wildcards are escaped, so a typed `%` searches for a
+  // percent sign instead of widening the search to everything.
+  const pattern = search ? `%${search.replace(/[\\%_]/g, '\\$&')}%` : null
 
   const rows = await ctx.sql
     .prepare(
@@ -101,6 +124,7 @@ emails.get('/', async (c) => {
         WHERE workspace_id = ? AND environment = ?
           ${cursor ? 'AND id < ?' : ''}
           ${status ? 'AND status = ?' : ''}
+          ${pattern ? "AND (subject LIKE ? ESCAPE '\\' OR to_addresses LIKE ? ESCAPE '\\' OR from_address LIKE ? ESCAPE '\\')" : ''}
         ORDER BY id DESC LIMIT ?`,
     )
     .bind(
@@ -108,6 +132,7 @@ emails.get('/', async (c) => {
       ctx.actor.environment,
       ...(cursor ? [cursor] : []),
       ...(status ? [status] : []),
+      ...(pattern ? [pattern, pattern, pattern] : []),
       limit + 1,
     )
     .all<MessageRow>()
@@ -186,9 +211,19 @@ emails.patch('/:id', async (c) => {
 })
 
 /** `DELETE /v1/emails/:id` — cancel a scheduled send. */
-emails.delete('/:id', async (c) => {
+/**
+ * Cancel a scheduled message.
+ *
+ * Registered twice on purpose. `DELETE /v1/emails/:id` is this codebase's own
+ * spelling and the one the document has always carried; `POST
+ * /v1/emails/:id/cancel` is Resend's, which means it is what a Resend SDK
+ * pointed at this deployment calls and what the dashboard was already calling
+ * — against nothing, until now. For an API whose whole promise is that the
+ * `resend` package works unchanged, the compatible spelling is not an alias so
+ * much as the point.
+ */
+const cancelScheduled = async (c: Context<{ Variables: Vars }>, id: string) => {
   const ctx = c.get('ctx')
-  const id = c.req.param('id')
   const scheduled = await ctx.sql
     .prepare(
       `SELECT scheduled_at FROM messages WHERE id = ? AND workspace_id = ? AND status = 'scheduled'`,
@@ -220,7 +255,10 @@ emails.delete('/:id', async (c) => {
   )
   await stub.cancel(id, Date.parse(scheduled.scheduled_at))
   return json({ object: 'email', id, status: 'canceled' })
-})
+}
+
+emails.delete('/:id', (c) => cancelScheduled(c, c.req.param('id')))
+emails.post('/:id/cancel', (c) => cancelScheduled(c, c.req.param('id')))
 
 /** The message timeline. Reads `message_events` when detail is on. */
 emails.get('/:id/events', async (c) => {

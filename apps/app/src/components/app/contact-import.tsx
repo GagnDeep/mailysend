@@ -433,7 +433,7 @@ export const ContactImport = ({
                   <StatTile
                     label="Skipped"
                     value={num(result.skipped)}
-                    delta="already present or suppressed"
+                    delta="a later row had the same address"
                   />
                   <StatTile
                     label="Failed"

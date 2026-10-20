@@ -174,8 +174,8 @@ webhooks.get('/:id/deliveries', async (c) => {
 
   const rows = await ctx.sql
     .prepare(
-      `SELECT id, event_id, event_type, attempt, status, response_status, response_body,
-              duration_ms, created_at
+      `SELECT id, endpoint_id, event_id, event_type, attempt, status, response_status,
+              response_body, duration_ms, created_at
          FROM webhook_deliveries
         WHERE workspace_id = ? AND endpoint_id = ?
           ${cursor ? 'AND id < ?' : ''}
@@ -417,6 +417,7 @@ interface EndpointRow {
 
 interface DeliveryRow {
   id: string
+  endpoint_id: string
   event_id: string
   event_type: string
   attempt: number
@@ -455,6 +456,9 @@ const toWebhook = (row: EndpointRow) => ({
 const toDelivery = (row: DeliveryRow) => ({
   object: 'webhook_delivery' as const,
   id: row.id,
+  // Repeated even though it is in the path: a replay is driven from a row, and
+  // a row that cannot name its own endpoint makes the caller carry it for us.
+  endpoint_id: row.endpoint_id,
   event_id: row.event_id,
   event_type: row.event_type,
   attempt: row.attempt,

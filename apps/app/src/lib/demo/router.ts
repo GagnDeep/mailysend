@@ -193,7 +193,7 @@ const answer = (method: string, path: string, query: Query): unknown => {
 
     case 'webhooks': {
       if (!first) return list(demo.webhooks)
-      if (second === 'attempts') return list(demo.webhookAttempts(first))
+      if (second === 'deliveries') return list(demo.webhookDeliveries(first))
       return demo.webhooks.find((w) => w.id === first) ?? demo.webhooks[0]
     }
 

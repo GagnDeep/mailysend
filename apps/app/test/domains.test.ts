@@ -157,6 +157,13 @@ describe('a lookup that did not happen', () => {
 })
 
 describe('the current send failure diagnostic', () => {
+  /**
+   * The ids here sort the way real ones do, which the assertion depends on: a
+   * message id is a ULID, so lexical order *is* chronological order, and the
+   * query reads the latest outcome by walking (workspace_id, domain_id, id)
+   * backwards rather than by sorting on `created_at`. Ids that sorted the other
+   * way round would be testing data this instance cannot produce.
+   */
   it('clears an old failure when a later send from the domain succeeds', async () => {
     const domainId = await domainWith('outcome.dev', [])
     const failedAt = '2026-09-14T01:00:00.000Z'
@@ -170,11 +177,11 @@ describe('the current send failure diagnostic', () => {
          VALUES (?, 'ws_default', ?, 'info@outcome.dev', '["recipient@example.com"]', 'Failed',
                  'failed', 96, 'live', 'permanent: Cloudflare is not configured', ?)`,
       )
-      .bind('em_OLD_FAILURE', domainId, failedAt)
+      .bind('em_1_OLD_FAILURE', domainId, failedAt)
       .run()
 
     expect((await detail(domainId)).last_send_error).toMatchObject({
-      email_id: 'em_OLD_FAILURE',
+      email_id: 'em_1_OLD_FAILURE',
       error: 'permanent: Cloudflare is not configured',
     })
 
@@ -186,7 +193,7 @@ describe('the current send failure diagnostic', () => {
          VALUES (?, 'ws_default', ?, 'info@outcome.dev', '["recipient@example.com"]', 'Succeeded',
                  'sent', 30, 'live', ?)`,
       )
-      .bind('em_NEW_SUCCESS', domainId, sentAt)
+      .bind('em_2_NEW_SUCCESS', domainId, sentAt)
       .run()
 
     expect((await detail(domainId)).last_send_error).toBeNull()
