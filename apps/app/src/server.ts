@@ -14,6 +14,7 @@ import { type Env, runWithEnv } from './server/env.ts'
 import { handleInboundEmail } from './server/inbound-handler.ts'
 import { consumeSend } from './server/send/consumer.ts'
 import { handleClick, handleOpen, handleUnsubscribe } from './server/tracking.ts'
+import { VERSION } from './version.ts'
 
 /**
  * The single server entry.
@@ -29,6 +30,49 @@ import { handleClick, handleOpen, handleUnsubscribe } from './server/tracking.ts
  */
 
 const startHandler = createStartHandler(defaultStreamHandler)
+
+/**
+ * What to answer when the instance cannot finish booting.
+ *
+ * `configure()` runs before routing, so anything it throws used to be a bare
+ * 500 on every path there is. That is the worst possible shape for the failure
+ * it actually produces: a deployment whose migrations did not complete answered
+ * `/v1/health` with a 500 and no body, so neither the operator nor a monitor
+ * could tell a broken database from a broken Worker, and the one page that
+ * exists to say what is wrong said nothing.
+ *
+ * So the reason travels. `/v1/health` keeps its contract — the same JSON shape
+ * a healthy instance returns, with `database` carrying the error and a 503 that
+ * a load balancer already knows how to read — and every other path gets plain
+ * text an operator can act on. 503 with `retry-after`, not 500, because the
+ * usual cause is transient and the next boot genuinely may succeed.
+ */
+function bootFailure(request: Request, err: unknown): Response {
+  const detail = err instanceof Error ? err.message : String(err)
+  console.error('[boot] the instance could not be configured', err)
+  const headers = { 'cache-control': 'no-store', 'retry-after': '5' }
+
+  if (new URL(request.url).pathname === '/v1/health') {
+    return Response.json(
+      {
+        status: 'degraded',
+        mode: 'unknown',
+        version: VERSION,
+        database: detail,
+        time: new Date().toISOString(),
+      },
+      { status: 503, headers },
+    )
+  }
+
+  return new Response(
+    `This MailySend instance could not finish starting up.\n\n${detail}\n\n` +
+      'Nothing was served because the database is not ready. The logs for this\n' +
+      'deployment carry the same error with a stack trace, and /v1/health returns\n' +
+      'it as JSON.\n',
+    { status: 503, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } },
+  )
+}
 
 const redirect = (location: string): Response =>
   new Response(null, { status: 302, headers: { location, 'cache-control': 'no-store' } })
@@ -157,7 +201,12 @@ export default {
     // Migrations, the first workspace, and any value the deployment did not
     // configure — resolved here so a one-click deploy with no variables set
     // still answers its first request with a working instance.
-    const env = await configure(resolved.env, request)
+    let env: Env
+    try {
+      env = await configure(resolved.env, request)
+    } catch (err) {
+      return bootFailure(request, err)
+    }
     const ctx = resolved.ctx
     // Request-scoped, not module-scoped: a module-level variable would leak one
     // request's workspace into another under concurrency, which on Workers is

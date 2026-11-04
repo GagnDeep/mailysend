@@ -117,7 +117,15 @@ export async function ensureInstance(env: Env): Promise<void> {
       await ensureWorkspace(env)
       await adoptExistingOwner(env)
     })()
+    // A *rejected* promise must not be the memo. Caching one turned a single
+    // failure — a cancelled first request, a D1 blip — into a permanent one
+    // for the life of the isolate, since every later request awaited the same
+    // rejection and never retried. Forgetting it on failure is what makes the
+    // next request an actual second attempt.
     readies.set(env.DB, ready)
+    ready.catch(() => {
+      if (readies.get(env.DB) === ready) readies.delete(env.DB)
+    })
   }
   await ready
 }
