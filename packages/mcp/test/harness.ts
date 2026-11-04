@@ -47,6 +47,7 @@ export const domain = (): Domain => ({
   open_tracking: true,
   click_tracking: true,
   custom_return_path: 'cf-bounce',
+  unsubscribe_headers: false,
 })
 
 export const contact = (): Contact => ({

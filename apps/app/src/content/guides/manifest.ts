@@ -1051,7 +1051,7 @@ export const GUIDES: GuideMeta[] = [
       {
         question: 'Do I have to add an unsubscribe link myself?',
         answer:
-          'The send path injects List-Unsubscribe headers on every message, including transactional. A visible link in the body is still your call, and is still what a reader looks for.',
+          'Broadcasts always get List-Unsubscribe headers; other sends only do if the domain has opted in. Either way, a visible link in the body is still your call, and is still what a reader looks for.',
       },
     ],
   },

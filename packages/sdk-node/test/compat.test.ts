@@ -216,12 +216,21 @@ describe('domains', () => {
     await c.resend.domains.create({ name: 'example.com' })
     await c.resend.domains.get('dom_1')
     const listed = await c.resend.domains.list()
-    await c.resend.domains.update({ id: 'dom_1', openTracking: false, clickTracking: true })
+    await c.resend.domains.update({
+      id: 'dom_1',
+      openTracking: false,
+      clickTracking: true,
+      unsubscribeHeaders: true,
+    })
     await c.resend.domains.verify('dom_1')
     await c.resend.domains.remove('dom_1')
 
     expect(listed.data).toEqual({ data: [{ object: 'domain', id: 'dom_1' }] })
-    expect(bodyOf(c.call(3).init)).toEqual({ open_tracking: false, click_tracking: true })
+    expect(bodyOf(c.call(3).init)).toEqual({
+      open_tracking: false,
+      click_tracking: true,
+      unsubscribe_headers: true,
+    })
     expect(c.call(4).url.pathname).toBe('/v1/domains/dom_1/verify')
   })
 })

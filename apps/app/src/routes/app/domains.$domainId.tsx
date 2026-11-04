@@ -600,6 +600,25 @@ function DomainDetail() {
 
           <HairlineRule soft />
 
+          <div className="flex items-start justify-between gap-6">
+            <div className="min-w-0">
+              <div className="text-[14.5px] font-medium">Unsubscribe headers on individual mail</div>
+              <p className="m-0 mt-1 max-w-[70ch] text-[13.5px] text-muted">
+                Adds List-Unsubscribe headers to non-broadcast messages. Mail clients can label those
+                messages as mailing-list mail and show their own unsubscribe button, so leave this off
+                for transactional email such as verification codes and invitations. Broadcasts always
+                include their own unsubscribe path.
+              </p>
+            </div>
+            <Switch
+              checked={domain.unsubscribe_headers}
+              aria-label="Unsubscribe headers on individual mail"
+              onCheckedChange={(checked) => update.mutate({ unsubscribe_headers: checked })}
+            />
+          </div>
+
+          <HairlineRule soft />
+
           <div className="flex flex-col gap-2">
             <Label htmlFor={returnPathId}>Custom return path</Label>
             <div className="flex flex-wrap items-center gap-2">

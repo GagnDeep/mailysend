@@ -448,14 +448,14 @@ function Page() {
               ]}
               caption="Both are warnings on the render result. Wire them into your publish check rather than reading them by eye."
             />
-            <Callout title="THE HEADERS GO ON EVERY MESSAGE, INCLUDING TRANSACTIONAL">
-              Separately from the body, the send path attaches <Mono>List-Unsubscribe</Mono> — an
-              HTTPS one-click endpoint and a <Mono>mailto:</Mono> fallback — plus{' '}
-              <Mono>List-Unsubscribe-Post: List-Unsubscribe=One-Click</Mono>, to every message. Yes,
-              including receipts and password resets. Gmail and Yahoo call that endpoint directly
-              with no human present, which is why it returns plain text with no form, no redirect
-              and no confirmation screen. A visible link in the body is still your call, and is
-              still what a reader actually looks for —{' '}
+            <Callout title="THE HEADERS ARE OPT-IN, EXCEPT ON BROADCASTS">
+              Separately from the body, the send path can attach <Mono>List-Unsubscribe</Mono> — a
+              signed HTTPS one-click endpoint — plus{' '}
+              <Mono>List-Unsubscribe-Post: List-Unsubscribe=One-Click</Mono>. A broadcast always
+              carries them. An individual send — a receipt, a password reset, an invitation — only
+              does if the sending domain has opted in, because the pair is also what tells a client
+              to present the message as mailing-list mail, the wrong read for averification code. A 
+              visible link in the body is still your call, and is still what a reader actually looks for —{' '}
               <a
                 href="/guides/unsubscribe-and-preferences"
                 className="text-accent underline underline-offset-4"

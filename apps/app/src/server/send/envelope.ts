@@ -28,6 +28,8 @@ export interface Envelope {
     return_path: string
     open_tracking: boolean
     click_tracking: boolean
+    /** Whether individual sends from this domain get List-Unsubscribe headers. */
+    unsubscribe_headers: boolean
   }
   /** Set when the message belongs to a broadcast or automation. */
   broadcast_id?: string

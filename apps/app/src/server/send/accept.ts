@@ -44,6 +44,7 @@ interface DomainRow {
   custom_return_path: string
   open_tracking: number
   click_tracking: number
+  unsubscribe_headers: number
   /** The transport this domain is bound to, when it names one. */
   provider: string | null
 }
@@ -64,7 +65,7 @@ async function resolveDomain(ctx: Ctx, fromAddress: string): Promise<DomainRow> 
       (await ctx.sql
         .prepare(
           `SELECT id, name, status, dkim_selector, dkim_private_key, custom_return_path,
-                  open_tracking, click_tracking, provider
+                  open_tracking, click_tracking, unsubscribe_headers, provider
              FROM domains WHERE workspace_id = ? AND name IN (?, ?)
             ORDER BY length(name) DESC LIMIT 1`,
         )
@@ -246,6 +247,7 @@ export async function acceptEmail(
       return_path: `${domain.custom_return_path}.${domain.name}`,
       open_tracking: Boolean(domain.open_tracking) && request.tracking?.opens !== false,
       click_tracking: Boolean(domain.click_tracking) && request.tracking?.clicks !== false,
+      unsubscribe_headers: Boolean(domain.unsubscribe_headers),
     },
     ...(opts.broadcastId ? { broadcast_id: opts.broadcastId } : {}),
     ...(opts.automationId ? { automation_id: opts.automationId } : {}),
