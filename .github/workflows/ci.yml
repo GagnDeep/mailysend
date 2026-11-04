@@ -23,7 +23,11 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: that label moved to Ubuntu 26 in October
+    # 2026, and a runner-image jump that changes the system Node, the SQLite
+    # build or the available shell is a decision worth making deliberately
+    # rather than discovering on an unrelated pull request.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:

@@ -57,14 +57,35 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: pnpm exec tsx scripts/provision.ts
 
+      # The root script, not the app's: it also runs `emit-root-wrangler.mjs`
+      # and `ensure-resources.mjs`, which are what create the queues and
+      # namespaces and what re-scope them for an instance deployed under
+      # another name. Building only `@mailysend/app` deployed a Worker whose
+      # bindings pointed at resources this account may not have.
       - name: Build
-        run: pnpm --filter @mailysend/app build:cf
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: pnpm run build:cf
 
+      # The app applies its own migrations at boot, so this step is a warm-up
+      # rather than a prerequisite: it keeps the ~230 statements of a first
+      # migration off the first real request. The database name is read from
+      # the config the build just emitted — hardcoding `mailysend` here applied
+      # the migrations to the wrong database, or to none, on every instance
+      # deployed under a different name.
       - name: Apply database migrations
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: pnpm exec wrangler d1 migrations apply mailysend --remote --config apps/app/wrangler.jsonc
+        run: |
+          db=$(node -e "const c=require('./apps/app/.output-cf/server/wrangler.json');process.stdout.write(c.d1_databases?.[0]?.database_name ?? '')")
+          if [ -z "$db" ]; then
+            echo "::error::The build emitted no D1 binding, so there is no database to migrate."
+            exit 1
+          fi
+          echo "Applying migrations to $db"
+          pnpm exec wrangler d1 migrations apply "$db" --remote --config apps/app/wrangler.jsonc
 
       - name: Deploy
         env:

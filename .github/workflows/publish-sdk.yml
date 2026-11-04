@@ -29,11 +29,15 @@ jobs:
       # the tarball, and shows it on the package page.
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          version: 10.11.0
+      - uses: actions/setup-node@v5
+        with:
+          # The same Node the other two workflows use. A package built on 22
+          # and tested nowhere else is a difference nobody chose.
+          node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
