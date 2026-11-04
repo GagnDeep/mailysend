@@ -305,7 +305,9 @@ describe('what a new domain starts with', () => {
     // The response is a literal; this is the row, which is what the send path
     // reads. The two disagreeing is exactly the bug this guards.
     const row = await h.sql
-      .prepare('SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?')
+      .prepare(
+        'SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?',
+      )
       .bind(body.id)
       .first<{ open_tracking: number; click_tracking: number; unsubscribe_headers: number }>()
     expect(row?.open_tracking).toBe(0)
@@ -327,7 +329,9 @@ describe('what a new domain starts with', () => {
       .bind(new Date().toISOString(), new Date().toISOString())
       .run()
     const row = await h.sql
-      .prepare('SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?')
+      .prepare(
+        'SELECT open_tracking, click_tracking, unsubscribe_headers FROM domains WHERE id = ?',
+      )
       .bind('dom_default')
       .first<{ open_tracking: number; click_tracking: number; unsubscribe_headers: number }>()
     expect(row?.open_tracking).toBe(0)

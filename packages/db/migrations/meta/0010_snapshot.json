@@ -104,17 +104,12 @@
       "indexes": {
         "api_keys_hash": {
           "name": "api_keys_hash",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         },
         "api_keys_ws": {
           "name": "api_keys_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -200,10 +195,7 @@
       "indexes": {
         "audit_log_ws": {
           "name": "audit_log_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -233,9 +225,7 @@
       "indexes": {
         "claim_nonces_created": {
           "name": "claim_nonces_created",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -335,23 +325,17 @@
       "indexes": {
         "device_codes_hash": {
           "name": "device_codes_hash",
-          "columns": [
-            "device_code_hash"
-          ],
+          "columns": ["device_code_hash"],
           "isUnique": true
         },
         "device_codes_user_code": {
           "name": "device_codes_user_code",
-          "columns": [
-            "user_code"
-          ],
+          "columns": ["user_code"],
           "isUnique": true
         },
         "device_codes_expiry": {
           "name": "device_codes_expiry",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -417,17 +401,12 @@
       "indexes": {
         "idempotency_pk": {
           "name": "idempotency_pk",
-          "columns": [
-            "workspace_id",
-            "key"
-          ],
+          "columns": ["workspace_id", "key"],
           "isUnique": true
         },
         "idempotency_expiry": {
           "name": "idempotency_expiry",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -499,17 +478,12 @@
       "indexes": {
         "invites_ws": {
           "name": "invites_ws",
-          "columns": [
-            "workspace_id",
-            "email"
-          ],
+          "columns": ["workspace_id", "email"],
           "isUnique": false
         },
         "invites_token": {
           "name": "invites_token",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         }
       },
@@ -582,25 +556,17 @@
       "indexes": {
         "login_codes_email": {
           "name": "login_codes_email",
-          "columns": [
-            "email",
-            "expires_at"
-          ],
+          "columns": ["email", "expires_at"],
           "isUnique": false
         },
         "login_codes_ip": {
           "name": "login_codes_ip",
-          "columns": [
-            "ip",
-            "created_at"
-          ],
+          "columns": ["ip", "created_at"],
           "isUnique": false
         },
         "login_codes_expiry": {
           "name": "login_codes_expiry",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -680,11 +646,7 @@
       "indexes": {
         "mcp_confirmations_ws": {
           "name": "mcp_confirmations_ws",
-          "columns": [
-            "workspace_id",
-            "status",
-            "expires_at"
-          ],
+          "columns": ["workspace_id", "status", "expires_at"],
           "isUnique": false
         }
       },
@@ -728,17 +690,12 @@
       "indexes": {
         "memberships_pk": {
           "name": "memberships_pk",
-          "columns": [
-            "workspace_id",
-            "user_id"
-          ],
+          "columns": ["workspace_id", "user_id"],
           "isUnique": true
         },
         "memberships_user": {
           "name": "memberships_user",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -827,19 +784,12 @@
       "indexes": {
         "provider_configs_ws": {
           "name": "provider_configs_ws",
-          "columns": [
-            "workspace_id",
-            "provider"
-          ],
+          "columns": ["workspace_id", "provider"],
           "isUnique": true
         },
         "provider_configs_order": {
           "name": "provider_configs_order",
-          "columns": [
-            "workspace_id",
-            "enabled",
-            "priority"
-          ],
+          "columns": ["workspace_id", "enabled", "priority"],
           "isUnique": false
         }
       },
@@ -897,16 +847,12 @@
       "indexes": {
         "recovery_codes_hash": {
           "name": "recovery_codes_hash",
-          "columns": [
-            "code_hash"
-          ],
+          "columns": ["code_hash"],
           "isUnique": true
         },
         "recovery_codes_user": {
           "name": "recovery_codes_user",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -971,16 +917,12 @@
       "indexes": {
         "sessions_user": {
           "name": "sessions_user",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "sessions_expiry": {
           "name": "sessions_expiry",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -1024,10 +966,7 @@
       "indexes": {
         "settings_pk": {
           "name": "settings_pk",
-          "columns": [
-            "workspace_id",
-            "key"
-          ],
+          "columns": ["workspace_id", "key"],
           "isUnique": true
         }
       },
@@ -1092,9 +1031,7 @@
       "indexes": {
         "users_email": {
           "name": "users_email",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         }
       },
@@ -1159,9 +1096,7 @@
       "indexes": {
         "webauthn_challenges_expiry": {
           "name": "webauthn_challenges_expiry",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -1255,16 +1190,12 @@
       "indexes": {
         "webauthn_credentials_cid": {
           "name": "webauthn_credentials_cid",
-          "columns": [
-            "credential_id"
-          ],
+          "columns": ["credential_id"],
           "isUnique": true
         },
         "webauthn_credentials_user": {
           "name": "webauthn_credentials_user",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -1330,9 +1261,7 @@
       "indexes": {
         "workspaces_slug": {
           "name": "workspaces_slug",
-          "columns": [
-            "slug"
-          ],
+          "columns": ["slug"],
           "isUnique": true
         }
       },
@@ -1427,10 +1356,7 @@
       "indexes": {
         "mail_attachments_message": {
           "name": "mail_attachments_message",
-          "columns": [
-            "workspace_id",
-            "message_id"
-          ],
+          "columns": ["workspace_id", "message_id"],
           "isUnique": false
         }
       },
@@ -1581,10 +1507,7 @@
       "indexes": {
         "mail_drafts_ws": {
           "name": "mail_drafts_ws",
-          "columns": [
-            "workspace_id",
-            "updated_at"
-          ],
+          "columns": ["workspace_id", "updated_at"],
           "isUnique": false
         }
       },
@@ -1636,10 +1559,7 @@
       "indexes": {
         "mail_labels_name": {
           "name": "mail_labels_name",
-          "columns": [
-            "workspace_id",
-            "name"
-          ],
+          "columns": ["workspace_id", "name"],
           "isUnique": true
         }
       },
@@ -1877,36 +1797,22 @@
       "indexes": {
         "mail_messages_thread": {
           "name": "mail_messages_thread",
-          "columns": [
-            "workspace_id",
-            "thread_id",
-            "at"
-          ],
+          "columns": ["workspace_id", "thread_id", "at"],
           "isUnique": false
         },
         "mail_messages_header": {
           "name": "mail_messages_header",
-          "columns": [
-            "workspace_id",
-            "message_id_header"
-          ],
+          "columns": ["workspace_id", "message_id_header"],
           "isUnique": true
         },
         "mail_messages_source": {
           "name": "mail_messages_source",
-          "columns": [
-            "workspace_id",
-            "source_id"
-          ],
+          "columns": ["workspace_id", "source_id"],
           "isUnique": false
         },
         "mail_messages_mailbox": {
           "name": "mail_messages_mailbox",
-          "columns": [
-            "workspace_id",
-            "mailbox_id",
-            "at"
-          ],
+          "columns": ["workspace_id", "mailbox_id", "at"],
           "isUnique": false
         }
       },
@@ -2063,28 +1969,17 @@
       "indexes": {
         "mail_threads_folder": {
           "name": "mail_threads_folder",
-          "columns": [
-            "workspace_id",
-            "environment",
-            "folder",
-            "last_message_at"
-          ],
+          "columns": ["workspace_id", "environment", "folder", "last_message_at"],
           "isUnique": false
         },
         "mail_threads_subject": {
           "name": "mail_threads_subject",
-          "columns": [
-            "workspace_id",
-            "subject_normalized",
-            "last_message_at"
-          ],
+          "columns": ["workspace_id", "subject_normalized", "last_message_at"],
           "isUnique": false
         },
         "mail_threads_snoozed": {
           "name": "mail_threads_snoozed",
-          "columns": [
-            "snoozed_until"
-          ],
+          "columns": ["snoozed_until"],
           "isUnique": false
         }
       },
@@ -2136,10 +2031,7 @@
       "indexes": {
         "audiences_ws": {
           "name": "audiences_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -2234,21 +2126,12 @@
       "indexes": {
         "automation_enrollments_unique": {
           "name": "automation_enrollments_unique",
-          "columns": [
-            "workspace_id",
-            "automation_id",
-            "contact_id"
-          ],
+          "columns": ["workspace_id", "automation_id", "contact_id"],
           "isUnique": true
         },
         "automation_enrollments_cohort": {
           "name": "automation_enrollments_cohort",
-          "columns": [
-            "workspace_id",
-            "automation_id",
-            "cohort",
-            "status"
-          ],
+          "columns": ["workspace_id", "automation_id", "cohort", "status"],
           "isUnique": false
         }
       },
@@ -2299,10 +2182,7 @@
       "indexes": {
         "automation_triggers_lookup": {
           "name": "automation_triggers_lookup",
-          "columns": [
-            "workspace_id",
-            "type"
-          ],
+          "columns": ["workspace_id", "type"],
           "isUnique": false
         }
       },
@@ -2367,11 +2247,7 @@
       "indexes": {
         "automation_versions_pk": {
           "name": "automation_versions_pk",
-          "columns": [
-            "workspace_id",
-            "automation_id",
-            "version"
-          ],
+          "columns": ["workspace_id", "automation_id", "version"],
           "isUnique": true
         }
       },
@@ -2454,10 +2330,7 @@
       "indexes": {
         "automations_ws": {
           "name": "automations_ws",
-          "columns": [
-            "workspace_id",
-            "status"
-          ],
+          "columns": ["workspace_id", "status"],
           "isUnique": false
         }
       },
@@ -2523,18 +2396,12 @@
       "indexes": {
         "broadcast_sends_pk": {
           "name": "broadcast_sends_pk",
-          "columns": [
-            "workspace_id",
-            "broadcast_id",
-            "contact_id"
-          ],
+          "columns": ["workspace_id", "broadcast_id", "contact_id"],
           "isUnique": true
         },
         "broadcast_sends_msg": {
           "name": "broadcast_sends_msg",
-          "columns": [
-            "message_id"
-          ],
+          "columns": ["message_id"],
           "isUnique": false
         }
       },
@@ -2631,11 +2498,7 @@
       "indexes": {
         "broadcast_variants_pk": {
           "name": "broadcast_variants_pk",
-          "columns": [
-            "workspace_id",
-            "broadcast_id",
-            "key"
-          ],
+          "columns": ["workspace_id", "broadcast_id", "key"],
           "isUnique": true
         }
       },
@@ -2808,18 +2671,12 @@
       "indexes": {
         "broadcasts_ws": {
           "name": "broadcasts_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         },
         "broadcasts_status": {
           "name": "broadcasts_status",
-          "columns": [
-            "status",
-            "scheduled_at"
-          ],
+          "columns": ["status", "scheduled_at"],
           "isUnique": false
         }
       },
@@ -2863,10 +2720,7 @@
       "indexes": {
         "contact_dirty_pk": {
           "name": "contact_dirty_pk",
-          "columns": [
-            "workspace_id",
-            "contact_id"
-          ],
+          "columns": ["workspace_id", "contact_id"],
           "isUnique": true
         }
       },
@@ -2926,11 +2780,7 @@
       "indexes": {
         "contact_fields_pk": {
           "name": "contact_fields_pk",
-          "columns": [
-            "workspace_id",
-            "audience_id",
-            "key"
-          ],
+          "columns": ["workspace_id", "audience_id", "key"],
           "isUnique": true
         }
       },
@@ -3077,36 +2927,22 @@
       "indexes": {
         "contacts_audience_email": {
           "name": "contacts_audience_email",
-          "columns": [
-            "workspace_id",
-            "audience_id",
-            "email"
-          ],
+          "columns": ["workspace_id", "audience_id", "email"],
           "isUnique": true
         },
         "contacts_ws_id": {
           "name": "contacts_ws_id",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
+          "columns": ["workspace_id", "id"],
           "isUnique": false
         },
         "contacts_engagement": {
           "name": "contacts_engagement",
-          "columns": [
-            "workspace_id",
-            "audience_id",
-            "last_open_at"
-          ],
+          "columns": ["workspace_id", "audience_id", "last_open_at"],
           "isUnique": false
         },
         "contacts_email": {
           "name": "contacts_email",
-          "columns": [
-            "workspace_id",
-            "email"
-          ],
+          "columns": ["workspace_id", "email"],
           "isUnique": false
         }
       },
@@ -3187,18 +3023,12 @@
       "indexes": {
         "inbound_mailboxes_address": {
           "name": "inbound_mailboxes_address",
-          "columns": [
-            "workspace_id",
-            "address"
-          ],
+          "columns": ["workspace_id", "address"],
           "isUnique": true
         },
         "inbound_mailboxes_catch_all": {
           "name": "inbound_mailboxes_catch_all",
-          "columns": [
-            "workspace_id",
-            "domain"
-          ],
+          "columns": ["workspace_id", "domain"],
           "isUnique": true,
           "where": "\"is_catch_all\" = 1"
         }
@@ -3349,19 +3179,12 @@
       "indexes": {
         "inbound_messages_thread": {
           "name": "inbound_messages_thread",
-          "columns": [
-            "workspace_id",
-            "thread_id",
-            "received_at"
-          ],
+          "columns": ["workspace_id", "thread_id", "received_at"],
           "isUnique": false
         },
         "inbound_messages_dedupe": {
           "name": "inbound_messages_dedupe",
-          "columns": [
-            "workspace_id",
-            "raw_key"
-          ],
+          "columns": ["workspace_id", "raw_key"],
           "isUnique": true
         }
       },
@@ -3449,20 +3272,12 @@
       "indexes": {
         "inbound_threads_mailbox": {
           "name": "inbound_threads_mailbox",
-          "columns": [
-            "workspace_id",
-            "mailbox_id",
-            "last_message_at"
-          ],
+          "columns": ["workspace_id", "mailbox_id", "last_message_at"],
           "isUnique": false
         },
         "inbound_threads_subject": {
           "name": "inbound_threads_subject",
-          "columns": [
-            "workspace_id",
-            "subject_normalized",
-            "last_message_at"
-          ],
+          "columns": ["workspace_id", "subject_normalized", "last_message_at"],
           "isUnique": false
         }
       },
@@ -3506,19 +3321,12 @@
       "indexes": {
         "segment_members_pk": {
           "name": "segment_members_pk",
-          "columns": [
-            "workspace_id",
-            "segment_id",
-            "contact_id"
-          ],
+          "columns": ["workspace_id", "segment_id", "contact_id"],
           "isUnique": true
         },
         "segment_members_contact": {
           "name": "segment_members_contact",
-          "columns": [
-            "workspace_id",
-            "contact_id"
-          ],
+          "columns": ["workspace_id", "contact_id"],
           "isUnique": false
         }
       },
@@ -3612,10 +3420,7 @@
       "indexes": {
         "segments_ws": {
           "name": "segments_ws",
-          "columns": [
-            "workspace_id",
-            "audience_id"
-          ],
+          "columns": ["workspace_id", "audience_id"],
           "isUnique": false
         }
       },
@@ -3708,11 +3513,7 @@
       "indexes": {
         "template_versions_pk": {
           "name": "template_versions_pk",
-          "columns": [
-            "workspace_id",
-            "template_id",
-            "version"
-          ],
+          "columns": ["workspace_id", "template_id", "version"],
           "isUnique": true
         }
       },
@@ -3786,10 +3587,7 @@
       "indexes": {
         "templates_slug": {
           "name": "templates_slug",
-          "columns": [
-            "workspace_id",
-            "slug"
-          ],
+          "columns": ["workspace_id", "slug"],
           "isUnique": true
         }
       },
@@ -3884,19 +3682,12 @@
       "indexes": {
         "webhook_deliveries_endpoint": {
           "name": "webhook_deliveries_endpoint",
-          "columns": [
-            "workspace_id",
-            "endpoint_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "endpoint_id", "created_at"],
           "isUnique": false
         },
         "webhook_deliveries_event": {
           "name": "webhook_deliveries_event",
-          "columns": [
-            "workspace_id",
-            "event_id"
-          ],
+          "columns": ["workspace_id", "event_id"],
           "isUnique": false
         }
       },
@@ -3984,10 +3775,7 @@
       "indexes": {
         "webhook_endpoints_ws": {
           "name": "webhook_endpoints_ws",
-          "columns": [
-            "workspace_id",
-            "status"
-          ],
+          "columns": ["workspace_id", "status"],
           "isUnique": false
         }
       },
@@ -4059,10 +3847,7 @@
       "indexes": {
         "alert_incidents_ws": {
           "name": "alert_incidents_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -4165,10 +3950,7 @@
       "indexes": {
         "alerts_ws": {
           "name": "alerts_ws",
-          "columns": [
-            "workspace_id",
-            "enabled"
-          ],
+          "columns": ["workspace_id", "enabled"],
           "isUnique": false
         }
       },
@@ -4278,20 +4060,12 @@
       "indexes": {
         "dmarc_reports_unique": {
           "name": "dmarc_reports_unique",
-          "columns": [
-            "workspace_id",
-            "org_name",
-            "report_id"
-          ],
+          "columns": ["workspace_id", "org_name", "report_id"],
           "isUnique": true
         },
         "dmarc_reports_domain": {
           "name": "dmarc_reports_domain",
-          "columns": [
-            "workspace_id",
-            "domain",
-            "date_begin"
-          ],
+          "columns": ["workspace_id", "domain", "date_begin"],
           "isUnique": false
         }
       },
@@ -4391,10 +4165,7 @@
       "indexes": {
         "dmarc_rows_report": {
           "name": "dmarc_rows_report",
-          "columns": [
-            "workspace_id",
-            "report_id"
-          ],
+          "columns": ["workspace_id", "report_id"],
           "isUnique": false
         }
       },
@@ -4533,10 +4304,7 @@
       "indexes": {
         "domain_dns_domain": {
           "name": "domain_dns_domain",
-          "columns": [
-            "workspace_id",
-            "domain_id"
-          ],
+          "columns": ["workspace_id", "domain_id"],
           "isUnique": false
         }
       },
@@ -4714,18 +4482,12 @@
       "indexes": {
         "domains_ws_name": {
           "name": "domains_ws_name",
-          "columns": [
-            "workspace_id",
-            "name"
-          ],
+          "columns": ["workspace_id", "name"],
           "isUnique": true
         },
         "domains_ws": {
           "name": "domains_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -4860,20 +4622,12 @@
       "indexes": {
         "message_events_msg": {
           "name": "message_events_msg",
-          "columns": [
-            "workspace_id",
-            "message_id",
-            "occurred_at"
-          ],
+          "columns": ["workspace_id", "message_id", "occurred_at"],
           "isUnique": false
         },
         "message_events_ws_type": {
           "name": "message_events_ws_type",
-          "columns": [
-            "workspace_id",
-            "type",
-            "occurred_at"
-          ],
+          "columns": ["workspace_id", "type", "occurred_at"],
           "isUnique": false
         }
       },
@@ -4940,19 +4694,12 @@
       "indexes": {
         "message_links_msg": {
           "name": "message_links_msg",
-          "columns": [
-            "workspace_id",
-            "message_id"
-          ],
+          "columns": ["workspace_id", "message_id"],
           "isUnique": false
         },
         "message_links_broadcast": {
           "name": "message_links_broadcast",
-          "columns": [
-            "workspace_id",
-            "broadcast_id",
-            "click_count"
-          ],
+          "columns": ["workspace_id", "broadcast_id", "click_count"],
           "isUnique": false
         }
       },
@@ -4996,19 +4743,12 @@
       "indexes": {
         "message_tags_lookup": {
           "name": "message_tags_lookup",
-          "columns": [
-            "workspace_id",
-            "name",
-            "value",
-            "message_id"
-          ],
+          "columns": ["workspace_id", "name", "value", "message_id"],
           "isUnique": false
         },
         "message_tags_msg": {
           "name": "message_tags_msg",
-          "columns": [
-            "message_id"
-          ],
+          "columns": ["message_id"],
           "isUnique": false
         }
       },
@@ -5247,61 +4987,37 @@
       "indexes": {
         "messages_ws_id": {
           "name": "messages_ws_id",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
+          "columns": ["workspace_id", "id"],
           "isUnique": false
         },
         "messages_ws_status": {
           "name": "messages_ws_status",
-          "columns": [
-            "workspace_id",
-            "status",
-            "id"
-          ],
+          "columns": ["workspace_id", "status", "id"],
           "isUnique": false
         },
         "messages_ws_domain": {
           "name": "messages_ws_domain",
-          "columns": [
-            "workspace_id",
-            "domain_id",
-            "id"
-          ],
+          "columns": ["workspace_id", "domain_id", "id"],
           "isUnique": false
         },
         "messages_broadcast": {
           "name": "messages_broadcast",
-          "columns": [
-            "workspace_id",
-            "broadcast_id",
-            "id"
-          ],
+          "columns": ["workspace_id", "broadcast_id", "id"],
           "isUnique": false
         },
         "messages_contact": {
           "name": "messages_contact",
-          "columns": [
-            "workspace_id",
-            "contact_id",
-            "id"
-          ],
+          "columns": ["workspace_id", "contact_id", "id"],
           "isUnique": false
         },
         "messages_provider_msg": {
           "name": "messages_provider_msg",
-          "columns": [
-            "provider_message_id"
-          ],
+          "columns": ["provider_message_id"],
           "isUnique": false
         },
         "messages_scheduled": {
           "name": "messages_scheduled",
-          "columns": [
-            "status",
-            "scheduled_at"
-          ],
+          "columns": ["status", "scheduled_at"],
           "isUnique": false
         }
       },
@@ -5401,11 +5117,7 @@
       "indexes": {
         "placement_results_ws": {
           "name": "placement_results_ws",
-          "columns": [
-            "workspace_id",
-            "domain_id",
-            "measured_at"
-          ],
+          "columns": ["workspace_id", "domain_id", "measured_at"],
           "isUnique": false
         }
       },
@@ -5479,10 +5191,7 @@
       "indexes": {
         "placement_tests_ws": {
           "name": "placement_tests_ws",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },
@@ -5632,12 +5341,7 @@
       "indexes": {
         "rollups_daily_pk": {
           "name": "rollups_daily_pk",
-          "columns": [
-            "workspace_id",
-            "day",
-            "domain_id",
-            "provider"
-          ],
+          "columns": ["workspace_id", "day", "domain_id", "provider"],
           "isUnique": true
         }
       },
@@ -5731,11 +5435,7 @@
       "indexes": {
         "rollups_hourly_pk": {
           "name": "rollups_hourly_pk",
-          "columns": [
-            "workspace_id",
-            "hour",
-            "domain_id"
-          ],
+          "columns": ["workspace_id", "hour", "domain_id"],
           "isUnique": true
         }
       },
@@ -5800,18 +5500,12 @@
       "indexes": {
         "suppressions_pk": {
           "name": "suppressions_pk",
-          "columns": [
-            "workspace_id",
-            "email"
-          ],
+          "columns": ["workspace_id", "email"],
           "isUnique": true
         },
         "suppressions_ws_created": {
           "name": "suppressions_ws_created",
-          "columns": [
-            "workspace_id",
-            "created_at"
-          ],
+          "columns": ["workspace_id", "created_at"],
           "isUnique": false
         }
       },

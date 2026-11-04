@@ -83,3 +83,83 @@ describe('unsubscribe placeholder substitution', () => {
     expect(message.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
   })
 })
+
+/**
+ * The half that is not a preference.
+ *
+ * Gmail and Yahoo require one-click unsubscribe from bulk senders, so a
+ * broadcast carries the headers whatever the domain says — the opt-in above
+ * governs individual mail only. That rule lives in one boolean inside
+ * `buildOutbound`, where a later refactor could drop the `broadcast_id` half of
+ * it and break nothing a test was watching. So this drives the consumer with a
+ * broadcast envelope and reads the headers off the transport.
+ */
+describe('a broadcast is bulk mail whether or not the domain opted in', () => {
+  it('sends List-Unsubscribe from a domain with the switch off', async () => {
+    const h = await harness()
+    const domainId = await verifiedDomain(h, 'acme.dev')
+    const sent: { headers?: Record<string, string> }[] = []
+    h.env.SEND_EMAIL = {
+      send: async (message: unknown) => {
+        sent.push(message as { headers?: Record<string, string> })
+        return { messageId: 'cf_test' }
+      },
+    } as never
+
+    // The row the lease is taken against; `deliverNow` claims it before it
+    // builds anything, and a message that is not there is never sent.
+    const emailId = 'em_BROADCAST_UNSUB'
+    await h.sql
+      .prepare(
+        `INSERT INTO messages
+           (id, workspace_id, domain_id, from_address, to_addresses, subject, status, state_rank,
+            environment, broadcast_id, created_at)
+         VALUES (?, 'ws_default', ?, 'team@acme.dev', '["reader@example.com"]', 'Issue 4',
+                 'queued', 10, 'live', 'bcs_1', '2026-11-04T09:00:00.000Z')`,
+      )
+      .bind(emailId, domainId)
+      .run()
+
+    const { deliverNow } = await import('../src/server/send/consumer.ts')
+    const { runWithEnv } = await import('../src/server/env.ts')
+    const outcome = await runWithEnv(h.env, { waitUntil: () => {} }, () =>
+      deliverNow(
+        {
+          kind: 'inline',
+          email_id: emailId,
+          workspace_id: 'ws_default',
+          envelope: {
+            email_id: emailId,
+            workspace_id: 'ws_default',
+            environment: 'live',
+            request: {
+              from: 'team@acme.dev',
+              to: ['reader@example.com'],
+              subject: 'Issue 4',
+              html: '<p>Hello</p>',
+            },
+            domain: {
+              id: domainId,
+              name: 'acme.dev',
+              dkim_selector: 'ms1',
+              dkim_private_key: null,
+              return_path: 'cf-bounce.acme.dev',
+              open_tracking: false,
+              click_tracking: false,
+              // The switch this PR added, off — as every existing domain is.
+              unsubscribe_headers: false,
+            },
+            broadcast_id: 'bcs_1',
+            created_at: '2026-11-04T09:00:00.000Z',
+          },
+        },
+        h.env,
+      ),
+    )
+
+    expect(outcome.delivered).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.headers?.['List-Unsubscribe']).toMatch(/^<https:\/\/mail\.acme\.dev\/u\/.+>$/)
+    expect(sent[0]?.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+  })
+})

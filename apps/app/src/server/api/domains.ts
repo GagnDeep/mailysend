@@ -185,7 +185,8 @@ domains.patch('/:id', async (c) => {
   const columns: Record<string, unknown> = {}
   if (patch.open_tracking !== undefined) columns.open_tracking = patch.open_tracking ? 1 : 0
   if (patch.click_tracking !== undefined) columns.click_tracking = patch.click_tracking ? 1 : 0
-  if (patch.unsubscribe_headers !== undefined) columns.unsubscribe_headers = patch.unsubscribe_headers ? 1 : 0
+  if (patch.unsubscribe_headers !== undefined)
+    columns.unsubscribe_headers = patch.unsubscribe_headers ? 1 : 0
   if (patch.tls !== undefined) columns.tls = patch.tls
   if (patch.custom_return_path !== undefined) columns.custom_return_path = patch.custom_return_path
   if (patch.provider !== undefined) columns.provider = patch.provider ?? null

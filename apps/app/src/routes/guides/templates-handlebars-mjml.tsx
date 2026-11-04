@@ -454,8 +454,9 @@ function Page() {
               <Mono>List-Unsubscribe-Post: List-Unsubscribe=One-Click</Mono>. A broadcast always
               carries them. An individual send — a receipt, a password reset, an invitation — only
               does if the sending domain has opted in, because the pair is also what tells a client
-              to present the message as mailing-list mail, the wrong read for averification code. A 
-              visible link in the body is still your call, and is still what a reader actually looks for —{' '}
+              to present the message as mailing-list mail, the wrong read for a verification code. A
+              visible link in the body is still your call, and is still what a reader actually looks
+              for —{' '}
               <a
                 href="/guides/unsubscribe-and-preferences"
                 className="text-accent underline underline-offset-4"
