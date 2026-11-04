@@ -60,7 +60,9 @@ describe('migrate', () => {
     await migrate(sql, [first!])
     await sql.prepare('DROP TABLE _migrations').run()
     await sql
-      .prepare('CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)')
+      .prepare(
+        'CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)',
+      )
       .run()
     await sql.prepare('INSERT INTO d1_migrations (name) VALUES (?)').bind(first!.name).run()
 
